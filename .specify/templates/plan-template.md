@@ -31,7 +31,14 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- Code quality: style/architecture consistency, error handling, and public
+  behavior documentation captured in plan.
+- Testing: required test coverage and regression strategy documented.
+- UX consistency: user-facing changes, schemas, or CLI outputs assessed with
+  compatibility/migration notes.
+- Performance: budget defined with baseline measurement and validation plan.
+- Security: data validation, secret handling, and least-privilege access
+  reviewed; dependency risks noted.
 
 ## Project Structure
 

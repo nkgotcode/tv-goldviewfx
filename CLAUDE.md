@@ -6,6 +6,7 @@ alwaysApply: false
 
 Default to using Bun instead of Node.js.
 
+- Keep Bun and project dependencies on the latest stable releases unless a specific compatibility issue requires pinning.
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
 - Use `bun test` instead of `jest` or `vitest`
 - Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`

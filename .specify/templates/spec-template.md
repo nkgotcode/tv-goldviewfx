@@ -95,6 +95,17 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+### Non-Functional Requirements
+
+- **NFR-001**: User-facing behavior MUST follow existing UX patterns or include
+  a migration/compatibility plan.
+- **NFR-002**: Performance budgets and baseline measurements MUST be defined
+  for changes that could affect runtime or IO.
+- **NFR-003**: Security requirements MUST cover data validation, secret
+  handling, and least-privilege access.
+- **NFR-004**: Acceptance scenarios MUST map to automated tests unless an
+  explicit waiver and follow-up task are documented.
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]
