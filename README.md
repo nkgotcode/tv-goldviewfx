@@ -26,6 +26,18 @@ To daemonize the API + worker (uses `backend/.env` if present):
 - Use the latest stable versions of Bun, TypeScript, Python 3.12+ (via uv), Next.js, and all libraries.
 - Update pinned versions promptly when new stable releases are available.
 
+## Development workflow (Ralph loop)
+
+This project follows the Ralph Wiggum loop architecture:
+https://github.com/coleam00/ralph-loop-quickstart
+
+- Create/verify `activity.md` at the repo root before starting any work session.
+- Append a dated entry for every session or autonomous iteration.
+- If using a PRD loop, keep `prd.md` and `PROMPT.md` current.
+- Run the loop with `./ralph.sh 20` (adjust iterations as needed).
+
+See `docs/development-workflow.md` for the logging format and requirements.
+
 ## Dashboard (Next.js)
 
 ```bash

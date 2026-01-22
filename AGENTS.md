@@ -44,4 +44,5 @@ Dependencies: keep all libraries and runtimes on the latest stable releases.
 - Gap health endpoint: `GET /ops/gaps/health` surfaces open/healing gaps with breakdowns by pair/source (optional `pair`, `source_type`, `limit`).
 - Daemonize backend: use `./scripts/daemonize-backend.sh start` to keep the API and worker running with logs in `backend-api.log` and `backend-jobs.log`.
 - BingX trades use the recent-trades feed (max 1000 rows per call); history accumulates forward from first ingest, while funding uses backfilled `startTime`/`endTime` windows and OI/mark/index are snapshotted each run.
+- Development workflow: follow the Ralph loop architecture; create/verify `activity.md` before any session and append entries per `docs/development-workflow.md`.
 <!-- MANUAL ADDITIONS END -->

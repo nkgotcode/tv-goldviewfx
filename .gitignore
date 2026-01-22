@@ -10,6 +10,7 @@ build
 
 # code coverage
 coverage
+test-results/
 *.lcov
 
 # logs
