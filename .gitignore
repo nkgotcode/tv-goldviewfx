@@ -4,6 +4,8 @@ node_modules
 # output
 out
 dist
+build
+.next
 *.tgz
 
 # code coverage
@@ -12,11 +14,13 @@ coverage
 
 # logs
 logs
+*.log
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # dotenv environment variable files
 .env
+.env*
 .env.development.local
 .env.test.local
 .env.production.local
@@ -26,9 +30,24 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .eslintcache
 .cache
 *.tsbuildinfo
+.pids/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
 
 # IntelliJ based IDEs
 .idea
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Editors
+.vscode
+*.swp
+*.tmp
+
+# Windows
+Thumbs.db
