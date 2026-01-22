@@ -1,0 +1,1753 @@
+openapi: 3.0.3
+info:
+  title: Trading Idea Intelligence Platform API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+security:
+  - bearerAuth: []
+paths:
+  /sync/tradingview:
+    post:
+      summary: Trigger TradingView sync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '202':
+          description: Sync accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRun'
+  /sync/runs:
+    get:
+      summary: List sync runs
+      parameters:
+        - in: query
+          name: source_id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sync runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SyncRun'
+  /ideas:
+    get:
+      summary: List ideas
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+        - in: query
+          name: sentiment
+          schema:
+            type: string
+        - in: query
+          name: include_duplicates
+          schema:
+            type: boolean
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ideas list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedIdeas'
+  /ideas/{id}:
+    get:
+      summary: Get idea detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Idea detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaDetail'
+  /ideas/{id}/revisions:
+    get:
+      summary: List idea revisions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Idea revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IdeaRevision'
+  /ideas/{id}/review:
+    put:
+      summary: Update idea review state
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdeaReviewUpdate'
+      responses:
+        '200':
+          description: Updated review state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaReview'
+  /ideas/{id}/notes:
+    get:
+      summary: List idea notes
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Idea notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IdeaNote'
+    post:
+      summary: Add idea note
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdeaNoteCreate'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaNote'
+  /ideas/{id}/ocr:
+    post:
+      summary: Trigger OCR for idea media
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: OCR accepted
+    get:
+      summary: Get OCR results for an idea
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OCR results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OcrResult'
+  /enrichment/run:
+    post:
+      summary: Trigger enrichment run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrichmentRequest'
+      responses:
+        '202':
+          description: Enrichment accepted
+  /enrichment/runs:
+    get:
+      summary: List enrichment runs
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Enrichment runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrichmentRun'
+  /signals:
+    get:
+      summary: List signals
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signals list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSignals'
+  /agent/config:
+    get:
+      summary: Get agent configuration
+      responses:
+        '200':
+          description: Agent configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfig'
+    put:
+      summary: Update agent configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentConfigUpdate'
+      responses:
+        '200':
+          description: Updated configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfig'
+  /agent/enable:
+    post:
+      summary: Enable trading agent
+      responses:
+        '200':
+          description: Agent enabled
+  /agent/disable:
+    post:
+      summary: Disable trading agent
+      responses:
+        '200':
+          description: Agent disabled
+  /trades:
+    get:
+      summary: List trades
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: mode
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Trades list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTrades'
+  /trades/{id}:
+    get:
+      summary: Get trade detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trade detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeDetail'
+  /telegram/sources:
+    get:
+      summary: List Telegram sources
+      responses:
+        '200':
+          description: Sources list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Source'
+    post:
+      summary: Add Telegram source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceRequest'
+      responses:
+        '201':
+          description: Source created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+  /telegram/posts:
+    get:
+      summary: List Telegram posts
+      parameters:
+        - in: query
+          name: source_id
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: include_duplicates
+          schema:
+            type: boolean
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Telegram posts list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTelegramPosts'
+  /telegram/ingest:
+    post:
+      summary: Trigger Telegram ingestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramIngestRequest'
+      responses:
+        '202':
+          description: Telegram ingestion accepted
+  /news/sources:
+    get:
+      summary: List news sources
+      responses:
+        '200':
+          description: News sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NewsSource'
+    post:
+      summary: Add news source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewsSourceRequest'
+      responses:
+        '201':
+          description: News source created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsSource'
+  /news/items:
+    get:
+      summary: List news items
+      parameters:
+        - in: query
+          name: source_id
+          schema:
+            type: string
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: News items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNewsItems'
+  /news/ingest:
+    post:
+      summary: Trigger news ingestion
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewsIngestRequest'
+      responses:
+        '202':
+          description: News ingestion accepted
+  /ops/ingestion/status:
+    get:
+      summary: List ingestion status for all sources/feeds
+      responses:
+        '200':
+          description: Ingestion status list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IngestionStatus'
+  /ops/ingestion/runs:
+    get:
+      summary: List ingestion runs with filters
+      parameters:
+        - in: query
+          name: source_type
+          schema:
+            type: string
+        - in: query
+          name: feed
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ingestion runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedIngestionRuns'
+  /ops/ingestion/config:
+    get:
+      summary: Get ingestion configuration for all sources
+      responses:
+        '200':
+          description: Ingestion configuration
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IngestionConfig'
+    put:
+      summary: Update ingestion configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/IngestionConfig'
+      responses:
+        '200':
+          description: Ingestion configuration updated
+  /ops/ingestion/{source}/run:
+    post:
+      summary: Trigger a manual ingestion run
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestionRunRequest'
+      responses:
+        '202':
+          description: Ingestion run accepted
+  /ops/ingestion/{source}/pause:
+    post:
+      summary: Pause ingestion for a source
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ingestion paused
+  /ops/ingestion/{source}/resume:
+    post:
+      summary: Resume ingestion for a source
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ingestion resumed
+  /ops/ingestion/{source}/backfill:
+    post:
+      summary: Trigger a backfill run for a source/feed
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestionBackfillRequest'
+      responses:
+        '202':
+          description: Backfill accepted
+  /ops/trading/summary:
+    get:
+      summary: Trading analytics summary
+      responses:
+        '200':
+          description: Trading analytics summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradingSummary'
+  /ops/trading/metrics:
+    get:
+      summary: Trading analytics time series
+      parameters:
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: interval
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trading analytics time series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TradingMetricPoint'
+  /ops/insights/source-efficacy:
+    get:
+      summary: Source efficacy analytics
+      responses:
+        '200':
+          description: Source efficacy metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SourceEfficacyMetric'
+  /ops/insights/sentiment-pnl:
+    get:
+      summary: Sentiment vs PnL analytics
+      parameters:
+        - in: query
+          name: interval
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sentiment correlation metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SentimentPnlMetric'
+  /ops/insights/topic-trends:
+    get:
+      summary: Topic clustering trends
+      parameters:
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [weekly, monthly]
+      responses:
+        '200':
+          description: Topic trends
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopicTrend'
+  /ops/source-policies:
+    get:
+      summary: List source gating policies
+      responses:
+        '200':
+          description: Source policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SourcePolicy'
+    put:
+      summary: Update source gating policies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/SourcePolicy'
+      responses:
+        '200':
+          description: Source policies updated
+  /ops/roles:
+    get:
+      summary: List role assignments
+      responses:
+        '200':
+          description: Role assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleAssignment'
+    put:
+      summary: Update role assignments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/RoleAssignment'
+      responses:
+        '200':
+          description: Role assignments updated
+  /ops/audit:
+    get:
+      summary: Ops audit log
+      parameters:
+        - in: query
+          name: resource_type
+          schema:
+            type: string
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ops audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOpsAudit'
+  /ops/gaps/health:
+    get:
+      summary: Data gap health status
+      parameters:
+        - in: query
+          name: pair
+          schema:
+            type: string
+            enum: [Gold-USDT, XAUTUSDT, PAXGUSDT]
+        - in: query
+          name: source_type
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Data gap health summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataGapHealth'
+  /dashboard/summary:
+    get:
+      summary: Dashboard summary
+      responses:
+        '200':
+          description: Summary metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    SyncRequest:
+      type: object
+      properties:
+        source_id:
+          type: string
+        full_content:
+          type: boolean
+      required: [source_id]
+    EnrichmentRequest:
+      type: object
+      properties:
+        idea_ids:
+          type: array
+          items:
+            type: string
+      required: [idea_ids]
+    TelegramIngestRequest:
+      type: object
+      properties:
+        source_id:
+          type: string
+      required: [source_id]
+    IngestionRunRequest:
+      type: object
+      properties:
+        source_id:
+          type: string
+        feed:
+          type: string
+        interval:
+          type: string
+        symbol:
+          type: string
+        recency_days:
+          type: integer
+        full_content:
+          type: boolean
+        include_updates:
+          type: boolean
+        sync_limit:
+          type: integer
+    IngestionBackfillRequest:
+      type: object
+      properties:
+        feed:
+          type: string
+        interval:
+          type: string
+        symbol:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+      required: [start, end]
+    SourceRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [telegram]
+        identifier:
+          type: string
+        display_name:
+          type: string
+      required: [type, identifier]
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [tradingview, telegram, news]
+        identifier:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+    SyncRun:
+      type: object
+      properties:
+        id:
+          type: string
+        source_id:
+          type: string
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        new_count:
+          type: integer
+        updated_count:
+          type: integer
+        error_count:
+          type: integer
+        error_summary:
+          type: string
+          nullable: true
+        coverage_pct:
+          type: number
+        missing_fields_count:
+          type: integer
+        parse_confidence:
+          type: number
+    IngestionStatus:
+      type: object
+      properties:
+        source_type:
+          type: string
+        source_id:
+          type: string
+          nullable: true
+        feed:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ok, stale, unavailable, paused]
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_success_at:
+          type: string
+          format: date-time
+          nullable: true
+        lag_seconds:
+          type: integer
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        next_scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+    IngestionRun:
+      type: object
+      properties:
+        id:
+          type: string
+        source_type:
+          type: string
+        source_id:
+          type: string
+          nullable: true
+        feed:
+          type: string
+          nullable: true
+        trigger:
+          type: string
+          enum: [manual, schedule, backfill]
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        new_count:
+          type: integer
+        updated_count:
+          type: integer
+        error_count:
+          type: integer
+        error_summary:
+          type: string
+          nullable: true
+        coverage_pct:
+          type: number
+        missing_fields_count:
+          type: integer
+        parse_confidence:
+          type: number
+    PaginatedIngestionRuns:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IngestionRun'
+        total:
+          type: integer
+    IngestionConfig:
+      type: object
+      properties:
+        source_type:
+          type: string
+        source_id:
+          type: string
+          nullable: true
+        feed:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        refresh_interval_seconds:
+          type: integer
+          nullable: true
+        backfill_max_days:
+          type: integer
+          nullable: true
+        rate_limit_per_minute:
+          type: integer
+          nullable: true
+        backoff_base_seconds:
+          type: integer
+          nullable: true
+        backoff_max_seconds:
+          type: integer
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+    Idea:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        dedup_status:
+          type: string
+          enum: [canonical, duplicate]
+        duplicate_of_id:
+          type: string
+        sentiment_label:
+          type: string
+        sentiment_score:
+          type: number
+        review_state:
+          type: string
+          enum: [new, triaged, approved, rejected]
+        review_note:
+          type: string
+          nullable: true
+    IdeaDetail:
+      allOf:
+        - $ref: '#/components/schemas/Idea'
+        - type: object
+          properties:
+            content:
+              type: string
+            author_handle:
+              type: string
+            reviewed_by:
+              type: string
+              nullable: true
+            reviewed_at:
+              type: string
+              format: date-time
+              nullable: true
+    IdeaRevision:
+      type: object
+      properties:
+        id:
+          type: string
+        idea_id:
+          type: string
+        content:
+          type: string
+        content_hash:
+          type: string
+        diff_summary:
+          type: string
+          nullable: true
+        recorded_at:
+          type: string
+          format: date-time
+    IdeaReviewUpdate:
+      type: object
+      properties:
+        review_state:
+          type: string
+          enum: [new, triaged, approved, rejected]
+        review_note:
+          type: string
+      required: [review_state]
+    IdeaReview:
+      type: object
+      properties:
+        idea_id:
+          type: string
+        review_state:
+          type: string
+        review_note:
+          type: string
+          nullable: true
+        reviewed_by:
+          type: string
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+    IdeaNoteCreate:
+      type: object
+      properties:
+        note:
+          type: string
+      required: [note]
+    IdeaNote:
+      type: object
+      properties:
+        id:
+          type: string
+        idea_id:
+          type: string
+        author:
+          type: string
+        note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PaginatedIdeas:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Idea'
+        total:
+          type: integer
+    Signal:
+      type: object
+      properties:
+        id:
+          type: string
+        source_type:
+          type: string
+        source_id:
+          type: string
+          nullable: true
+        idea_id:
+          type: string
+          nullable: true
+        telegram_post_id:
+          type: string
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+        confidence_score:
+          type: number
+        news_item_id:
+          type: string
+          nullable: true
+    PaginatedSignals:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Signal'
+        total:
+          type: integer
+    TelegramPost:
+      type: object
+      properties:
+        id:
+          type: string
+        source_id:
+          type: string
+        external_id:
+          type: string
+        content:
+          type: string
+        content_hash:
+          type: string
+        duplicate_of_id:
+          type: string
+        dedup_status:
+          type: string
+          enum: [canonical, duplicate]
+        published_at:
+          type: string
+          format: date-time
+        ingested_at:
+          type: string
+          format: date-time
+        edited_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, edited, removed]
+    PaginatedTelegramPosts:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelegramPost'
+        total:
+          type: integer
+    NewsSourceRequest:
+      type: object
+      properties:
+        identifier:
+          type: string
+        display_name:
+          type: string
+      required: [identifier]
+    NewsSource:
+      type: object
+      properties:
+        id:
+          type: string
+        identifier:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+    NewsIngestRequest:
+      type: object
+      properties:
+        source_id:
+          type: string
+        recency_days:
+          type: integer
+    NewsItem:
+      type: object
+      properties:
+        id:
+          type: string
+        source_id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        content:
+          type: string
+          nullable: true
+        published_at:
+          type: string
+          format: date-time
+        sentiment_label:
+          type: string
+        sentiment_score:
+          type: number
+    PaginatedNewsItems:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewsItem'
+        total:
+          type: integer
+    AgentConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum: [paper, live]
+        kill_switch_enabled:
+          type: boolean
+        kill_switch_reason:
+          type: string
+          nullable: true
+        max_position_size:
+          type: number
+        daily_loss_limit:
+          type: number
+        max_daily_loss_override:
+          type: number
+          nullable: true
+        promotion_gate_min_win_rate:
+          type: number
+          nullable: true
+        promotion_gate_min_trades:
+          type: integer
+          nullable: true
+        min_confidence_score:
+          type: number
+          nullable: true
+        allowed_instruments:
+          type: array
+          items:
+            type: string
+        allowed_source_ids:
+          type: array
+          items:
+            type: string
+          nullable: true
+    AgentConfigUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum: [paper, live]
+        kill_switch_enabled:
+          type: boolean
+        kill_switch_reason:
+          type: string
+        max_position_size:
+          type: number
+        daily_loss_limit:
+          type: number
+        max_daily_loss_override:
+          type: number
+        promotion_gate_min_win_rate:
+          type: number
+        promotion_gate_min_trades:
+          type: integer
+        min_confidence_score:
+          type: number
+        allowed_instruments:
+          type: array
+          items:
+            type: string
+        allowed_source_ids:
+          type: array
+          items:
+            type: string
+    Trade:
+      type: object
+      properties:
+        id:
+          type: string
+        instrument:
+          type: string
+        side:
+          type: string
+        quantity:
+          type: number
+        status:
+          type: string
+        mode:
+          type: string
+        client_order_id:
+          type: string
+          nullable: true
+        avg_fill_price:
+          type: number
+          nullable: true
+        position_size:
+          type: number
+          nullable: true
+        pnl:
+          type: number
+          nullable: true
+        pnl_pct:
+          type: number
+          nullable: true
+        tp_price:
+          type: number
+          nullable: true
+        sl_price:
+          type: number
+          nullable: true
+        liquidation_price:
+          type: number
+          nullable: true
+        leverage:
+          type: number
+          nullable: true
+        margin_type:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TradeDetail:
+      allOf:
+        - $ref: '#/components/schemas/Trade'
+        - type: object
+          properties:
+            signal_id:
+              type: string
+            executions:
+              type: array
+              items:
+                type: object
+                properties:
+                  exchange_order_id:
+                    type: string
+                  filled_quantity:
+                    type: number
+                  average_price:
+                    type: number
+                  status:
+                    type: string
+                  executed_at:
+                    type: string
+                    format: date-time
+    PaginatedTrades:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trade'
+        total:
+          type: integer
+    EnrichmentRun:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        idea_count:
+          type: integer
+        error_count:
+          type: integer
+        error_summary:
+          type: string
+          nullable: true
+    OcrResult:
+      type: object
+      properties:
+        id:
+          type: string
+        idea_id:
+          type: string
+        media_url:
+          type: string
+        ocr_text:
+          type: string
+          nullable: true
+        ocr_confidence:
+          type: number
+          nullable: true
+        ocr_status:
+          type: string
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+    TradingSummary:
+      type: object
+      properties:
+        total_trades:
+          type: integer
+        win_rate:
+          type: number
+        net_pnl:
+          type: number
+        net_pnl_pct:
+          type: number
+        open_positions:
+          type: integer
+        exposure_by_instrument:
+          type: array
+          items:
+            type: object
+            properties:
+              instrument:
+                type: string
+              exposure:
+                type: number
+    TradingMetricPoint:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        trade_count:
+          type: integer
+        win_rate:
+          type: number
+        net_pnl:
+          type: number
+        drawdown:
+          type: number
+    SourceEfficacyMetric:
+      type: object
+      properties:
+        source_id:
+          type: string
+        source_type:
+          type: string
+        idea_count:
+          type: integer
+        signal_count:
+          type: integer
+        trade_count:
+          type: integer
+        conversion_rate:
+          type: number
+        win_rate:
+          type: number
+    SentimentPnlMetric:
+      type: object
+      properties:
+        bucket:
+          type: string
+        avg_sentiment:
+          type: number
+        net_pnl:
+          type: number
+        trade_count:
+          type: integer
+    TopicTrend:
+      type: object
+      properties:
+        window:
+          type: string
+        label:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        idea_count:
+          type: integer
+    RoleAssignment:
+      type: object
+      properties:
+        user_id:
+          type: string
+        role:
+          type: string
+          enum: [operator, analyst]
+    SourcePolicy:
+      type: object
+      properties:
+        source_id:
+          type: string
+        allow_trading:
+          type: boolean
+        min_confidence_score:
+          type: number
+    OpsAuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        actor:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    PaginatedOpsAudit:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpsAuditEvent'
+        total:
+          type: integer
+    DataGapSummary:
+      type: object
+      properties:
+        open:
+          type: integer
+        healing:
+          type: integer
+        last_detected_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        oldest_open_at:
+          type: string
+          format: date-time
+          nullable: true
+    DataGapPairSummary:
+      allOf:
+        - $ref: '#/components/schemas/DataGapSummary'
+        - type: object
+          properties:
+            pair:
+              type: string
+              enum: [Gold-USDT, XAUTUSDT, PAXGUSDT]
+    DataGapSourceSummary:
+      allOf:
+        - $ref: '#/components/schemas/DataGapSummary'
+        - type: object
+          properties:
+            source_type:
+              type: string
+    DataGapEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        pair:
+          type: string
+          enum: [Gold-USDT, XAUTUSDT, PAXGUSDT]
+        source_type:
+          type: string
+        interval:
+          type: string
+          nullable: true
+        gap_start:
+          type: string
+          format: date-time
+        gap_end:
+          type: string
+          format: date-time
+        expected_interval_seconds:
+          type: integer
+          nullable: true
+        gap_seconds:
+          type: integer
+        missing_points:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [open, healing, resolved]
+        detected_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        last_heal_at:
+          type: string
+          format: date-time
+          nullable: true
+        heal_attempts:
+          type: integer
+    DataGapHealth:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        totals:
+          $ref: '#/components/schemas/DataGapSummary'
+        by_pair:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataGapPairSummary'
+        by_source:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataGapSourceSummary'
+        open_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataGapEvent'
+    DashboardSummary:
+      type: object
+      properties:
+        idea_count:
+          type: integer
+        signal_count:
+          type: integer
+        trade_count:
+          type: integer
+        last_sync_status:
+          type: string
+        last_sync_at:
+          type: string
+          format: date-time

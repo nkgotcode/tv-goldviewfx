@@ -1,0 +1,1225 @@
+openapi: 3.1.0
+info:
+  title: RL Trading Agent API
+  version: 0.1.0
+  description: API contracts for operating the RL trading agent on BingX gold perpetual pairs.
+servers:
+  - url: https://api.example.invalid
+security:
+  - bearerAuth: []
+paths:
+  /agents:
+    get:
+      summary: List trading agents
+      responses:
+        "200":
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentSummary"
+  /agents/{agentId}:
+    get:
+      summary: Get agent status
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatus"
+  /agents/{agentId}/start:
+    post:
+      summary: Start a trading session
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentStartRequest"
+      responses:
+        "200":
+          description: Agent run started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+  /agents/{agentId}/pause:
+    post:
+      summary: Pause trading
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent run paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+  /agents/{agentId}/resume:
+    post:
+      summary: Resume trading
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent run resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+  /agents/{agentId}/stop:
+    post:
+      summary: Stop trading
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent run stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+  /agents/{agentId}/config:
+    patch:
+      summary: Update agent configuration
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentConfigPatch"
+      responses:
+        "200":
+          description: Updated configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentConfig"
+  /agents/{agentId}/kill-switch:
+    post:
+      summary: Enable or disable kill switch
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KillSwitchState"
+      responses:
+        "200":
+          description: Kill switch updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KillSwitchState"
+  /agents/{agentId}/promotion-gates:
+    get:
+      summary: Get promotion gate configuration
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Promotion gate config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromotionGateConfig"
+    patch:
+      summary: Update promotion gate configuration
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionGateConfig"
+      responses:
+        "200":
+          description: Promotion gate config updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromotionGateConfig"
+  /agents/{agentId}/source-policies:
+    get:
+      summary: List source gating policies
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Source policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourcePolicy"
+    patch:
+      summary: Update source gating policies
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/SourcePolicy"
+      responses:
+        "200":
+          description: Source policies updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourcePolicy"
+  /agents/{agentId}/runs:
+    get:
+      summary: List agent runs
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentRun"
+  /agents/{agentId}/evaluations:
+    post:
+      summary: Run an evaluation
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvaluationRequest"
+      responses:
+        "202":
+          description: Evaluation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluationReport"
+    get:
+      summary: List evaluation reports
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Evaluation reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvaluationReport"
+  /agents/{agentId}/versions:
+    get:
+      summary: List agent versions
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Agent versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentVersion"
+  /agents/{agentId}/versions/{versionId}/promote:
+    post:
+      summary: Promote an evaluated model version
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+        - $ref: "#/components/parameters/versionId"
+      responses:
+        "200":
+          description: Version promoted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentVersion"
+  /agents/{agentId}/versions/{versionId}/rollback:
+    post:
+      summary: Roll back to a prior model version
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+        - $ref: "#/components/parameters/versionId"
+      responses:
+        "200":
+          description: Rollback completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentVersion"
+  /agents/{agentId}/drift-alerts:
+    get:
+      summary: List drift alerts
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      responses:
+        "200":
+          description: Drift alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriftAlert"
+  /data-sources/status:
+    get:
+      summary: Get data source freshness status
+      parameters:
+        - in: query
+          name: pair
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Source status list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataSourceStatus"
+  /data-sources/config:
+    patch:
+      summary: Enable or disable data sources and thresholds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataSourceConfig"
+      responses:
+        "200":
+          description: Updated data source configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataSourceConfig"
+  /data-sources/runs:
+    get:
+      summary: List data source ingestion runs
+      parameters:
+        - in: query
+          name: sourceType
+          schema:
+            type: string
+        - in: query
+          name: pair
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Data source runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataSourceRun"
+  /data-sources/backfill:
+    post:
+      summary: Trigger data source backfill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataSourceBackfillRequest"
+      responses:
+        "202":
+          description: Backfill accepted
+  /data-quality/status:
+    get:
+      summary: Get data quality metrics by source and pair
+      parameters:
+        - in: query
+          name: pair
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Data quality metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataQualityMetric"
+  /datasets:
+    get:
+      summary: List dataset versions
+      responses:
+        "200":
+          description: Dataset versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DatasetVersion"
+  /datasets/{datasetId}:
+    get:
+      summary: Get dataset version detail
+      parameters:
+        - $ref: "#/components/parameters/datasetId"
+      responses:
+        "200":
+          description: Dataset version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetVersion"
+  /datasets/{datasetId}/lineage:
+    get:
+      summary: Get dataset lineage
+      parameters:
+        - $ref: "#/components/parameters/datasetId"
+      responses:
+        "200":
+          description: Dataset lineage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetLineage"
+  /feature-sets:
+    get:
+      summary: List feature set versions
+      responses:
+        "200":
+          description: Feature set versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeatureSetVersion"
+  /market-data/candles:
+    get:
+      summary: Fetch BingX candle history
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+        - in: query
+          name: interval
+          required: true
+          schema:
+            $ref: "#/components/schemas/CandleInterval"
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Candle series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketCandle"
+  /market-data/orderbook:
+    get:
+      summary: Fetch BingX order book snapshot
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+        - in: query
+          name: depth
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Order book snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderBookSnapshot"
+  /market-data/trades:
+    get:
+      summary: Fetch BingX recent trades
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Recent trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecentTrade"
+  /market-data/funding-rates:
+    get:
+      summary: Fetch BingX funding rates
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Funding rate history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FundingRateSnapshot"
+  /market-data/open-interest:
+    get:
+      summary: Fetch BingX open interest snapshots
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Open interest snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenInterestSnapshot"
+  /market-data/mark-index:
+    get:
+      summary: Fetch BingX mark/index price snapshot
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Mark/index snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkIndexPriceSnapshot"
+  /market-data/ticker:
+    get:
+      summary: Fetch BingX ticker snapshot
+      parameters:
+        - in: query
+          name: pair
+          required: true
+          schema:
+            $ref: "#/components/schemas/TradingPair"
+      responses:
+        "200":
+          description: Ticker snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TickerSnapshot"
+  /risk-limits:
+    get:
+      summary: List risk limit sets
+      responses:
+        "200":
+          description: Risk limits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiskLimitSet"
+    post:
+      summary: Create risk limit set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiskLimitSet"
+      responses:
+        "201":
+          description: Risk limit set created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskLimitSet"
+  /risk-limits/{riskLimitId}:
+    patch:
+      summary: Update risk limit set
+      parameters:
+        - $ref: "#/components/parameters/riskLimitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiskLimitSet"
+      responses:
+        "200":
+          description: Risk limit set updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskLimitSet"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    agentId:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+    versionId:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+    riskLimitId:
+      name: riskLimitId
+      in: path
+      required: true
+      schema:
+        type: string
+    datasetId:
+      name: datasetId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    TradingPair:
+      type: string
+      enum: [Gold-USDT, XAUTUSDT, PAXGUSDT]
+    CandleInterval:
+      type: string
+      enum: [1m, 5m, 15m, 1h, 4h, 1d]
+    AgentSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+      required: [id, name, status]
+    AgentStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        currentRun:
+          $ref: "#/components/schemas/AgentRun"
+        activeVersion:
+          $ref: "#/components/schemas/AgentVersion"
+        learningEnabled:
+          type: boolean
+        killSwitchEnabled:
+          type: boolean
+        promotionGateStatus:
+          type: string
+          enum: [pass, fail, unknown]
+      required: [id]
+    AgentRun:
+      type: object
+      properties:
+        id:
+          type: string
+        mode:
+          type: string
+          enum: [paper, live]
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        status:
+          type: string
+          enum: [running, paused, stopped]
+        startedAt:
+          type: string
+          format: date-time
+        stoppedAt:
+          type: string
+          format: date-time
+        learningEnabled:
+          type: boolean
+        learningWindowMinutes:
+          type: integer
+          minimum: 1
+        datasetVersionId:
+          type: string
+          nullable: true
+        featureSetVersionId:
+          type: string
+          nullable: true
+      required: [id, mode, pair, status]
+    AgentStartRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [paper, live]
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        riskLimitSetId:
+          type: string
+        learningEnabled:
+          type: boolean
+        learningWindowMinutes:
+          type: integer
+          minimum: 1
+        datasetVersionId:
+          type: string
+        featureSetVersionId:
+          type: string
+      required: [mode, pair, riskLimitSetId]
+    AgentConfig:
+      type: object
+      properties:
+        riskLimitSetId:
+          type: string
+        learningEnabled:
+          type: boolean
+        learningWindowMinutes:
+          type: integer
+        dataSourceConfig:
+          $ref: "#/components/schemas/DataSourceConfig"
+        killSwitchEnabled:
+          type: boolean
+        killSwitchReason:
+          type: string
+          nullable: true
+        promotionGateMinWinRate:
+          type: number
+          nullable: true
+        promotionGateMinTrades:
+          type: integer
+          nullable: true
+        promotionGateMaxDrawdown:
+          type: number
+          nullable: true
+        minConfidenceScore:
+          type: number
+          nullable: true
+        allowedSourceIds:
+          type: array
+          items:
+            type: string
+          nullable: true
+      required: [riskLimitSetId]
+    AgentConfigPatch:
+      type: object
+      properties:
+        riskLimitSetId:
+          type: string
+        learningEnabled:
+          type: boolean
+        learningWindowMinutes:
+          type: integer
+        dataSourceConfig:
+          $ref: "#/components/schemas/DataSourceConfig"
+        killSwitchEnabled:
+          type: boolean
+        killSwitchReason:
+          type: string
+        promotionGateMinWinRate:
+          type: number
+        promotionGateMinTrades:
+          type: integer
+        promotionGateMaxDrawdown:
+          type: number
+        minConfidenceScore:
+          type: number
+        allowedSourceIds:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    DataSourceStatus:
+      type: object
+      properties:
+        sourceType:
+          type: string
+          enum:
+            - bingx_candles
+            - bingx_orderbook
+            - bingx_trades
+            - bingx_funding
+            - bingx_open_interest
+            - bingx_mark_price
+            - bingx_index_price
+            - bingx_ticker
+            - ideas
+            - signals
+            - news
+            - ocr_text
+            - trades
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        status:
+          type: string
+          enum: [ok, stale, unavailable]
+        lastSeenAt:
+          type: string
+          format: date-time
+        freshnessThresholdSeconds:
+          type: integer
+        coveragePct:
+          type: number
+          nullable: true
+        missingFieldsCount:
+          type: integer
+          nullable: true
+        parseConfidence:
+          type: number
+          nullable: true
+      required: [sourceType, status]
+    DataSourceConfig:
+      type: object
+      properties:
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              sourceType:
+                type: string
+                enum:
+                  - bingx_candles
+                  - bingx_orderbook
+                  - bingx_trades
+                  - bingx_funding
+                  - bingx_open_interest
+                  - bingx_mark_price
+                  - bingx_index_price
+                  - bingx_ticker
+                  - ideas
+                  - signals
+                  - news
+                  - ocr_text
+                  - trades
+              enabled:
+                type: boolean
+              freshnessThresholdSeconds:
+                type: integer
+              minCoveragePct:
+                type: number
+              maxMissingFields:
+                type: integer
+              minParseConfidence:
+                type: number
+            required: [sourceType, enabled]
+      required: [sources]
+    DataQualityMetric:
+      type: object
+      properties:
+        sourceType:
+          type: string
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        coveragePct:
+          type: number
+        missingFieldsCount:
+          type: integer
+        parseConfidence:
+          type: number
+        status:
+          type: string
+          enum: [ok, degraded, failed]
+        lastRunAt:
+          type: string
+          format: date-time
+    DataSourceRun:
+      type: object
+      properties:
+        id:
+          type: string
+        sourceType:
+          type: string
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        newCount:
+          type: integer
+        updatedCount:
+          type: integer
+        errorCount:
+          type: integer
+        errorSummary:
+          type: string
+          nullable: true
+    DataSourceBackfillRequest:
+      type: object
+      properties:
+        sourceType:
+          type: string
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+      required: [sourceType, pair, start, end]
+    SourcePolicy:
+      type: object
+      properties:
+        sourceId:
+          type: string
+        allowTrading:
+          type: boolean
+        minConfidenceScore:
+          type: number
+    FeatureSetVersion:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        description:
+          type: string
+          nullable: true
+    DatasetVersion:
+      type: object
+      properties:
+        id:
+          type: string
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        checksum:
+          type: string
+        featureSetVersionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    DatasetLineage:
+      type: object
+      properties:
+        datasetId:
+          type: string
+        sourceRunIds:
+          type: array
+          items:
+            type: string
+        parentDatasetIds:
+          type: array
+          items:
+            type: string
+    DriftAlert:
+      type: object
+      properties:
+        id:
+          type: string
+        agentId:
+          type: string
+        detectedAt:
+          type: string
+          format: date-time
+        metric:
+          type: string
+        baselineValue:
+          type: number
+        currentValue:
+          type: number
+        status:
+          type: string
+          enum: [open, acknowledged, resolved]
+        actionTaken:
+          type: string
+          nullable: true
+    PromotionGateConfig:
+      type: object
+      properties:
+        minWinRate:
+          type: number
+        minTrades:
+          type: integer
+        maxDrawdown:
+          type: number
+    KillSwitchState:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+    MarketCandle:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        openTime:
+          type: string
+          format: date-time
+        closeTime:
+          type: string
+          format: date-time
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+        quoteVolume:
+          type: number
+      required: [pair, interval, openTime, closeTime, open, high, low, close]
+    OrderBookSnapshot:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        capturedAt:
+          type: string
+          format: date-time
+        depth:
+          type: integer
+        bids:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+        asks:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+      required: [pair, capturedAt]
+    RecentTrade:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        tradeId:
+          type: string
+        price:
+          type: number
+        quantity:
+          type: number
+        side:
+          type: string
+          enum: [buy, sell]
+        executedAt:
+          type: string
+          format: date-time
+      required: [pair, price, quantity, executedAt]
+    FundingRateSnapshot:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        fundingRate:
+          type: number
+        fundingTime:
+          type: string
+          format: date-time
+      required: [pair, fundingRate, fundingTime]
+    OpenInterestSnapshot:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        openInterest:
+          type: number
+        capturedAt:
+          type: string
+          format: date-time
+      required: [pair, openInterest, capturedAt]
+    MarkIndexPriceSnapshot:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        markPrice:
+          type: number
+        indexPrice:
+          type: number
+        capturedAt:
+          type: string
+          format: date-time
+      required: [pair, markPrice, indexPrice, capturedAt]
+    TickerSnapshot:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        lastPrice:
+          type: number
+        volume24h:
+          type: number
+        priceChange24h:
+          type: number
+        capturedAt:
+          type: string
+          format: date-time
+      required: [pair, lastPrice, capturedAt]
+    RiskLimitSet:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        maxPositionSize:
+          type: number
+        leverageCap:
+          type: number
+        maxDailyLoss:
+          type: number
+        maxDrawdown:
+          type: number
+        maxOpenPositions:
+          type: integer
+      required:
+        - name
+        - maxPositionSize
+        - leverageCap
+        - maxDailyLoss
+        - maxDrawdown
+        - maxOpenPositions
+    EvaluationRequest:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        agentVersionId:
+          type: string
+        datasetVersionId:
+          type: string
+        featureSetVersionId:
+          type: string
+      required: [pair, periodStart, periodEnd]
+    EvaluationReport:
+      type: object
+      properties:
+        id:
+          type: string
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        winRate:
+          type: number
+        netPnlAfterFees:
+          type: number
+        maxDrawdown:
+          type: number
+        tradeCount:
+          type: integer
+        exposureByPair:
+          type: object
+          additionalProperties:
+            type: number
+        status:
+          type: string
+          enum: [pass, fail]
+        datasetVersionId:
+          type: string
+          nullable: true
+        featureSetVersionId:
+          type: string
+          nullable: true
+      required: [id, pair, winRate, netPnlAfterFees, maxDrawdown, tradeCount, status]
+    AgentVersion:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [draft, evaluating, promoted, retired]
+        createdAt:
+          type: string
+          format: date-time
+        artifactUri:
+          type: string
+      required: [id, status]
