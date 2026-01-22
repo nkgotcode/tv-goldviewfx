@@ -3,7 +3,20 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "test:backend": "bun --cwd backend test --timeout=20000",
+    "test:frontend": "bun --cwd frontend test",
+    "test:e2e": "bunx playwright test",
+    "test:e2e:local": "./scripts/e2e-local.sh",
+    "test:ci": "bun run test:backend && bun run test:frontend && bun run test:e2e"
+  },
+  "workspaces": [
+    "backend",
+    "frontend",
+    "packages/shared"
+  ],
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/bun": "latest"
   },
   "peerDependencies": {
