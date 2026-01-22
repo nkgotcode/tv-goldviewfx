@@ -1,0 +1,37 @@
+[project]
+name = "tv-goldviewfx-rl-service"
+version = "0.1.0"
+description = "RL trading agent service for BingX gold perpetual pairs."
+requires-python = ">=3.12,<3.15"
+license = { text = "Proprietary" }
+authors = [{ name = "tv-goldviewfx" }]
+
+dependencies = [
+  "fastapi>=0.128.0",
+  "uvicorn[standard]>=0.40.0",
+  "pydantic>=2.12.5",
+  "pydantic-settings>=2.12.0",
+  "numpy>=2.4.1",
+  "pandas>=2.3.3",
+  "httpx>=0.28.1",
+]
+
+[project.optional-dependencies]
+ml = [
+  "stable-baselines3>=2.7.1",
+  "nautilus-trader>=1.222.0",
+]
+
+test = [
+  "pytest>=9.0.2",
+  "pytest-asyncio>=1.3.0",
+  "pytest-cov>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+
+[build-system]
+requires = ["setuptools>=80.9.0", "wheel>=0.45.1"]
+build-backend = "setuptools.build_meta"
