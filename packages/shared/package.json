@@ -1,0 +1,9 @@
+{
+  "name": "tv-goldviewfx-shared",
+  "type": "module",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "zod": "^4.3.5"
+  }
+}
