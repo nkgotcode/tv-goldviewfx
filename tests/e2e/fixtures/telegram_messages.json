@@ -1,0 +1,29 @@
+{
+  "messages": [
+    {
+      "id": "msg-001",
+      "text": "XAUUSD holding above 2400, watch for breakout.",
+      "date": "2025-01-01T00:00:00Z",
+      "status": "active"
+    },
+    {
+      "id": "msg-002",
+      "text": "XAUUSD holding above 2400, watch for breakout.",
+      "date": "2025-01-01T00:05:00Z",
+      "status": "active"
+    },
+    {
+      "id": "msg-003",
+      "text": "Breakout confirmed after retest.",
+      "date": "2025-01-01T00:10:00Z",
+      "edit_date": "2025-01-01T00:12:00Z",
+      "status": "edited"
+    },
+    {
+      "id": "msg-004",
+      "text": "",
+      "date": "2025-01-01T00:15:00Z",
+      "status": "removed"
+    }
+  ]
+}
