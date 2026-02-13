@@ -32,26 +32,28 @@ export default function TopicTrendsPanel() {
       ) : trends.length === 0 ? (
         <div className="empty">No topic clusters generated yet.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Period</th>
-              <th>Label</th>
-              <th>Ideas</th>
-              <th>Keywords</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trends.map((trend) => (
-              <tr key={trend.id}>
-                <td>{trend.period}</td>
-                <td>{trend.label}</td>
-                <td>{trend.idea_count}</td>
-                <td>{trend.keywords?.join(", ")}</td>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Label</th>
+                <th>Ideas</th>
+                <th>Keywords</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {trends.map((trend) => (
+                <tr key={trend.id}>
+                  <td>{trend.period}</td>
+                  <td>{trend.label}</td>
+                  <td>{trend.idea_count}</td>
+                  <td>{trend.keywords?.join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

@@ -2,23 +2,23 @@ import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 import { getOrCreateSource } from "../../src/db/repositories/sources";
 import { insertIdea } from "../../src/db/repositories/ideas";
-import { supabase } from "../../src/db/client";
+import { convex } from "../../src/db/client";
 import { hashContent, normalizeContent } from "../../src/services/dedup";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 async function cleanup(identifier: string) {
-  const sources = await supabase.from("sources").select("id").eq("identifier", identifier);
+  const sources = await convex.from("sources").select("id").eq("identifier", identifier);
   if (sources.data) {
     for (const source of sources.data) {
-      await supabase.from("sources").delete().eq("id", source.id);
+      await convex.from("sources").delete().eq("id", source.id);
     }
   }
 }
 
 if (!hasEnv) {
-  test.skip("signals endpoint requires Supabase configuration", () => {});
+  test.skip("signals endpoint requires Convex configuration", () => {});
 } else {
   test("GET /signals returns an array", async () => {
     const identifier = `signals-test-${Date.now()}`;

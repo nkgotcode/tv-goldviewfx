@@ -225,13 +225,19 @@ export async function runDataGapMonitor() {
       const windowEnd = now.toISOString();
       windowStartByInterval.set(interval, windowStart);
 
-      const times = await listBingxCandleTimes({
-        pair,
-        interval,
-        start: windowStart,
-        end: windowEnd,
-        limit: maxPoints,
-      });
+      let times: string[] = [];
+      try {
+        times = await listBingxCandleTimes({
+          pair,
+          interval,
+          start: windowStart,
+          end: windowEnd,
+          limit: maxPoints,
+        });
+      } catch (error) {
+        logWarn("Data gap scan failed for candle times", { pair, interval, error: String(error) });
+        continue;
+      }
       const gaps = detectCandleGaps(times, intervalMs, minMissingPoints);
       for (const gap of gaps) {
         const { event, created } = await upsertDataGapEvent({

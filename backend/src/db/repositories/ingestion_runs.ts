@@ -1,5 +1,5 @@
-import { supabase } from "../client";
-import { assertNoError } from "./base";
+import { convexClient } from "../client";
+import { anyApi } from "convex/server";
 
 export type IngestionRunInsert = {
   source_type: string;
@@ -17,9 +17,8 @@ export type IngestionRunInsert = {
 };
 
 export async function createIngestionRun(payload: IngestionRunInsert) {
-  const result = await supabase
-    .from("ingestion_runs")
-    .insert({
+  try {
+    return await convexClient.mutation(anyApi.ingestion_runs.create, {
       source_type: payload.source_type,
       source_id: payload.source_id ?? null,
       feed: payload.feed ?? null,
@@ -32,11 +31,11 @@ export async function createIngestionRun(payload: IngestionRunInsert) {
       coverage_pct: payload.coverage_pct ?? null,
       missing_fields_count: payload.missing_fields_count ?? null,
       parse_confidence: payload.parse_confidence ?? null,
-    })
-    .select("*")
-    .single();
-
-  return assertNoError(result, "create ingestion run");
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`create ingestion run: ${message}`);
+  }
 }
 
 export async function completeIngestionRun(
@@ -52,11 +51,10 @@ export async function completeIngestionRun(
     parseConfidence?: number | null;
   },
 ) {
-  const result = await supabase
-    .from("ingestion_runs")
-    .update({
+  try {
+    const result = await convexClient.mutation(anyApi.ingestion_runs.complete, {
+      id,
       status: payload.status,
-      finished_at: new Date().toISOString(),
       new_count: payload.newCount,
       updated_count: payload.updatedCount,
       error_count: payload.errorCount,
@@ -64,12 +62,15 @@ export async function completeIngestionRun(
       coverage_pct: payload.coveragePct ?? null,
       missing_fields_count: payload.missingFieldsCount ?? null,
       parse_confidence: payload.parseConfidence ?? null,
-    })
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  return assertNoError(result, "complete ingestion run");
+    });
+    if (!result) {
+      throw new Error("missing data");
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`complete ingestion run: ${message}`);
+  }
 }
 
 export async function listIngestionRuns(filters?: {
@@ -79,68 +80,41 @@ export async function listIngestionRuns(filters?: {
   page?: number;
   pageSize?: number;
 }) {
-  const query = supabase
-    .from("ingestion_runs")
-    .select("*", { count: "exact" })
-    .order("started_at", { ascending: false });
-  if (filters?.sourceType) {
-    query.eq("source_type", filters.sourceType);
+  try {
+    const result = await convexClient.query(anyApi.ingestion_runs.list, {
+      source_type: filters?.sourceType,
+      source_id: filters?.sourceId ?? undefined,
+      feed: filters?.feed ?? undefined,
+      page: filters?.page,
+      page_size: filters?.pageSize,
+    });
+    const data = result?.data ?? [];
+    return { data, total: result?.count ?? data.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`list ingestion runs: ${message}`);
   }
-  if (filters?.sourceId !== undefined) {
-    if (filters.sourceId === null) {
-      query.is("source_id", null);
-    } else {
-      query.eq("source_id", filters.sourceId);
-    }
-  }
-  if (filters?.feed !== undefined) {
-    if (filters.feed === null) {
-      query.is("feed", null);
-    } else {
-      query.eq("feed", filters.feed);
-    }
-  }
-  const page = filters?.page ?? 1;
-  const pageSize = filters?.pageSize ?? 25;
-  const from = Math.max(0, (page - 1) * pageSize);
-  const to = from + pageSize - 1;
-  query.range(from, to);
-  const result = await query;
-  const data = assertNoError(result, "list ingestion runs");
-  return { data, total: result.count ?? data.length };
 }
 
 export async function getLatestIngestionRun(sourceType: string, sourceId?: string | null, feed?: string | null) {
-  const query = supabase
-    .from("ingestion_runs")
-    .select("*")
-    .eq("source_type", sourceType)
-    .order("started_at", { ascending: false })
-    .limit(1);
-  if (sourceId === undefined || sourceId === null) {
-    query.is("source_id", null);
-  } else {
-    query.eq("source_id", sourceId);
+  try {
+    return await convexClient.query(anyApi.ingestion_runs.latest, {
+      source_type: sourceType,
+      source_id: sourceId ?? null,
+      feed: feed ?? null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`get latest ingestion run: ${message}`);
   }
-  if (feed === undefined || feed === null) {
-    query.is("feed", null);
-  } else {
-    query.eq("feed", feed);
-  }
-  const result = await query.maybeSingle();
-  return result.data;
 }
 
 export async function markIngestionRunFailed(id: string, errorSummary: string) {
-  const result = await supabase
-    .from("ingestion_runs")
-    .update({
-      status: "failed",
-      finished_at: new Date().toISOString(),
-      error_summary: errorSummary,
-    })
-    .eq("id", id)
-    .select("*")
-    .single();
-  return assertNoError(result, "mark ingestion run failed");
+  return completeIngestionRun(id, {
+    status: "failed",
+    newCount: 0,
+    updatedCount: 0,
+    errorCount: 1,
+    errorSummary,
+  });
 }

@@ -1,23 +1,32 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 import { insertMarketInputSnapshot } from "../db/repositories/market_input_snapshots";
 import { insertTradeDecision } from "../db/repositories/trade_decisions";
-import { insertTrade, updateTradeStatus, updateTradeMetrics } from "../db/repositories/trades";
+import { insertTrade, updateTradeMetrics } from "../db/repositories/trades";
 import { insertTradeExecution } from "../db/repositories/trade_executions";
 import { getAgentConfig } from "../db/repositories/agent_config";
+import { getAgentVersion } from "../db/repositories/agent_versions";
+import { getDatasetVersion } from "../db/repositories/dataset_versions";
 import { rlServiceClient } from "../rl/client";
 import type { InferenceRequest, InferenceResponse, TradeAction } from "../types/rl";
+import { loadEnv } from "../config/env";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { evaluateRiskLimits, fetchRiskLimitSet } from "./risk_limits_service";
 import { getRun, pauseAgentRun } from "./rl_agent_service";
 import { auditRlEvent } from "./rl_audit";
 import { executeTrade } from "./trade_execution";
+import { transitionTradeStatus } from "./trade_state_machine";
 import { evaluateDataSourceGate } from "./data_source_status_service";
+import { evaluateDataIntegrityGate } from "./data_integrity_service";
 import { recordDecisionLatency } from "./rl_metrics";
+import { recordDecisionConfidenceMetric } from "./observability_service";
 import { applySourceGates } from "./source_gating_service";
 import { loadFeatureInputs } from "../rl/data_loader";
 import { getFeatureSetConfigById } from "./feature_set_service";
+import { resolveArtifactUrl } from "./model_artifact_service";
+import { isInstrumentAllowed } from "./instrument_policy";
 
 const VOLATILITY_SPIKE_THRESHOLD = 0.05;
+const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
 
 export type DecisionRequest = {
   runId: string;
@@ -117,12 +126,19 @@ export function mapInferenceToDecision(
   };
 }
 
-async function countOpenPositions(pair: string) {
-  const result = await supabase
+async function countOpenPositions(pair: string, runId?: string | null, startedAt?: string | null) {
+  const query = convex
     .from("trades")
     .select("id", { count: "exact", head: true })
     .eq("instrument", pair)
-    .in("status", ["placed", "filled"]);
+    .in("status", ["placed", "filled"])
+    .is("closed_at", null);
+  if (runId) {
+    query.eq("agent_run_id", runId);
+  } else if (E2E_RUN_ENABLED && startedAt) {
+    query.gte("created_at", startedAt);
+  }
+  const result = await query;
   if (result.error) {
     return 0;
   }
@@ -135,16 +151,40 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   if (run.status !== "running") {
     throw new Error("Run is not active");
   }
+  const config = await getAgentConfig();
+  if (!isInstrumentAllowed(run.pair, config.allowed_instruments ?? [])) {
+    await pauseAgentRun(run.id);
+    throw new Error(`Instrument ${run.pair} is not allowed by agent configuration.`);
+  }
+  const env = loadEnv();
   const simulationFlag = (process.env.ALLOW_LIVE_SIMULATION ?? "").toLowerCase();
   const allowSimulation = process.env.NODE_ENV === "test" || ["1", "true", "yes", "on"].includes(simulationFlag);
   const bypassSourceGate = allowSimulation && Boolean(request.simulateExecutionStatus);
+  const bypassIntegrityGate = allowSimulation && Boolean(request.simulateExecutionStatus);
+  const traceId = crypto.randomUUID();
+
+  const agentVersion = await getAgentVersion(run.agent_version_id);
+  const datasetVersion = run.dataset_version_id ? await getDatasetVersion(run.dataset_version_id) : null;
+  const datasetHash = datasetVersion?.dataset_hash ?? datasetVersion?.checksum ?? null;
+  const featureSetVersionId = run.feature_set_version_id ?? datasetVersion?.feature_set_version_id ?? null;
+  const artifactUri = agentVersion.artifact_uri ?? null;
+  const artifactChecksum = agentVersion.artifact_checksum ?? null;
+  const artifactDownloadUrl = artifactUri ? await resolveArtifactUrl(artifactUri) : null;
 
   const riskLimitSet = await fetchRiskLimitSet(run.risk_limit_set_id);
 
   const sourceGate = await evaluateDataSourceGate(run.pair);
-  const warnings: string[] = [...sourceGate.warnings];
+  const integrityGate = await evaluateDataIntegrityGate({
+    pair: run.pair,
+    candles: request.market.candles,
+  });
+  const warnings: string[] = [
+    ...sourceGate.warnings,
+    ...integrityGate.warnings,
+    ...integrityGate.blockingReasons.map((reason) => `data_integrity:${reason}`),
+  ];
 
-  const featureConfig = await getFeatureSetConfigById(run.feature_set_version_id ?? null);
+  const featureConfig = await getFeatureSetConfigById(featureSetVersionId ?? null);
   const windowStart = request.market.candles?.[0]?.timestamp;
   const windowEnd = request.market.candles?.[request.market.candles.length - 1]?.timestamp;
   const loadedInputs =
@@ -164,9 +204,8 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   const ocr = disabledSources.has("ocr_text") ? [] : featureConfig.includeOcr ? (request.ocr ?? loadedInputs.ocr) : [];
   const recentTrades = disabledSources.has("trades") ? [] : request.recentTrades ?? [];
 
-  const agentConfig = await getAgentConfig();
-  const minConfidenceScore = agentConfig.min_confidence_score ?? null;
-  const allowedSourceIds = agentConfig.allowed_source_ids ?? null;
+  const minConfidenceScore = config.min_confidence_score ?? null;
+  const allowedSourceIds = config.allowed_source_ids ?? null;
 
   const [ideaGate, signalGate, newsGate, ocrGate] = await Promise.all([
     applySourceGates({ signals: ideas, label: "ideas", minConfidenceScore, allowedSourceIds }),
@@ -202,24 +241,60 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
     },
     learningEnabled: run.learning_enabled,
     learningWindowMinutes: run.learning_window_minutes ?? undefined,
+    policyVersion: agentVersion.id,
+    artifactUri: artifactUri ?? undefined,
+    artifactChecksum: artifactChecksum ?? undefined,
+    artifactDownloadUrl: artifactDownloadUrl ?? undefined,
   };
 
   let forcedHoldReason: string | null = null;
-  if (run.mode === "live" && agentConfig.kill_switch) {
+  const setForcedHoldReason = (reason: string) => {
+    if (!forcedHoldReason) {
+      forcedHoldReason = reason;
+    }
+  };
+  if (run.mode === "live" && config.kill_switch && !E2E_RUN_ENABLED) {
     warnings.push("kill_switch_enabled");
-    forcedHoldReason = agentConfig.kill_switch_reason ?? "kill_switch_enabled";
+    setForcedHoldReason(config.kill_switch_reason ?? "kill_switch_enabled");
     auditRlEvent("kill_switch_block", { run_id: run.id, reason: forcedHoldReason });
+  }
+
+  if (env.RL_ENFORCE_PROVENANCE && run.mode === "live") {
+    if (!datasetVersion || !datasetHash) {
+      warnings.push("provenance_dataset_missing");
+      setForcedHoldReason("provenance_dataset_missing");
+    }
+    if (!featureSetVersionId) {
+      warnings.push("provenance_feature_set_missing");
+      setForcedHoldReason("provenance_feature_set_missing");
+    }
+    if (!artifactUri || !artifactChecksum) {
+      warnings.push("provenance_artifact_missing");
+      setForcedHoldReason("provenance_artifact_missing");
+    } else if (!artifactDownloadUrl) {
+      warnings.push("provenance_artifact_unavailable");
+      setForcedHoldReason("provenance_artifact_unavailable");
+    }
+    if (forcedHoldReason) {
+      await pauseAgentRun(run.id);
+    }
   }
   if (!sourceGate.allowed) {
     if (!bypassSourceGate) {
-      forcedHoldReason = "data_source_unavailable";
+      setForcedHoldReason("data_source_unavailable");
+      await pauseAgentRun(run.id);
+    }
+  }
+  if (!integrityGate.allowed) {
+    if (!bypassIntegrityGate) {
+      setForcedHoldReason("data_integrity_block");
       await pauseAgentRun(run.id);
     }
   }
 
   if (!request.market.candles || request.market.candles.length === 0) {
     warnings.push("exchange_maintenance");
-    forcedHoldReason = "exchange_maintenance";
+    setForcedHoldReason("exchange_maintenance");
     await pauseAgentRun(run.id);
   }
 
@@ -236,8 +311,13 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   const rlConfig = loadRlServiceConfig();
   const rawInference = rlConfig.mock ? mockInference(inferencePayload) : await rlServiceClient.infer(inferencePayload);
   const inference = normalizeInference(rawInference);
+  recordDecisionConfidenceMetric({
+    runId: run.id,
+    confidenceScore: inference.decision.confidenceScore,
+    traceId,
+  }).catch(() => {});
 
-  const openPositions = await countOpenPositions(run.pair);
+  const openPositions = await countOpenPositions(run.pair, run.id, run.started_at ?? null);
   const riskEvaluation = evaluateRiskLimits(riskLimitSet, {
     positionSize: inference.decision.size ?? riskLimitSet.max_position_size,
     leverage: riskLimitSet.leverage_cap,
@@ -262,7 +342,48 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   const snapshot = await insertMarketInputSnapshot({
     pair: run.pair,
     captured_at: new Date().toISOString(),
+    dataset_version_id: datasetVersion?.id ?? null,
+    dataset_hash: datasetHash,
+    feature_set_version_id: featureSetVersionId ?? null,
+    agent_version_id: agentVersion.id,
+    artifact_uri: artifactUri,
     market_features_ref: `market:${Date.now()}`,
+    metadata: {
+      window_start: windowStart ?? null,
+      window_end: windowEnd ?? null,
+      input_counts: {
+        ideas: ideas.length,
+        signals: signals.length,
+        news: news.length,
+        ocr: ocr.length,
+        recent_trades: recentTrades.length,
+        candles: request.market.candles?.length ?? 0,
+      },
+      feature_flags: {
+        include_news: featureConfig.includeNews,
+        include_ocr: featureConfig.includeOcr,
+      },
+      source_gate: {
+        allowed: sourceGate.allowed,
+        blocking_sources: sourceGate.blockingSources,
+        disabled_sources: sourceGate.disabledSources,
+        warnings: sourceGate.warnings,
+      },
+      data_integrity_gate: {
+        allowed: integrityGate.allowed,
+        blocking_reasons: integrityGate.blockingReasons,
+        warnings: integrityGate.warnings,
+        provenance: integrityGate.provenance,
+      },
+      provenance: {
+        dataset_version_id: datasetVersion?.id ?? null,
+        dataset_hash: datasetHash,
+        feature_set_version_id: featureSetVersionId ?? null,
+        agent_version_id: agentVersion.id,
+        artifact_uri: artifactUri,
+      },
+      trace_id: traceId,
+    },
   });
 
   const tradeDecision = await insertTradeDecision({
@@ -275,6 +396,8 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
     policy_version_label: decision.policyVersion ?? null,
     risk_check_result: decision.riskCheckResult,
     reason: decision.reason ?? null,
+    reference_price: request.market.lastPrice ?? null,
+    trace_id: traceId,
   });
 
   auditRlEvent("decision", {
@@ -290,6 +413,7 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
       mode: run.mode,
       latencyMs: Date.now() - decisionStart,
       warnings: result.warnings,
+      traceId,
     });
     return result;
   };
@@ -314,6 +438,7 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   const trade = await insertTrade({
     signal_id: null,
     agent_config_id: null,
+    agent_run_id: run.id,
     instrument: run.pair,
     side: decision.action,
     quantity,
@@ -329,36 +454,60 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
     await insertTradeExecution({
       trade_id: trade.id,
       trade_decision_id: tradeDecision.id,
+      execution_kind: "entry",
       exchange_order_id: `sim-${Date.now()}`,
+      idempotency_key: `decision:${tradeDecision.id}`,
+      trace_id: traceId,
+      execution_mode: trade.mode,
+      requested_instrument: trade.instrument,
+      requested_side: trade.side,
+      requested_quantity: trade.quantity,
       filled_quantity: filledQuantity,
       average_price: 0,
       status: request.simulateExecutionStatus,
+      attempt_count: 0,
+      last_attempt_at: null,
     });
 
     if (request.simulateExecutionStatus === "filled") {
-      await updateTradeStatus(trade.id, "filled");
+      await transitionTradeStatus(trade.id, "filled", { reason: "simulation" });
       await updateTradeMetrics(trade.id, { position_size: filledQuantity });
     }
     if (request.simulateExecutionStatus === "failed") {
-      await updateTradeStatus(trade.id, "rejected");
+      await transitionTradeStatus(trade.id, "rejected", { reason: "simulation" });
+    }
+    if (request.simulateExecutionStatus === "partial") {
+      await transitionTradeStatus(trade.id, "partial", { reason: "simulation" });
     }
   } else {
-    const execution = await executeTrade({
-      id: trade.id,
-      trade_decision_id: tradeDecision.id,
-      instrument: trade.instrument,
-      side: trade.side,
-      quantity: trade.quantity,
-      mode: trade.mode,
-      client_order_id: trade.client_order_id ?? null,
-      tp_price: trade.tp_price ?? null,
-      sl_price: trade.sl_price ?? null,
-    });
-    tradeExecutionStatus = execution.status;
-    if (execution.status === "filled") {
-      await updateTradeStatus(trade.id, "filled");
-    } else if (execution.status === "failed") {
-      await updateTradeStatus(trade.id, "rejected");
+    try {
+      const execution = await executeTrade({
+        id: trade.id,
+        trade_decision_id: tradeDecision.id,
+        instrument: trade.instrument,
+        side: trade.side,
+        quantity: trade.quantity,
+        mode: trade.mode,
+        client_order_id: trade.client_order_id ?? null,
+        tp_price: trade.tp_price ?? null,
+        sl_price: trade.sl_price ?? null,
+        idempotency_key: `decision:${tradeDecision.id}`,
+        trace_id: traceId,
+      });
+      tradeExecutionStatus = execution.status;
+      if (execution.status === "filled") {
+        await transitionTradeStatus(trade.id, "filled");
+      } else if (execution.status === "failed") {
+        await transitionTradeStatus(trade.id, "rejected");
+      } else if (execution.status === "partial") {
+        await transitionTradeStatus(trade.id, "partial");
+      }
+    } catch (error) {
+      tradeExecutionStatus = "failed";
+      warnings.push("execution_failed");
+      await transitionTradeStatus(trade.id, "rejected", {
+        reason: error instanceof Error ? error.message : "execution_failed",
+      });
     }
   }
 

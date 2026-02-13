@@ -8,6 +8,9 @@ import { runTopicClusteringJob } from "./topic_clustering";
 import { runNewsIngestJob } from "./news_ingest_job";
 import { runOcrJob } from "./ocr_job";
 import { runDataGapMonitorJob } from "./data_gap_monitor";
+import { runTradeReconciliationJob } from "./trade_reconciliation";
+import { runRetryQueueJob } from "./retry_queue";
+import { runOnlineLearningJob } from "./online_learning_job";
 
 export function registerCoreJobs() {
   const intervalMinutes = Number.parseInt(process.env.TRADINGVIEW_SYNC_INTERVAL_MIN ?? "60", 10);
@@ -71,5 +74,26 @@ export function registerCoreJobs() {
     name: "data-gap-monitor",
     intervalMs: gapInterval * 60 * 1000,
     handler: () => runDataGapMonitorJob(),
+  });
+
+  const reconcileInterval = Number.parseInt(process.env.TRADE_RECONCILE_INTERVAL_MIN ?? "5", 10);
+  registerJob({
+    name: "trade-reconciliation",
+    intervalMs: reconcileInterval * 60 * 1000,
+    handler: () => runTradeReconciliationJob(),
+  });
+
+  const retryIntervalSec = Number.parseInt(process.env.RETRY_QUEUE_INTERVAL_SEC ?? "30", 10);
+  registerJob({
+    name: "retry-queue",
+    intervalMs: retryIntervalSec * 1000,
+    handler: () => runRetryQueueJob(),
+  });
+
+  const learningInterval = Number.parseInt(process.env.RL_ONLINE_LEARNING_INTERVAL_MIN ?? "60", 10);
+  registerJob({
+    name: "online-learning",
+    intervalMs: learningInterval * 60 * 1000,
+    handler: () => runOnlineLearningJob(),
   });
 }

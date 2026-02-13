@@ -7,7 +7,8 @@ test.skip(!process.env.E2E_RUN, "Set E2E_RUN=1 to enable dashboard e2e tests.");
 
 test("Trading safety controls render", async ({ page }) => {
   const base = dashboardBaseUrl || "http://localhost:3000";
-  await page.goto(base);
+  const target = `${base.replace(/\/$/, "")}/controls`;
+  await page.goto(target);
   await expect(page.getByRole("heading", { name: /Trade Controls/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Source Gating/i })).toBeVisible();
 });

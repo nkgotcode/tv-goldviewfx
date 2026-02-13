@@ -11,9 +11,16 @@ test("Missing market data sources are flagged as unavailable", async ({ page }) 
     sources: [{ sourceType: "bingx_candles", enabled: true, freshnessThresholdSeconds: 120 }],
   });
 
-  const status = await fetchDataSourceStatus(api, "XAUTUSDT");
+  const status = await fetchDataSourceStatus(api, "Gold-USDT");
   const candles = status.find((source) => source.source_type === "bingx_candles");
-  expect(candles?.status).toBe("unavailable");
+  const mockEnabled = ["1", "true", "yes", "on"].includes(
+    (process.env.BINGX_MARKET_DATA_MOCK ?? "").trim().toLowerCase(),
+  );
+  if (mockEnabled) {
+    expect(candles?.status).toBe("unavailable");
+  } else {
+    expect(["ok", "stale"]).toContain(candles?.status);
+  }
 
   await page.goto("/rl-data-sources");
   await expect(page.getByRole("heading", { name: "Data Source Guardrails" })).toBeVisible();

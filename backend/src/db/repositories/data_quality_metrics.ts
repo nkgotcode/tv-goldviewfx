@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type DataQualityMetricInsert = {
@@ -12,12 +12,12 @@ export type DataQualityMetricInsert = {
 };
 
 export async function insertDataQualityMetric(payload: DataQualityMetricInsert) {
-  const result = await supabase.from("data_quality_metrics").insert(payload).select("*").single();
+  const result = await convex.from("data_quality_metrics").insert(payload).select("*").single();
   return assertNoError(result, "insert data quality metric");
 }
 
 export async function listDataQualityMetrics(pair?: DataQualityMetricInsert["pair"]) {
-  const query = supabase.from("data_quality_metrics").select("*").order("computed_at", { ascending: false });
+  const query = convex.from("data_quality_metrics").select("*").order("computed_at", { ascending: false });
   if (pair) {
     query.eq("pair", pair);
   }

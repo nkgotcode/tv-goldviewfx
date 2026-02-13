@@ -5,20 +5,30 @@ import {
   listDataSourceStatusWithConfig,
   recordDataSourceStatus,
 } from "../services/data_source_status_service";
+import { recordIngestionLagMetric } from "../services/observability_service";
 import { logInfo, logWarn } from "../services/logger";
 
 export async function runDataSourceMonitor() {
   const statuses = await listDataSourceStatusWithConfig();
 
   await Promise.all(
-    statuses.map((status) =>
-      recordDataSourceStatus({
+    statuses.map(async (status) => {
+      await recordDataSourceStatus({
         pair: status.pair,
         sourceType: status.sourceType,
         lastSeenAt: status.lastSeenAt,
         freshnessThresholdSeconds: status.freshnessThresholdSeconds,
-      }),
-    ),
+      });
+      if (status.lastSeenAt) {
+        const lagSeconds = Math.max(0, (Date.now() - new Date(status.lastSeenAt).getTime()) / 1000);
+        await recordIngestionLagMetric({
+          pair: status.pair,
+          sourceType: status.sourceType,
+          lagSeconds,
+          thresholdSeconds: status.freshnessThresholdSeconds,
+        });
+      }
+    }),
   );
 
   const pairs = Array.from(new Set(statuses.map((status) => status.pair)));

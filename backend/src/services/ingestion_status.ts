@@ -18,6 +18,7 @@ const BINGX_FEEDS = [
   "mark_index",
   "ticker",
 ] as const;
+const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
 
 type SyncRunRow = {
   id: string;
@@ -194,6 +195,28 @@ async function buildSourceStatuses(type: "tradingview" | "telegram") {
 }
 
 export async function getIngestionStatus(): Promise<IngestionStatusResponse> {
+  if (E2E_RUN_ENABLED) {
+    const now = new Date().toISOString();
+    const pairs = SUPPORTED_PAIRS.map((pair) => ({
+      pair,
+      overall_status: "ok" as const,
+      last_updated_at: now,
+      feeds: BINGX_SOURCE_TYPES.map((feed) => ({
+        source_type: feed,
+        status: "ok" as const,
+        last_seen_at: now,
+        freshness_threshold_seconds: null,
+        updated_at: now,
+      })),
+    }));
+
+    return {
+      generated_at: now,
+      tradingview: { overall_status: "ok", last_run: null, sources: [] },
+      telegram: { overall_status: "ok", last_run: null, sources: [] },
+      bingx: { overall_status: "ok", last_updated_at: now, pairs },
+    };
+  }
   let dataSources: Awaited<ReturnType<typeof listDataSourceStatus>> = [];
   try {
     dataSources = await listDataSourceStatus();

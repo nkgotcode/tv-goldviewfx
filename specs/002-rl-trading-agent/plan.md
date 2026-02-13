@@ -12,10 +12,10 @@ Research decisions are captured in /Users/itsnk/Desktop/Coding/tv-goldviewfx/spe
 ## Technical Context
 
 **Language/Version**: TypeScript (latest stable) on Bun (latest stable); Python 3.12+ (latest stable) via uv for RL training/inference service  
-**Primary Dependencies**: Bun, Hono, Supabase JS, Zod, Next.js/React, Nautilus Trader, Stable-Baselines3 (Gymnasium interface), BingX Perpetual REST API (market data + trading)  
+**Primary Dependencies**: Bun, Hono, Convex JS, Zod, Next.js/React, Nautilus Trader, Stable-Baselines3 (Gymnasium interface), BingX Perpetual REST API (market data + trading)  
 **Dependency Policy**: Keep runtimes and libraries on the latest stable releases; update pinned versions promptly.  
-**Storage**: Supabase Postgres for configs, decisions, metrics, and evaluation reports; Supabase Storage for model artifacts and checkpoints  
-**Testing**: `bun test` for TS services; `pytest` for RL service training/inference and data transforms; Playwright E2E; all tests run against local Supabase Docker with seeded data  
+**Storage**: Convex database for configs, decisions, metrics, and evaluation reports; Convex file storage for model artifacts and checkpoints  
+**Testing**: `bun test` for TS services; `pytest` for RL service training/inference and data transforms; Playwright E2E; all tests run against a Convex dev deployment with seeded data  
 **Target Platform**: Linux server/container for backend and RL service; web UI for operators  
 **Project Type**: Web application (frontend + backend) with auxiliary RL service  
 **Performance Goals**: Decision latency within 3 seconds of new market data; continuous learning updates complete within configured window  
@@ -91,7 +91,7 @@ Research tasks:
 - BingX perpetual REST API coverage for chart data (candles) and market microstructure (order book, funding, open interest, mark/index price, trades).
 - Rate-limit and backfill strategies for BingX market data across supported pairs.
 - Patterns for continuous learning that avoid live-session instability (gating, rollback, evaluation).
-- Model artifact storage and versioning approaches compatible with Supabase Postgres + Storage.
+- Model artifact storage and versioning approaches compatible with Convex database + file storage.
 - Interface patterns between Bun services and Python ML services (REST/gRPC, timeouts, retries).
 - Test strategy for unit, integration, and E2E coverage of trading workflows and edge cases.
 

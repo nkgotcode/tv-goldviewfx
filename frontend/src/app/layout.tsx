@@ -1,17 +1,18 @@
 import "./globals.css";
-import { Fraunces, Space_Grotesk } from "next/font/google";
+import { Karla, Marcellus } from "next/font/google";
 import Providers from "./providers";
 
-const spaceGrotesk = Space_Grotesk({
+const karla = Karla({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-sans",
 });
 
-const fraunces = Fraunces({
+const marcellus = Marcellus({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-serif",
+  weight: "400",
 });
 
 export const metadata = {
@@ -25,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${fraunces.variable}`}>
+    <html lang="en" className={`${karla.variable} ${marcellus.variable}`}>
       <body>
         <Providers>{children}</Providers>
       </body>

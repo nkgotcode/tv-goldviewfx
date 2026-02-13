@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type DatasetLineageInsert = {
@@ -8,7 +8,7 @@ export type DatasetLineageInsert = {
 };
 
 export async function insertDatasetLineage(payload: DatasetLineageInsert) {
-  const result = await supabase
+  const result = await convex
     .from("dataset_lineage")
     .insert({
       dataset_id: payload.dataset_id,
@@ -21,6 +21,6 @@ export async function insertDatasetLineage(payload: DatasetLineageInsert) {
 }
 
 export async function getDatasetLineage(datasetId: string) {
-  const result = await supabase.from("dataset_lineage").select("*").eq("dataset_id", datasetId).maybeSingle();
+  const result = await convex.from("dataset_lineage").select("*").eq("dataset_id", datasetId).maybeSingle();
   return assertNoError(result, "get dataset lineage");
 }

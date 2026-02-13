@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("telegram sources endpoints require Supabase configuration", () => {});
+  test.skip("telegram sources endpoints require Convex configuration", () => {});
 } else {
   test("POST /telegram/sources creates a source", async () => {
     const identifier = `channel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

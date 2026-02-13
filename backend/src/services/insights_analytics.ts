@@ -1,4 +1,4 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 
 export type SourceEfficacy = {
   source_type: string;
@@ -21,13 +21,13 @@ export type SentimentPnlCorrelation = {
 export async function getSourceEfficacy(): Promise<{ generated_at: string; sources: SourceEfficacy[] }> {
   const [ideasResult, postsResult, newsResult, signalsResult, tradesResult, sourcesResult, newsSourcesResult] =
     await Promise.all([
-      supabase.from("ideas").select("id, source_id"),
-      supabase.from("telegram_posts").select("id, source_id"),
-      supabase.from("news_items").select("id, source_id"),
-      supabase.from("signals").select("id, source_type, idea_id, telegram_post_id, news_item_id"),
-      supabase.from("trades").select("id, signal_id, status, pnl"),
-      supabase.from("sources").select("id, type, identifier, display_name"),
-      supabase.from("news_sources").select("id, name, identifier"),
+      convex.from("ideas").select("id, source_id"),
+      convex.from("telegram_posts").select("id, source_id"),
+      convex.from("news_items").select("id, source_id"),
+      convex.from("signals").select("id, source_type, idea_id, telegram_post_id, news_item_id"),
+      convex.from("trades").select("id, signal_id, status, pnl"),
+      convex.from("sources").select("id, type, identifier, display_name"),
+      convex.from("news_sources").select("id, name, identifier"),
     ]);
 
   const ideas = ideasResult.data ?? [];
@@ -160,9 +160,9 @@ export async function getSourceEfficacy(): Promise<{ generated_at: string; sourc
 
 export async function getSentimentPnlCorrelation(): Promise<SentimentPnlCorrelation> {
   const [signalsResult, tradesResult, enrichmentsResult] = await Promise.all([
-    supabase.from("signals").select("id, idea_id"),
-    supabase.from("trades").select("id, signal_id, pnl, status"),
-    supabase.from("enrichments").select("idea_id, sentiment_label, sentiment_score"),
+    convex.from("signals").select("id, idea_id"),
+    convex.from("trades").select("id, signal_id, pnl, status"),
+    convex.from("enrichments").select("idea_id, sentiment_label, sentiment_score"),
   ]);
 
   const signals = signalsResult.data ?? [];
@@ -209,7 +209,7 @@ export async function getSentimentPnlCorrelation(): Promise<SentimentPnlCorrelat
 }
 
 export async function getTopicTrends(period?: string) {
-  const query = supabase.from("topic_clusters").select("*").order("window_start", { ascending: false }).limit(20);
+  const query = convex.from("topic_clusters").select("*").order("window_start", { ascending: false }).limit(20);
   if (period) {
     query.eq("period", period);
   }

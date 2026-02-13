@@ -1,13 +1,14 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type TradeInsert = {
   signal_id: string | null;
   agent_config_id: string | null;
+  agent_run_id?: string | null;
   instrument: string;
   side: "long" | "short";
   quantity: number;
-  status: "proposed" | "placed" | "filled" | "cancelled" | "rejected";
+  status: "proposed" | "placed" | "partial" | "filled" | "cancelled" | "rejected";
   mode: "paper" | "live";
   client_order_id?: string | null;
   avg_fill_price?: number | null;
@@ -16,6 +17,7 @@ export type TradeInsert = {
   pnl_pct?: number | null;
   tp_price?: number | null;
   sl_price?: number | null;
+  closed_at?: string | null;
   liquidation_price?: number | null;
   leverage?: number | null;
   margin_type?: string | null;
@@ -28,18 +30,19 @@ export type TradeMetricsUpdate = {
   pnl_pct?: number | null;
   tp_price?: number | null;
   sl_price?: number | null;
+  closed_at?: string | null;
   liquidation_price?: number | null;
   leverage?: number | null;
   margin_type?: string | null;
 };
 
 export async function insertTrade(payload: TradeInsert) {
-  const result = await supabase.from("trades").insert(payload).select("*").single();
+  const result = await convex.from("trades").insert(payload).select("*").single();
   return assertNoError(result, "insert trade");
 }
 
 export async function updateTradeStatus(id: string, status: TradeInsert["status"]) {
-  const result = await supabase
+  const result = await convex
     .from("trades")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id)
@@ -50,7 +53,7 @@ export async function updateTradeStatus(id: string, status: TradeInsert["status"
 }
 
 export async function updateTradeMetrics(id: string, payload: TradeMetricsUpdate) {
-  const result = await supabase
+  const result = await convex
     .from("trades")
     .update({
       ...payload,
@@ -73,7 +76,7 @@ export async function listTrades(filters?: {
   page?: number;
   pageSize?: number;
 }) {
-  const query = supabase
+  const query = convex
     .from("trades")
     .select("*", { count: "exact" })
     .order("created_at", { ascending: false });
@@ -107,6 +110,11 @@ export async function listTrades(filters?: {
 }
 
 export async function getTradeById(id: string) {
-  const result = await supabase.from("trades").select("*").eq("id", id).single();
+  const result = await convex.from("trades").select("*").eq("id", id).single();
   return assertNoError(result, "get trade");
+}
+
+export async function listTradesByStatuses(statuses: TradeInsert["status"][]) {
+  const result = await convex.from("trades").select("*").in("status", statuses);
+  return assertNoError(result, "list trades by status");
 }

@@ -1,4 +1,4 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 
 export type TradingSummary = {
   generated_at: string;
@@ -28,7 +28,7 @@ function toBucket(date: Date) {
 }
 
 export async function getTradingSummary(): Promise<TradingSummary> {
-  const result = await supabase
+  const result = await convex
     .from("trades")
     .select("id, instrument, pnl, position_size, quantity, status, created_at")
     .order("created_at", { ascending: true });
@@ -75,7 +75,7 @@ export async function getTradingSummary(): Promise<TradingSummary> {
 }
 
 export async function getTradingMetrics(): Promise<TradingMetrics> {
-  const result = await supabase
+  const result = await convex
     .from("trades")
     .select("id, pnl, status, created_at")
     .order("created_at", { ascending: true });
@@ -107,7 +107,7 @@ export async function getTradingMetrics(): Promise<TradingMetrics> {
 }
 
 export async function getPromotionMetrics(): Promise<PromotionMetrics> {
-  const result = await supabase
+  const result = await convex
     .from("trades")
     .select("id, pnl, status, created_at")
     .eq("mode", "paper")

@@ -37,7 +37,7 @@
 
 ## Decision 5: Model artifact storage and versioning
 
-**Decision**: Store model artifacts and checkpoints in Supabase Storage and track metadata, evaluation results, and promotion status in Supabase Postgres.
+**Decision**: Store model artifacts and checkpoints in Convex file storage and track metadata, evaluation results, and promotion status in the Convex database.
 
 **Rationale**: Uses existing project infrastructure, enables rollback to prior versions, and keeps artifact access controlled.
 
@@ -51,13 +51,13 @@
 
 **Alternatives considered**: Unit-only coverage (insufficient for multi-service flows), manual-only QA (too risky for trading).
 
-## Decision 7: Local Supabase Docker for tests
+## Decision 7: Convex dev deployment for tests
 
-**Decision**: Run all unit, integration, and E2E test suites against a local Supabase Docker stack with seeded test data.
+**Decision**: Run all unit, integration, and E2E test suites against a Convex dev deployment with seeded test data.
 
 **Rationale**: Ensures deterministic test data, avoids risk to production data, and aligns with least-privilege and audit requirements.
 
-**Alternatives considered**: Shared remote Supabase project (higher risk and non-deterministic), mocked database only (misses integration behaviors).
+**Alternatives considered**: Shared remote Convex project (higher risk and non-deterministic), mocked database only (misses integration behaviors).
 
 ## Decision 8: Data quality gating and lineage
 

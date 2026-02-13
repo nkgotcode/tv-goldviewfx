@@ -460,12 +460,15 @@ export function startBingxMarketDataWs(): BingxWsController | null {
   let reconnectDelay = env.BINGX_WS_RECONNECT_MIN_MS;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let flushInFlight = false;
+  let flushBackoffMs = 0;
+  let nextFlushAt = 0;
 
   const flushIntervalMs = env.BINGX_WS_FLUSH_INTERVAL_MS;
   const indexPriceMaxAgeMs = env.BINGX_WS_INDEX_CACHE_MAX_AGE_MS;
 
   const flushTimer = setInterval(async () => {
     if (flushInFlight) return;
+    if (Date.now() < nextFlushAt) return;
     flushInFlight = true;
 
     const trades = Array.from(pending.trades.values());
@@ -568,8 +571,11 @@ export function startBingxMarketDataWs(): BingxWsController | null {
           ),
         );
       }
+      flushBackoffMs = 0;
     } catch (error) {
       logWarn("BingX WS flush failed", { error: String(error) });
+      flushBackoffMs = Math.min(flushBackoffMs ? flushBackoffMs * 2 : 2000, 30000);
+      nextFlushAt = Date.now() + flushBackoffMs;
       for (const trade of trades) pending.trades.set(`${trade.pair}:${trade.trade_id}`, trade);
       for (const candle of candles) {
         pending.candles.set(`${candle.pair}:${candle.interval}:${candle.open_time}`, candle);
@@ -578,6 +584,9 @@ export function startBingxMarketDataWs(): BingxWsController | null {
       for (const ticker of tickers) pending.tickers.set(ticker.pair, ticker);
       for (const mark of markPrices) pending.markPrices.set(mark.pair, mark);
     } finally {
+      if (flushBackoffMs === 0) {
+        nextFlushAt = 0;
+      }
       flushInFlight = false;
     }
   }, flushIntervalMs);

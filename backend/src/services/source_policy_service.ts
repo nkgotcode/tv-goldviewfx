@@ -1,4 +1,4 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 import { getSourcePolicy } from "../db/repositories/source_policies";
 
 export type SourcePolicyDecision = {
@@ -9,31 +9,36 @@ export type SourcePolicyDecision = {
 };
 
 export async function resolveSignalSource(signalId: string) {
-  const result = await supabase
+  const signalResult = await convex
     .from("signals")
-    .select(
-      "id, source_type, confidence_score, idea_id, telegram_post_id, news_item_id, ideas(source_id), telegram_posts(source_id), news_items(source_id)",
-    )
+    .select("id, source_type, confidence_score, idea_id, telegram_post_id, news_item_id")
     .eq("id", signalId)
     .maybeSingle();
-  const data = result.data;
-  if (!data) {
+  const signal = signalResult.data;
+  if (!signal) {
     return null;
   }
-  const sourceType = data.source_type;
-  const sourceId =
-    sourceType === "tradingview"
-      ? (data.ideas as { source_id?: string } | null)?.source_id ?? null
-      : sourceType === "telegram"
-        ? (data.telegram_posts as { source_id?: string } | null)?.source_id ?? null
-        : sourceType === "news"
-          ? (data.news_items as { source_id?: string } | null)?.source_id ?? null
-          : null;
+  const sourceType = signal.source_type;
+  let sourceId: string | null = null;
+  if (sourceType === "tradingview" && signal.idea_id) {
+    const ideaResult = await convex.from("ideas").select("source_id").eq("id", signal.idea_id).maybeSingle();
+    sourceId = ideaResult.data?.source_id ?? null;
+  } else if (sourceType === "telegram" && signal.telegram_post_id) {
+    const postResult = await convex
+      .from("telegram_posts")
+      .select("source_id")
+      .eq("id", signal.telegram_post_id)
+      .maybeSingle();
+    sourceId = postResult.data?.source_id ?? null;
+  } else if (sourceType === "news" && signal.news_item_id) {
+    const newsResult = await convex.from("news_items").select("source_id").eq("id", signal.news_item_id).maybeSingle();
+    sourceId = newsResult.data?.source_id ?? null;
+  }
 
   return {
     sourceType,
     sourceId,
-    confidenceScore: data.confidence_score ?? 0,
+    confidenceScore: signal.confidence_score ?? 0,
   };
 }
 

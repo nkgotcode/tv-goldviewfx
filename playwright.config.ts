@@ -7,7 +7,7 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
-  globalSetup: "./tests/e2e/fixtures/supabase.ts",
+  globalSetup: "./tests/e2e/fixtures/convex.ts",
   use: {
     baseURL,
     trace: "retain-on-failure",

@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type IdeaReviewUpdate = {
@@ -8,7 +8,7 @@ export type IdeaReviewUpdate = {
 };
 
 export async function updateIdeaReview(ideaId: string, payload: IdeaReviewUpdate) {
-  const result = await supabase
+  const result = await convex
     .from("ideas")
     .update({
       review_status: payload.review_status,

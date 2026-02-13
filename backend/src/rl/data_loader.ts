@@ -1,4 +1,4 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 import type { InferenceRequest } from "../types/rl";
 
 type NewsSignal = NonNullable<InferenceRequest["news"]>[number];
@@ -17,7 +17,7 @@ export async function loadFeatureInputs(params: {
 
   const [newsResult, ocrResult] = await Promise.all([
     includeNews
-      ? supabase
+      ? convex
           .from("signals")
           .select("id, source_type, confidence_score, generated_at, payload_summary")
           .eq("source_type", "news")
@@ -27,7 +27,7 @@ export async function loadFeatureInputs(params: {
           .limit(limit)
       : Promise.resolve({ data: [] }),
     includeOcr
-      ? supabase
+      ? convex
           .from("idea_media")
           .select("id, ocr_text, ocr_confidence, updated_at")
           .eq("ocr_status", "processed")

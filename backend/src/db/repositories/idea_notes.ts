@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type IdeaNoteInsert = {
@@ -8,7 +8,7 @@ export type IdeaNoteInsert = {
 };
 
 export async function insertIdeaNote(payload: IdeaNoteInsert) {
-  const result = await supabase
+  const result = await convex
     .from("idea_notes")
     .insert({
       idea_id: payload.idea_id,
@@ -21,7 +21,7 @@ export async function insertIdeaNote(payload: IdeaNoteInsert) {
 }
 
 export async function listIdeaNotes(ideaId: string) {
-  const result = await supabase
+  const result = await convex
     .from("idea_notes")
     .select("*")
     .eq("idea_id", ideaId)

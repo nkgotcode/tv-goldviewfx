@@ -2,12 +2,12 @@ import { test, expect } from "bun:test";
 import { fileURLToPath } from "url";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 const htmlPath = fileURLToPath(new URL("../../../tradingview.html", import.meta.url));
 
 if (!hasEnv) {
-  test.skip("sync endpoint requires Supabase configuration", () => {});
+  test.skip("sync endpoint requires Convex configuration", () => {});
 } else {
   test("POST /sync/tradingview triggers a sync run", async () => {
     process.env.TRADINGVIEW_HTML_PATH = htmlPath;

@@ -3,10 +3,10 @@ import { rlApiRequest } from "../fixtures/rl_api";
 import { startAgentRun } from "../../src/services/rl_agent_service";
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("data quality routes require Supabase configuration", () => {});
+  test.skip("data quality routes require Convex configuration", () => {});
 } else {
   test("data quality status endpoint returns metrics", async () => {
     const response = await rlApiRequest("/data-quality/status?pair=Gold-USDT", { method: "GET" });

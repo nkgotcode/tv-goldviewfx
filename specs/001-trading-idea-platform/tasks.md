@@ -44,8 +44,8 @@ description: "Task list template for feature implementation"
 
 - [X] T007 Create shared domain types and schemas in `packages/shared/src/types.ts`, `packages/shared/src/schemas.ts`
 - [X] T008 Create environment config loader in `backend/src/config/env.ts`
-- [X] T009 Create Supabase client and repository base in `backend/src/db/client.ts`, `backend/src/db/repositories/base.ts`
-- [X] T010 Add database migrations and update schema in `supabase/migrations/001_trading_idea_platform.sql`, `schema.sql`
+- [X] T009 Create Convex client and repository base in `backend/src/db/client.ts`, `backend/src/db/repositories/base.ts`
+- [X] T010 Add database model updates in `convex/data.ts`
 - [X] T011 Add logging and error middleware in `backend/src/services/logger.ts`, `backend/src/api/middleware/error.ts`
 - [X] T012 [P] Add content hashing and dedup helpers in `backend/src/services/dedup.ts`
 - [X] T013 Add auth and validation middleware in `backend/src/api/middleware/auth.ts`, `backend/src/api/middleware/validate.ts`
@@ -218,7 +218,7 @@ description: "Task list template for feature implementation"
 - [X] T075 [US4] Add trade execution drill-down with fills and PnL styling in `frontend/src/components/TradeTable.tsx`, `frontend/src/app/globals.css`
 - [X] T076 [US1] Add TradingView HTML toggle, no-cache fetch, and HTTP timeouts in `backend/src/integrations/tradingview/client.ts`, `backend/src/services/tradingview_sync.ts`, `backend/tests/integration/sync_tradingview.test.ts`, `backend/tests/integration/ideas_dedup.test.ts`, `backend/src/config/env.ts`
 - [X] T077 [US3] Replace CCXT with direct BingX adapter, client order tagging, and live execution metrics in `backend/src/integrations/exchange/bingx_client.ts`, `backend/src/services/trade_execution.ts`, `backend/src/agents/trading_agent.ts`, `backend/src/config/env.ts`, `backend/src/db/repositories/trades.ts`
-- [X] T078 Update docs for BingX, pagination, and Supabase CLI workflow in `README.md`, `specs/001-trading-idea-platform/quickstart.md`, `AGENTS.md`, `docs/security-checklist.md`, `docs/production-ops.md`
+- [X] T078 Update docs for BingX, pagination, and Convex CLI workflow in `README.md`, `specs/001-trading-idea-platform/quickstart.md`, `AGENTS.md`, `docs/security-checklist.md`, `docs/production-ops.md`
 - [X] T079 [US4] Add dashboard dark mode toggle and theme variables in `frontend/src/components/Layout.tsx`, `frontend/src/app/globals.css`
 
 ---
@@ -227,7 +227,7 @@ description: "Task list template for feature implementation"
 
 **Goal**: Provide full analytics and controls for TradingView, BingX, and Telegram ingestion plus paper/live trading modes.
 
-- [X] T080 [US4] Add ingestion ops data model to unify TradingView, Telegram, and BingX run tracking (new `ingestion_runs`, `ingestion_configs`, and `ops_audit_events` tables with indexes) in `supabase/migrations/008_ops_ingestion.sql` so the dashboard can show run history, status, and control state consistently across sources and feeds.
+- [X] T080 [US4] Add ingestion ops data model to unify TradingView, Telegram, and BingX run tracking (new `ingestion_runs`, `ingestion_configs`, and `ops_audit_events` tables with indexes) in `convex/data.ts` so the dashboard can show run history, status, and control state consistently across sources and feeds.
 - [X] T081 [US4] Add ingestion ops repositories and status computation (`backend/src/db/repositories/ingestion_runs.ts`, `backend/src/db/repositories/ingestion_configs.ts`, `backend/src/db/repositories/ops_audit_events.ts`, `backend/src/services/ingestion_status.ts`) to back `/ops/ingestion/status`, `/ops/ingestion/runs`, and `/ops/audit` API responses.
 - [X] T082 [US4] Wire TradingView + Telegram ingestion to record runs and status (create `ingestion_runs` on start/end, update lag + error summaries) in `backend/src/services/tradingview_sync.ts`, `backend/src/services/telegram_ingest.ts`, `backend/src/jobs/registry.ts` so `/ops/ingestion/status` reflects actual sync health.
 - [X] T083 [US4] Wire BingX ingestion feeds to per-feed status + runs (candles, trades, order book, funding, open interest, mark/index price, tickers) in `backend/src/services/bingx_market_data_ingest.ts`, `backend/src/jobs/bingx_market_data.ts` to support `/ops/ingestion/status` and `/ops/ingestion/runs` with feed-level clarity.
@@ -261,7 +261,7 @@ description: "Task list template for feature implementation"
 **Goal**: Deliver source efficacy, sentiment vs PnL, and topic trend analytics in the dashboard.
 
 - [X] T099 [US4] Add analytics service for source efficacy + sentiment/PnL correlation in `backend/src/services/insights_analytics.ts` and expose via `/ops/insights/*` routes in `backend/src/api/routes/ops_insights.ts`.
-- [X] T100 [US4] Add topic clustering job and storage in `backend/src/services/topic_clustering.ts`, `backend/src/jobs/topic_clustering.ts`, and `supabase/migrations/009_topic_clusters.sql` for weekly/monthly trend summaries.
+- [X] T100 [US4] Add topic clustering job and storage in `backend/src/services/topic_clustering.ts`, `backend/src/jobs/topic_clustering.ts`, and `convex/data.ts` for weekly/monthly trend summaries.
 - [X] T101 [US4] Add analytics API client methods in `frontend/src/services/ops.ts` for source efficacy, sentiment vs PnL, and topic trends.
 - [X] T102 [US4] Add analytics UI panels in `frontend/src/components/SourceEfficacyPanel.tsx`, `frontend/src/components/SentimentPnlChart.tsx`, `frontend/src/components/TopicTrendsPanel.tsx`, `frontend/src/app/page.tsx`.
 - [X] T103 [US4] Add integration + E2E tests for analytics endpoints and UI in `backend/tests/integration/ops_insights.test.ts`, `tests/e2e/dashboard-analytics.spec.ts`, `frontend/tests/AnalyticsPanels.test.tsx`.
@@ -272,7 +272,7 @@ description: "Task list template for feature implementation"
 
 **Goal**: Add review states, notes, audit history, and RBAC protections for operational actions.
 
-- [X] T104 [US4] Add review workflow tables and enrichment audit history in `supabase/migrations/010_workflow_governance.sql` (idea review state/notes, enrichment_runs, enrichment_revisions, role_assignments).
+- [X] T104 [US4] Add review workflow tables and enrichment audit history in `convex/data.ts` (idea review state/notes, enrichment_runs, enrichment_revisions, role_assignments).
 - [X] T105 [US4] Add repositories + services for reviews/notes/audit history in `backend/src/db/repositories/idea_reviews.ts`, `backend/src/db/repositories/idea_notes.ts`, `backend/src/db/repositories/enrichment_runs.ts`, `backend/src/services/idea_review_service.ts`.
 - [X] T106 [US4] Add RBAC middleware and role assignment helpers in `backend/src/api/middleware/rbac.ts`, `backend/src/services/rbac_service.ts`, and wire into `backend/src/api/routes/agent.ts`, `backend/src/api/routes/ops_ingestion.ts` to block analyst writes.
 - [X] T107 [US4] Add review + notes API routes in `backend/src/api/routes/idea_reviews.ts`, `backend/src/api/routes/idea_notes.ts`, `backend/src/api/routes/enrichment_runs.ts`.
@@ -285,7 +285,7 @@ description: "Task list template for feature implementation"
 
 **Goal**: Add kill switch, promotion gates, and per-source gating for live trading safety.
 
-- [X] T110 [US3] Extend agent configuration + source gating schema in `supabase/migrations/011_trading_safety.sql` (kill switch fields, promotion gate thresholds, min confidence, allowed sources).
+- [X] T110 [US3] Extend agent configuration + source gating schema in `convex/data.ts` (kill switch fields, promotion gate thresholds, min confidence, allowed sources).
 - [X] T111 [US3] Implement kill switch + promotion gate checks in `backend/src/services/risk_engine.ts`, `backend/src/services/trade_execution.ts`, `backend/src/agents/trading_agent.ts`, and validate in `backend/src/api/routes/agent.ts`.
 - [X] T112 [US3] Add source policy repository + gating logic in `backend/src/db/repositories/source_policies.ts`, `backend/src/services/source_policy_service.ts`, `backend/src/services/signal_builder.ts`.
 - [X] T113 [US4] Add trading safety controls in dashboard UI (kill switch, promotion gate status, source gating) in `frontend/src/components/TradeControls.tsx`, `frontend/src/components/SourceGatingPanel.tsx`.
@@ -297,10 +297,10 @@ description: "Task list template for feature implementation"
 
 **Goal**: Ingest news and enrich ideas with OCR from chart images.
 
-- [X] T115 [US6] Add news ingestion tables + repositories in `supabase/migrations/012_news_ingestion.sql`, `backend/src/db/repositories/news_sources.ts`, `backend/src/db/repositories/news_items.ts`.
+- [X] T115 [US6] Add news ingestion tables + repositories in `convex/data.ts`, `backend/src/db/repositories/news_sources.ts`, `backend/src/db/repositories/news_items.ts`.
 - [X] T116 [US6] Implement news ingestion client/parser/service/job in `backend/src/integrations/news/client.ts`, `backend/src/integrations/news/parser.ts`, `backend/src/services/news_ingest.ts`, `backend/src/jobs/news_ingest_job.ts`, and routes in `backend/src/api/routes/news.ts`.
 - [X] T117 [US6] Wire news items into signals + analytics in `backend/src/services/signal_builder.ts`, `backend/src/services/insights_analytics.ts`.
-- [X] T118 [US8] Add OCR media storage and processing in `supabase/migrations/013_ocr_enrichment.sql`, `backend/src/db/repositories/idea_media.ts`, `backend/src/services/ocr.ts`, `backend/src/jobs/ocr_job.ts`, and update TradingView parser in `backend/src/integrations/tradingview/parser.ts` to capture image URLs.
+- [X] T118 [US8] Add OCR media storage and processing in `convex/data.ts`, `backend/src/db/repositories/idea_media.ts`, `backend/src/services/ocr.ts`, `backend/src/jobs/ocr_job.ts`, and update TradingView parser in `backend/src/integrations/tradingview/parser.ts` to capture image URLs.
 - [X] T119 [US8] Add OCR endpoints and UI display in `backend/src/api/routes/idea_ocr.ts`, `frontend/src/components/IdeaOcrPanel.tsx`, `frontend/src/components/IdeaTable.tsx`.
 - [X] T120 [US6] Add integration + E2E tests for news + OCR in `backend/tests/integration/news_ingest.test.ts`, `backend/tests/integration/idea_ocr.test.ts`, `tests/e2e/news-ocr.spec.ts`.
 - [X] T121 [US4] Update API contract for ops/insights, governance, news, OCR, and gating endpoints in `specs/001-trading-idea-platform/contracts/api.yaml`.

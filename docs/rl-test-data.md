@@ -1,52 +1,59 @@
-# RL Test Data and Local Supabase
+# RL Test Data and Convex Dev Deployments
 
-This feature requires all unit, integration, and E2E tests to run against a local Supabase Docker stack with deterministic seed data.
+This feature requires all unit, integration, and E2E tests to run against a Convex dev deployment with predictable data.
 
-## Local Supabase Docker Requirement
+## Convex Dev Requirement
 
-- All test suites MUST use the local Supabase Docker stack (no shared or production databases).
-- Tests should fail fast if `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` do not point to the local stack.
-- Local Supabase Docker provides repeatable data and aligns with least-privilege requirements.
-- Use `./scripts/supabase-test.sh` to start/reset/seed the local stack via Supabase CLI.
-- Local Supabase ports are configured in `supabase/config.toml` (API 55421, DB 55422, Studio 55423, Inbucket 55424, Analytics 55427, Analytics Syslog 55428).
+- All test suites MUST use a Convex dev deployment (no shared or production databases).
+- Tests should fail fast if `CONVEX_URL` is missing.
+- Use `npx convex dev` to create or attach a dev deployment and populate `.env.local`.
+- Convex schema/indexes (including `bingx_candles`) are applied on `npx convex dev`;
+  make sure the schema is loaded before running dataset-heavy tests.
 
-## Seed Data Sources
+## Seed Data Strategy
 
-- Core seed data: `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/seed/rl_agent_seed.sql`
-- Edge case seed data: `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/seed/rl_agent_edge_seed.sql`
-- BingX market data fixtures (candles, order book, funding, open interest, mark/index price) are included in RL seed data as it is expanded.
+- Tests are primarily self-seeding through API calls and fixtures.
+- If you need deterministic datasets, export legacy data and import JSONL files using:
+  - `scripts/export-legacy-data.ts`
+  - `npx convex import --table <tableName> <path>`
 
 ## Test Data Loading
 
-- Backend integration tests load seeds in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/setup.ts` via the Supabase CLI.
-- E2E tests reset + seed via `/Users/itsnk/Desktop/Coding/tv-goldviewfx/tests/e2e/fixtures/supabase.ts`.
-- RL service tests use synthetic fixtures in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/fixtures/`.
-  - Include BingX market data fixtures for candles, trades, order book, and funding history.
+- Backend integration tests require `CONVEX_URL` (see `backend/tests/setup.ts`).
+- E2E tests validate `CONVEX_URL` via `tests/e2e/fixtures/convex.ts`.
+- RL service tests use synthetic fixtures in `backend/rl-service/tests/fixtures/`.
+
+## Phase 12 Model Stack Tests
+
+- Deterministic dataset snapshots are exercised in RL service unit tests (`backend/rl-service/tests/unit/test_dataset_hash.py`).
+- Training artifacts are generated in RL service integration tests (`backend/rl-service/tests/integration/test_training_api.py`).
+- Evaluation backtests are covered in RL service integration tests (`backend/rl-service/tests/integration/test_evaluation_api.py`) and backend/E2E flows.
+- The E2E training pipeline is covered in `tests/e2e/rl-training-flow.spec.ts` against a live RL service instance.
 
 ## Environment Variables
 
-- `SUPABASE_URL` (local API URL)
-- `SUPABASE_SERVICE_ROLE_KEY` (local service role key)
+- `CONVEX_URL` (Convex deployment URL)
 - `E2E_API_BASE_URL` (backend API base URL)
 - `API_TOKEN` (if auth is required for E2E requests)
 - `TRADINGVIEW_USE_HTML` (set true to use `TRADINGVIEW_HTML_PATH` fixtures)
 - `TRADINGVIEW_HTML_PATH` (path to `tradingview.html` fixture)
 - `FETCH_FULL` (set false for E2E to avoid external idea page fetches)
 - `TELEGRAM_MESSAGES_PATH` (path to Telegram fixture JSON for tests)
-- `RL_SERVICE_MOCK` (set true to stub RL service calls in backend tests)
+- `RL_SERVICE_URL` (RL service base URL; defaults to `http://localhost:9101`)
 - `ALLOW_LIVE_SIMULATION` (set true to simulate live executions without exchange credentials)
 
 ## Expected Workflow
 
-1. Start the local Supabase Docker stack.
-2. Reset + seed the local database via Supabase CLI (`supabase db reset --local`).
+1. Run `npx convex dev` (or set `CONVEX_URL` explicitly).
+2. Optionally import seed data via `npx convex import`.
 3. Run backend unit + integration tests.
 4. Run RL service unit + integration tests using `uv` (`uv run pytest`).
-5. Start the backend with fixture envs (`TRADINGVIEW_USE_HTML=true`, `FETCH_FULL=false`, `TELEGRAM_MESSAGES_PATH=...`) for E2E determinism.
-6. Run E2E tests.
-7. Or run the scripted flow via `./scripts/e2e-local.sh`.
+5. Start the RL service (`uv run uvicorn server:app --host 0.0.0.0 --port 9101`).
+6. Start the backend with fixture envs (`TRADINGVIEW_USE_HTML=true`, `FETCH_FULL=false`, `TELEGRAM_MESSAGES_PATH=...`) for E2E determinism.
+7. Run E2E tests.
+8. Or run the scripted flow via `./scripts/e2e-local.sh`.
 
 ## Guardrails
 
 - Never run tests against production credentials.
-- Test data resets must be idempotent to allow repeated runs.
+- Seed data resets must be idempotent to allow repeated runs.

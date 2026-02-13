@@ -3,10 +3,10 @@ import { insertRiskLimitSet } from "../../src/db/repositories/risk_limit_sets";
 import { insertAgentVersion } from "../../src/db/repositories/agent_versions";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("rl agent runs require Supabase configuration", () => {});
+  test.skip("rl agent runs require Convex configuration", () => {});
 } else {
   test("agent run lifecycle", async () => {
     const riskLimit = await insertRiskLimitSet({
@@ -22,7 +22,7 @@ if (!hasEnv) {
     await insertAgentVersion({
       name: `Run Version ${Date.now()}`,
       status: "promoted",
-      artifact_uri: "supabase://models/test",
+      artifact_uri: "convex://models/test",
     });
 
     const startResponse = await rlApiRequest("/agents/gold-rl-agent/start", {

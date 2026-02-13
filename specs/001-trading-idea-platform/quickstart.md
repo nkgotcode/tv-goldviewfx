@@ -6,7 +6,7 @@
 ## Prerequisites
 
 - Latest stable Bun and TypeScript installed
-- Supabase project with Postgres access
+- Convex project (dev deployment)
 - TradingView profile access and Telegram premium access
 - BingX credentials for futures trading (paper mode by default)
 - News feed credentials for macro/gold sources (if enabled)
@@ -17,8 +17,7 @@
 
 Create an environment file for backend services:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `CONVEX_URL`
 - `TRADINGVIEW_PROFILE_URL` (e.g., https://www.tradingview.com/u/Goldviewfx/)
 - `TRADINGVIEW_HTML_PATH` (optional fixture path for local tests)
 - `TRADINGVIEW_USE_HTML` (optional; set true to force HTML fixtures)
@@ -86,14 +85,10 @@ Create an environment file for the dashboard:
 
 ## Database Setup
 
-- Apply the base schema in /Users/itsnk/Desktop/Coding/tv-goldviewfx/schema.sql
-  and add migrations for new entities defined in
-  /Users/itsnk/Desktop/Coding/tv-goldviewfx/specs/001-trading-idea-platform/data-model.md.
-- Enable pgvector in Supabase for similarity storage.
-- Ensure deduplication indexes on (source_id, content_hash) and the
-  duplicate_of_id fields are included.
-- Assign operator/analyst roles in the roles table before enabling live trading
-  controls in the dashboard.
+- Define tables and query patterns in `convex/data.ts`.
+- Store similarity embeddings as document fields.
+- Ensure deduplication keys (source_id + content_hash, duplicate_of_id) are enforced in logic.
+- Assign operator/analyst roles before enabling live trading controls in the dashboard.
 
 ## Run Backend Services
 

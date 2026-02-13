@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type DataSourceConfigInsert = {
@@ -22,7 +22,7 @@ export type DataSourceConfigInsert = {
 };
 
 export async function upsertDataSourceConfig(payload: DataSourceConfigInsert) {
-  const result = await supabase
+  const result = await convex
     .from("data_source_configs")
     .upsert(payload, { onConflict: "pair,source_type" })
     .select("*")
@@ -31,7 +31,7 @@ export async function upsertDataSourceConfig(payload: DataSourceConfigInsert) {
 }
 
 export async function listDataSourceConfigs(pair?: DataSourceConfigInsert["pair"]) {
-  const query = supabase.from("data_source_configs").select("*").order("source_type", { ascending: true });
+  const query = convex.from("data_source_configs").select("*").order("source_type", { ascending: true });
   if (pair) {
     query.eq("pair", pair);
   }
@@ -40,7 +40,7 @@ export async function listDataSourceConfigs(pair?: DataSourceConfigInsert["pair"
 }
 
 export async function getDataSourceConfig(pair: DataSourceConfigInsert["pair"], sourceType: DataSourceConfigInsert["source_type"]) {
-  const result = await supabase
+  const result = await convex
     .from("data_source_configs")
     .select("*")
     .eq("pair", pair)

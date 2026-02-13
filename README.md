@@ -37,6 +37,7 @@ https://github.com/coleam00/ralph-loop-quickstart
 - Run the loop with `./ralph.sh 20` (adjust iterations as needed).
 
 See `docs/development-workflow.md` for the logging format and requirements.
+Production hardening and model stack completion tasks live in `prd.md` and `specs/002-rl-trading-agent/tasks.md` (Phases 8 + 12).
 
 ## Dashboard (Next.js)
 
@@ -49,6 +50,10 @@ bun run dev
 The dashboard expects the backend API on `http://localhost:8787` and uses the
 latest stable Next.js release.
 Use the header toggle to switch between light and dark modes.
+The landing dashboard surfaces the system atlas plus links into dedicated views:
+`/controls`, `/ops`, `/insights`, `/library`, `/ingestion`, `/rl-agent`, `/rl-ops`,
+`/rl-data-sources`, and `/rl-evaluations`.
+Market tape panels use KLineChart overlays to annotate trades and backtests.
 
 ## RL service (Python 3.12+ + uv)
 
@@ -66,17 +71,29 @@ cd backend/rl-service
 uv run uvicorn server:app --host 0.0.0.0 --port 9101
 ```
 
-## Supabase migrations (production)
+## Convex deployments
 
-- Authenticate and link the project before applying migrations:
+- Start a dev deployment and generate Convex config:
 
 ```bash
-supabase login --token "$SUPABASE_ACCESS_TOKEN"
-supabase link --project-ref "<project-ref>"
-supabase db push
+npx convex dev
 ```
 
-See `docs/production-ops.md` for cleanup queries and migration checks.
+- Deploy functions and schema updates to production:
+
+```bash
+npx convex deploy
+```
+
+- Import/export data as needed:
+
+```bash
+npx convex import --table <tableName> <path>
+npx convex export --path <directoryPath>
+```
+
+See `docs/production-ops.md` for deployment and data import/export notes.
+For legacy data migration, see `docs/convex-migration.md`.
 
 ## TradingView sync
 
@@ -98,16 +115,13 @@ See `docs/production-ops.md` for cleanup queries and migration checks.
 - Scheduling uses `TELEGRAM_INGEST_INTERVAL_MIN` (default 60) unless overridden by ops
   ingestion config for that source.
 
-## Testing (local Supabase Docker)
+## Testing (Convex dev deployment)
 
-- All unit, integration, and E2E tests must run against a local Supabase Docker stack with seeded data.
+- All unit, integration, and E2E tests require `CONVEX_URL` pointing at a Convex dev deployment.
 - Follow the workflow in `docs/rl-test-data.md` before running test suites.
-- Local Supabase ports are non-default per `supabase/config.toml` (API 55421, DB 55422, Studio 55423, Inbucket 55424, Analytics 55427, Analytics Syslog 55428).
-- Start local Supabase with: `supabase start`
-- Reset + seed with: `supabase db reset --local` (or `./scripts/supabase-test.sh`)
 - For deterministic E2E ingestion runs, start the backend with:
   `TRADINGVIEW_USE_HTML=true TRADINGVIEW_HTML_PATH=../tradingview.html FETCH_FULL=false TELEGRAM_MESSAGES_PATH=../tests/e2e/fixtures/telegram_messages.json`
-- To run the fully scripted E2E flow (Supabase + backend + frontend + Playwright): `./scripts/e2e-local.sh`
+- To run the fully scripted E2E flow (Convex + backend + frontend + Playwright): `./scripts/e2e-local.sh`
 - The E2E script auto-selects free backend/frontend ports and sets `BINGX_MARKET_DATA_MOCK=true` to avoid live BingX calls.
 
 ## BingX perpetuals (GOLD-USDT)
@@ -138,6 +152,10 @@ See `docs/production-ops.md` for cleanup queries and migration checks.
   beyond the API’s recent-trade window.
 - Open interest and mark/index prices are snapshotted on each ingest run to build
   time-series history from the moment ingestion starts.
+- BingX candles are stored in Convex with an indexed `(pair, interval, open_time)` key
+  for efficient range reads. Dataset builds prefer Convex candles and only top up
+  missing head/tail bars from the live BingX API to stay fresh without overloading
+  the exchange.
 
 ## BingX WebSocket market data
 

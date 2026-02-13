@@ -1,5 +1,5 @@
-import { supabase } from "../../client";
-import { assertNoError } from "../base";
+import { convexClient } from "../../client";
+import { anyApi } from "convex/server";
 
 export type BingxOpenInterestInsert = {
   pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
@@ -8,25 +8,44 @@ export type BingxOpenInterestInsert = {
   source?: string | null;
 };
 
+const MAX_OPEN_INTEREST_UPSERT_BATCH = 200;
+
+async function upsertBingxOpenInterestBatch(rows: BingxOpenInterestInsert[]) {
+  try {
+    return await convexClient.mutation(anyApi.bingx_open_interest.upsertBatch, { rows });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`upsert bingx open interest: ${message}`);
+  }
+}
+
 export async function upsertBingxOpenInterest(rows: BingxOpenInterestInsert[]) {
   if (rows.length === 0) return [];
-  const result = await supabase
-    .from("bingx_open_interest")
-    .upsert(rows, { onConflict: "pair,captured_at" })
-    .select("*");
-  return assertNoError(result, "upsert bingx open interest");
+  if (rows.length <= MAX_OPEN_INTEREST_UPSERT_BATCH) {
+    return upsertBingxOpenInterestBatch(rows);
+  }
+  const results: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < rows.length; i += MAX_OPEN_INTEREST_UPSERT_BATCH) {
+    const batch = rows.slice(i, i + MAX_OPEN_INTEREST_UPSERT_BATCH);
+    try {
+      results.push(...(await upsertBingxOpenInterestBatch(batch)));
+    } catch (error) {
+      if (batch.length <= 1) {
+        throw error;
+      }
+      const mid = Math.ceil(batch.length / 2);
+      results.push(...(await upsertBingxOpenInterest(batch.slice(0, mid))));
+      results.push(...(await upsertBingxOpenInterest(batch.slice(mid))));
+    }
+  }
+  return results;
 }
 
 export async function getLatestOpenInterestTime(pair: BingxOpenInterestInsert["pair"]) {
-  const result = await supabase
-    .from("bingx_open_interest")
-    .select("captured_at")
-    .eq("pair", pair)
-    .order("captured_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (result.error) {
-    throw new Error(`get latest open interest time: ${result.error.message}`);
+  try {
+    return await convexClient.query(anyApi.bingx_open_interest.latestTime, { pair });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`get latest open interest time: ${message}`);
   }
-  return result.data?.captured_at ?? null;
 }

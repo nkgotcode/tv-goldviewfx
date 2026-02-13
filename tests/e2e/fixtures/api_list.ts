@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export function readListResponse<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) {
     return payload as T[];
@@ -9,4 +11,13 @@ export function readListResponse<T>(payload: unknown): T[] {
     }
   }
   return [];
+}
+
+export function parseListResponse<T>(schema: z.ZodType<T>, payload: unknown): T[] {
+  const list = readListResponse<T>(payload);
+  return list.map((item) => schema.parse(item));
+}
+
+export function parseSingleResponse<T>(schema: z.ZodType<T>, payload: unknown): T {
+  return schema.parse(payload);
 }

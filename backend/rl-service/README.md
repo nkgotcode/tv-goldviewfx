@@ -38,8 +38,8 @@ uv run uvicorn server:app --host 0.0.0.0 --port 9101
 - `RL_SERVICE_LOG_LEVEL` (default `info`)
 - `RL_SERVICE_REQUEST_TIMEOUT_MS` (default `15000`)
 - `RL_MODEL_REGISTRY_PATH` (default `./models`)
-- `RL_ARTIFACT_BUCKET` (optional Supabase Storage bucket name)
-- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (optional for future artifact access)
+- `RL_ARTIFACT_BUCKET` (optional Convex file storage tag)
+- `CONVEX_URL` (Convex deployment URL for market data access)
 
 ## Notes
 

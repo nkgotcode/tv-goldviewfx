@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { apiRequest } from "./fixtures";
+import { parseListResponse } from "./fixtures/api_list";
+import { ideaSchema, tradeSchema } from "./fixtures/schemas";
 
 test.skip(!process.env.E2E_RUN, "Set E2E_RUN=1 to enable agent edge tests.");
 
@@ -10,7 +12,7 @@ test("Agent rejects trades when risk rules fail", async () => {
 
   const ideasResponse = await api.get("/ideas");
   expect(ideasResponse.ok()).toBeTruthy();
-  const ideas = await ideasResponse.json();
+  const ideas = parseListResponse(ideaSchema, await ideasResponse.json());
   if (!Array.isArray(ideas) || ideas.length === 0) {
     test.skip(true, "No ideas available for enrichment");
   }
@@ -27,6 +29,6 @@ test("Agent rejects trades when risk rules fail", async () => {
 
   const tradesResponse = await api.get("/trades?status=rejected");
   expect(tradesResponse.ok()).toBeTruthy();
-  const trades = await tradesResponse.json();
+  const trades = parseListResponse(tradeSchema, await tradesResponse.json());
   expect(Array.isArray(trades)).toBe(true);
 });

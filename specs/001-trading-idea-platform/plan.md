@@ -9,7 +9,7 @@
 
 Build an ingestion, enrichment, and trading platform that syncs TradingView
 ideas, enriches them with sentiment and similarity data, stores everything in
-Supabase, and powers a gold futures trading agent (BingX perpetuals) with a
+Convex, and powers a gold futures trading agent (BingX perpetuals) with a
 monitoring dashboard, including light/dark theme switching for operators.
 The implementation will split backend services (ingestion, enrichment, trading,
 API) from a Next.js (latest stable) operator dashboard, with explicit risk controls,
@@ -27,9 +27,9 @@ integrations for news ingestion and optional OCR on chart images.
 ## Technical Context
 
 **Language/Version**: TypeScript (latest stable) on Bun (latest stable)  
-**Primary Dependencies**: Bun runtime, Cheerio, Supabase JS client, Zod, Hono, BingX API (direct), Next.js (latest stable), React, refine.dev, shadcn/ui  
+**Primary Dependencies**: Bun runtime, Cheerio, Convex JS client, Zod, Hono, BingX API (direct), Next.js (latest stable), React, refine.dev, shadcn/ui  
 **Dependency Policy**: Keep runtimes and libraries on the latest stable releases; update pinned versions promptly.  
-**Storage**: Supabase Postgres with pgvector for similarity data  
+**Storage**: Convex database (store similarity embeddings as document fields)  
 **Testing**: bun:test for backend; Vitest + Testing Library for UI; Playwright
 for end-to-end coverage of all features and edge cases  
 **Target Platform**: Linux server for backend jobs/API; modern browsers for
@@ -86,7 +86,7 @@ backend/
 │   ├── api/             # HTTP routes for sync, ideas, trades, dashboard data
 │   ├── agents/          # Trading agent orchestration
 │   ├── config/          # Runtime configuration loaders
-│   ├── db/              # Supabase/Postgres access and queries
+│   ├── db/              # Convex access and queries
 │   ├── integrations/    # TradingView, Telegram, exchange adapters
 │   ├── jobs/            # Sync and enrichment workers
 │   ├── services/        # Core business logic modules
@@ -129,7 +129,7 @@ Research tasks derived from technical context and integrations:
 - Research background scheduling pattern for sync/enrichment jobs.
 - Research exchange integration best practices for futures trading and risk
   controls.
-- Research vector storage approach in Supabase (pgvector) for similarity data.
+- Research vector storage approach in Convex for similarity data.
 - Research dashboard architecture patterns for operator monitoring workflows.
 
 ## Phase 1: Design & Contracts

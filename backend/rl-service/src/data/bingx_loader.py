@@ -3,49 +3,45 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable
 
-import httpx
+from convex import ConvexClient
 
 from schemas import MarketCandle, MarketSnapshot, TradingPair
 
 
 class BingxMarketDataLoader:
-    def __init__(self, supabase_url: str, supabase_key: str, timeout_ms: int = 10_000) -> None:
-        if not supabase_url:
-            raise ValueError("supabase_url is required")
-        if not supabase_key:
-            raise ValueError("supabase_key is required")
-        self._base_url = supabase_url.rstrip("/") + "/rest/v1"
-        self._headers = {
-            "Authorization": f"Bearer {supabase_key}",
-            "apikey": supabase_key,
-        }
-        self._client = httpx.Client(timeout=timeout_ms / 1000)
+    def __init__(self, convex_url: str, timeout_ms: int = 10_000) -> None:
+        if not convex_url:
+            raise ValueError("convex_url is required")
+        self._client = ConvexClient(convex_url)
+        self._timeout_ms = timeout_ms
 
     def close(self) -> None:
-        self._client.close()
+        return None
 
     def fetch_candles(self, pair: TradingPair, interval: str, limit: int = 200) -> list[MarketCandle]:
-        rows = self._get(
-            "bingx_candles",
+        rows = self._query(
             {
-                "select": "open_time,open,high,low,close,volume",
-                "pair": f"eq.{pair.value}",
-                "interval": f"eq.{interval}",
-                "order": "open_time.asc",
-                "limit": str(limit),
-            },
+                "table": "bingx_candles",
+                "select": ["open_time", "open", "high", "low", "close", "volume"],
+                "filters": [
+                    {"field": "pair", "op": "eq", "value": pair.value},
+                    {"field": "interval", "op": "eq", "value": interval},
+                ],
+                "order": {"field": "open_time", "direction": "asc"},
+                "limit": limit,
+            }
         )
         return parse_candle_rows(rows)
 
     def fetch_latest_ticker(self, pair: TradingPair) -> dict | None:
-        rows = self._get(
-            "bingx_tickers",
+        rows = self._query(
             {
-                "select": "last_price,volume_24h,price_change_24h,captured_at",
-                "pair": f"eq.{pair.value}",
-                "order": "captured_at.desc",
-                "limit": "1",
-            },
+                "table": "bingx_tickers",
+                "select": ["last_price", "volume_24h", "price_change_24h", "captured_at"],
+                "filters": [{"field": "pair", "op": "eq", "value": pair.value}],
+                "order": {"field": "captured_at", "direction": "desc"},
+                "limit": 1,
+            }
         )
         return rows[0] if rows else None
 
@@ -55,11 +51,13 @@ class BingxMarketDataLoader:
         last_price = ticker.get("last_price") if ticker else None
         return build_market_snapshot(pair, candles, last_price=last_price)
 
-    def _get(self, resource: str, params: dict[str, str]) -> list[dict]:
-        response = self._client.get(f"{self._base_url}/{resource}", params=params, headers=self._headers)
-        response.raise_for_status()
-        payload = response.json()
-        return payload if isinstance(payload, list) else []
+    def _query(self, payload: dict) -> list[dict]:
+        response = self._client.query("data:query", payload)
+        if isinstance(response, dict):
+            rows = response.get("data")
+            if isinstance(rows, list):
+                return rows
+        return []
 
 
 def parse_candle_rows(rows: Iterable[dict]) -> list[MarketCandle]:

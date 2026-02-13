@@ -4,10 +4,10 @@ import { getOrCreateSource } from "../../src/db/repositories/sources";
 import { insertIdea } from "../../src/db/repositories/ideas";
 import { hashContent } from "../../src/services/dedup";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("idea review tests require Supabase configuration", () => {});
+  test.skip("idea review tests require Convex configuration", () => {});
 } else {
   test("idea review status can be updated", async () => {
     const source = await getOrCreateSource("tradingview", `review-${Date.now()}`, "Review Source");

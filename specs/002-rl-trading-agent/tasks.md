@@ -8,7 +8,7 @@ description: "Task list for RL Trading Agent for Gold"
 **Input**: Design documents from `/Users/itsnk/Desktop/Coding/tv-goldviewfx/specs/002-rl-trading-agent/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Required (unit, integration, and E2E suites for all features and edge cases) and MUST run against local Supabase Docker with seeded test data.
+**Tests**: Required (unit, integration, and E2E suites for all features and edge cases) and MUST run against a Convex dev deployment with seeded test data.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -29,10 +29,10 @@ description: "Task list for RL Trading Agent for Gold"
 - [X] T005 [P] Add RL service logging/telemetry helper in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/logging.py`
 - [X] T006 [P] Add RL service test scaffolding in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/conftest.py`
 - [X] T007 [P] Add RL service fixture README in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/fixtures/README.md`
-- [X] T008 [P] Add local Supabase test config in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/config.toml`
-- [X] T009 [P] Add Supabase seed directory README in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/seed/README.md`
-- [X] T010 [P] Document local Supabase test data workflow in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`
-- [X] T011 [P] Add local Supabase test helper script in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/scripts/supabase-test.sh`
+- [X] T008 [P] Add Convex dev setup notes and env requirements in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`
+- [X] T009 [P] Add Convex seed/import guidance in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`
+- [X] T010 [P] Document local Convex test data workflow in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`
+- [X] T011 [P] Add local test helper script in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/scripts/e2e-local.sh`
 - [X] T012 [P] Create RL integration module index in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/rl/index.ts`
 - [X] T013 [P] Add RL service config module in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/config/rl_service.ts`
 - [X] T014 [P] Create RL service HTTP client skeleton in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/rl/client.ts`
@@ -49,11 +49,11 @@ description: "Task list for RL Trading Agent for Gold"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T019 Create migration with core RL tables (agent_versions, agent_runs, risk_limit_sets) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/migrations/20260112_rl_trading_agent.sql`
-- [X] T020 Extend migration with decision + execution linkage tables in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/migrations/20260112_rl_trading_agent.sql`
-- [X] T021 Extend migration with evaluation_reports + learning_updates in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/migrations/20260112_rl_trading_agent.sql`
-- [X] T022 Extend migration with data_source_status + market_input_snapshots in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/migrations/20260112_rl_trading_agent.sql`
-- [X] T023 Add indexes and foreign keys for RL tables in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/migrations/20260112_rl_trading_agent.sql`
+- [X] T019 Create core RL tables (agent_versions, agent_runs, risk_limit_sets) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/data.ts`
+- [X] T020 Extend data model with decision + execution linkage tables in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/data.ts`
+- [X] T021 Extend data model with evaluation_reports + learning_updates in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/data.ts`
+- [X] T022 Extend data model with data_source_status + market_input_snapshots in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/data.ts`
+- [X] T023 Add query patterns and indexes for RL tables in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/data.ts`
 - [X] T024 [P] Implement AgentVersion repository in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/agent_versions.ts`
 - [X] T025 [P] Implement AgentRun repository in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/agent_runs.ts`
 - [X] T026 [P] Implement RiskLimitSet repository in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/risk_limit_sets.ts`
@@ -71,16 +71,16 @@ description: "Task list for RL Trading Agent for Gold"
 - [X] T038 [P] Add backend integration test helpers for RL routes in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/fixtures/rl_api.ts`
 - [X] T039 [P] Add RL service synthetic market data fixture in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/fixtures/market_data.py`
 - [X] T040 [P] Add RL service synthetic ideas/signals/news fixtures in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/fixtures/aux_data.py`
-- [X] T041 [P] Add Supabase seed for core RL data in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/seed/rl_agent_seed.sql`
-- [X] T042 [P] Add Supabase seed for edge cases in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/seed/rl_agent_edge_seed.sql`
-- [X] T043 [P] Add Supabase seed loader utility in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/helpers/supabase_seed.ts`
-- [X] T044 [P] Enforce local Supabase Docker in backend test setup in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/setup.ts`
-- [X] T045 [P] Add E2E Supabase seeding helper in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/tests/e2e/fixtures/supabase.ts`
-- [X] T046 [P] Wire Playwright global setup to seed local Supabase in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/playwright.config.ts`
+- [X] T041 [P] Add Convex import guidance for core RL data in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`
+- [X] T042 [P] Add Convex import guidance for edge cases in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`
+- [X] T043 [P] Add test bootstrap checks in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/setup.ts`
+- [X] T044 [P] Enforce Convex dev deployment in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/setup.ts`
+- [X] T045 [P] Add E2E Convex env helper in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/tests/e2e/fixtures/convex.ts`
+- [X] T046 [P] Wire Playwright global setup to validate Convex env in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/playwright.config.ts`
 
 ### BingX Market Data Foundation (Blocking)
 
-- [X] T200 [P] Add BingX market data tables (candles, order book, trades, funding rates, open interest, mark/index prices, tickers) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/supabase/migrations/20260112_rl_trading_agent.sql`
+- [X] T200 [P] Add BingX market data tables (candles, order book, trades, funding rates, open interest, mark/index prices, tickers) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/data.ts`
 - [X] T201 [P] Add BingX market data repositories in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/bingx_market_data/`
 - [X] T202 [P] Implement BingX market data ingestion service with backfill + refresh scheduling in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/bingx_market_data_ingest.ts`
 - [X] T203 [P] Add BingX market data polling job and rate-limit handling in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/jobs/bingx_market_data.ts`
@@ -268,7 +268,7 @@ description: "Task list for RL Trading Agent for Gold"
 
 **Purpose**: Track input quality, version datasets, and enforce lineage for reproducible training/evaluation.
 
-- [X] T132 [US4] Add data quality + dataset lineage tables in `supabase/migrations/20260114_rl_data_quality.sql` (data_quality_metrics, dataset_versions, dataset_lineage, feature_set_versions).
+- [X] T132 [US4] Add data quality + dataset lineage tables in `convex/data.ts` (data_quality_metrics, dataset_versions, dataset_lineage, feature_set_versions).
 - [X] T133 [US4] Add repositories for data quality + datasets in `backend/src/db/repositories/data_quality_metrics.ts`, `backend/src/db/repositories/dataset_versions.ts`, `backend/src/db/repositories/feature_set_versions.ts`.
 - [X] T134 [US4] Add data quality computation + gating service in `backend/src/services/data_quality_service.ts` and enforce gates in `backend/src/services/rl_agent_service.ts` before training/live runs.
 - [X] T135 [US4] Extend RL dataset builder to emit dataset version + checksums in `backend/rl-service/src/data/dataset_builder.py` and expose via `backend/rl-service/src/api/datasets.py`.
@@ -283,7 +283,7 @@ description: "Task list for RL Trading Agent for Gold"
 
 **Purpose**: Add kill switches, promotion gates, and per-source gating for live safety.
 
-- [X] T139 [US5] Extend RL governance schema in `supabase/migrations/20260115_rl_governance.sql` (kill_switch, promotion_gate thresholds, source_policies, drift_alerts).
+- [X] T139 [US5] Extend RL governance schema in `convex/data.ts` (kill_switch, promotion_gate thresholds, source_policies, drift_alerts).
 - [X] T140 [US5] Implement kill switch + promotion gate checks in `backend/src/services/rl_agent_service.ts`, `backend/src/services/rl_decision_pipeline.ts`, `backend/src/api/routes/agent.ts`.
 - [X] T141 [US5] Add source gating rules in `backend/src/services/source_gating_service.ts`, `backend/src/services/signal_builder.ts`, `backend/src/db/repositories/source_policies.ts`.
 - [X] T142 [US5] Add governance API routes in `backend/src/api/routes/rl_governance.ts` and wire ops audit logging in `backend/src/services/rl_audit.ts`.
@@ -378,6 +378,78 @@ T119–T121 (frontend)
 
 ---
 
+## Phase 8: Production Hardening (Post-MVP)
+
+**Purpose**: Production readiness requirements for execution integrity, risk, data integrity, observability, security, resilience, and deployment.
+
+- [x] T900 Order execution integrity: implement state machine + idempotency keys in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/rl_decision_pipeline.ts` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/trade_execution.ts`
+- [x] T901 Exchange reconciliation job: reconcile orders, fills, and positions in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/jobs/` with audit logs in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/ops_audit.ts`
+- [x] T902 Account risk guardrails: margin checks, exposure caps, and circuit breakers in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/account_risk_service.ts`
+- [x] T903 Data integrity gates: timestamp alignment + gap verification in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/data_integrity_service.ts` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/rl_decision_pipeline.ts`
+- [x] T904 Observability + SLOs: latency, lag, slippage, drift metrics + alerts in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/jobs/`
+- [x] T905 Security + audit: secrets rotation + RBAC enforcement across write routes in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/api/middleware/rbac.ts` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/rbac_service.ts`
+- [x] T906 Resilience + recovery: retry queues + replay protection + DR runbooks in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/`
+- [x] T907 Deployment safety: staging + canary pipelines + rollback automation in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/scripts/` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/`
+- [x] T908 Execution replay safety: resolve missing `exchange_order_id` via client order ID, add bounded retries + alerts in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/trade_execution.ts` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/trade_reconciliation.ts`
+- [x] T909 Single-token RBAC: ignore role headers when `API_TOKEN` is set; update tests in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/integration/rbac.test.ts`
+- [x] T910 Candle ordering enforcement: sort timestamps + warnings in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/data_integrity_service.ts` with unit coverage
+- [x] T911 Search scalability: avoid full-table scans for `ilike`/`or` filters; add indexed query paths or external search with perf tests
+- [x] T912 Exit controls: add close/cancel endpoints, reduce‑only adapter support, and audit logging in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/trade_execution.ts` + `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/api/routes/trades.ts`
+- [x] T913 Allowed instrument enforcement: block run start + execution when `allowed_instruments` excludes the pair
+
+---
+
+## Phase 12: Model Stack Completion (Post-Hardening)
+
+**Purpose**: Replace RL stubs with real SB3 + Nautilus training, durable artifacts, deterministic datasets, and backtest-driven evaluations.
+
+### Milestone M12.1: Deterministic Datasets + Lineage Enforcement
+
+**Context**: Decision provenance must reference a reproducible dataset snapshot. Training and evaluation must be tied to immutable hashes.
+
+- [x] T920 Dataset snapshot builder: generate dataset snapshots and hashes in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/dataset_service.ts` and export bundles for RL service in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/rl/data_loader.ts`.
+- [x] T921 Snapshot provenance enforcement: persist `dataset_version_id` + `dataset_hash` into `MarketInputSnapshot` and require them in decision provenance in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/rl_decision_pipeline.ts`.
+- [x] T922 Contracts + data model: update dataset/decision schemas in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/specs/002-rl-trading-agent/data-model.md` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/specs/002-rl-trading-agent/contracts/openapi.yaml`.
+- [x] T923 Tests: unit tests for hashing/replay determinism (`backend/src/rl/__tests__`), integration tests for dataset APIs (`backend/tests/integration/datasets.test.ts`), and E2E coverage for dataset lineage (`tests/e2e/rl-data-sources.spec.ts` or new spec).
+
+### Milestone M12.2: Model Artifacts + Registry
+
+**Context**: Model artifacts must be durable and reloadable, with metadata used for promotion/rollback.
+
+- [x] T930 Artifact storage: add Convex file storage integration and artifact metadata persistence in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/models/registry.py` and backend repositories.
+- [x] T931 Registry load/update: load agent versions by `artifact_uri` with checksum validation and fallback in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/models/registry.py`.
+- [x] T932 Backend linking: attach artifact metadata to agent versions and evaluations in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/agent_versions.ts` and `evaluation_reports.ts`.
+- [x] T933 Contracts + data model: add artifact metadata fields in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/specs/002-rl-trading-agent/data-model.md` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/specs/002-rl-trading-agent/contracts/openapi.yaml`.
+- [x] T934 Tests: RL service unit tests for registry load/checksum (`backend/rl-service/tests/unit/`), integration tests for artifact metadata, and E2E promotion flow (`tests/e2e/rl-evaluations.spec.ts`).
+
+### Milestone M12.3: SB3 + Nautilus Training Pipeline
+
+**Context**: Training must run against a real Gymnasium-compatible environment and persist checkpoints.
+
+- [x] T940 Gymnasium env: implement Nautilus-backed environment in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/envs/` with deterministic reset/step behavior.
+- [x] T941 Training loop: add SB3 training + checkpointing pipeline in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/training/continuous.py` and store checkpoints via registry.
+- [x] T942 Inference adapter: load SB3 models for inference in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/inference/`.
+- [x] T943 Tests: unit tests for env determinism and observation shapes, integration tests for a minimal training run producing a checkpoint, and E2E `train → evaluate → promote` flow behind a fast-test flag.
+
+### Milestone M12.4: Backtest Evaluation (Nautilus)
+
+**Context**: Evaluation must use Nautilus backtests rather than synthetic trades.
+
+- [x] T950 Nautilus backtest runner: implement evaluation runs in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/training/evaluation.py`.
+- [x] T951 Metrics + gating: compute win rate/PnL/drawdown from backtest trades and enforce promotion gates in backend evaluation routes.
+- [x] T952 Contracts + data model: add `backtest_run_id`, `artifact_uri`, `dataset_hash` fields in the evaluation schema and API contract.
+- [x] T953 Tests: unit tests for metric calculations, integration tests for evaluation endpoints, and E2E evaluation report validation.
+
+### Milestone M12.5: End-to-End Provenance and Robustness
+
+**Context**: Full traceability from dataset → model → decision is required for production.
+
+- [x] T960 Decision provenance enforcement: reject decisions without dataset hash + artifact URI references.
+- [x] T961 Failure-path tests: missing artifact, dataset hash mismatch, and training run failures.
+- [x] T962 E2E provenance run: seed dataset snapshot, train, evaluate, promote, and start a paper run with linked provenance.
+
+---
+
 ## Implementation Strategy
 
 ### MVP First (User Story 1 Only)
@@ -385,7 +457,7 @@ T119–T121 (frontend)
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational
 3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: Run unit, integration, and E2E tests for User Story 1 using local Supabase Docker
+4. **STOP and VALIDATE**: Run unit, integration, and E2E tests for User Story 1 using a Convex dev deployment
 
 ### Incremental Delivery
 

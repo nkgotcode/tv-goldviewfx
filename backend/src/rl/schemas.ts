@@ -63,6 +63,21 @@ export const evaluationRequestSchema = z.object({
   agentVersionId: z.string().uuid().optional(),
   datasetVersionId: z.string().uuid().optional(),
   featureSetVersionId: z.string().uuid().optional(),
+  decisionThreshold: z.number().nonnegative().optional(),
+  windowSize: z.number().int().positive().optional(),
+  stride: z.number().int().positive().optional(),
+});
+
+export const trainingRequestSchema = z.object({
+  pair: tradingPairSchema,
+  periodStart: z.string().datetime(),
+  periodEnd: z.string().datetime(),
+  datasetVersionId: z.string().uuid().optional(),
+  featureSetVersionId: z.string().uuid().optional(),
+  windowSize: z.number().int().positive().optional(),
+  stride: z.number().int().positive().optional(),
+  timesteps: z.number().int().positive().optional(),
+  seed: z.number().int().optional(),
 });
 
 export const dataSourceConfigSchema = z.object({
@@ -79,4 +94,5 @@ export type AgentStartRequest = z.infer<typeof agentStartRequestSchema>;
 export type AgentConfigPatch = z.infer<typeof agentConfigPatchSchema>;
 export type RiskLimitSetInput = z.infer<typeof riskLimitSetSchema>;
 export type EvaluationRequest = z.infer<typeof evaluationRequestSchema>;
+export type TrainingRequest = z.infer<typeof trainingRequestSchema>;
 export type DataSourceConfig = z.infer<typeof dataSourceConfigSchema>;

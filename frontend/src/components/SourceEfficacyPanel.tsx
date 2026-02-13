@@ -32,32 +32,34 @@ export default function SourceEfficacyPanel() {
       ) : sources.length === 0 ? (
         <div className="empty">No efficacy metrics available.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Source</th>
-              <th>Items</th>
-              <th>Signals</th>
-              <th>Trades</th>
-              <th>Win Rate</th>
-              <th>Signal Rate</th>
-              <th>Trade Rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sources.map((source) => (
-              <tr key={`${source.source_type}-${source.source_id ?? "global"}`}>
-                <td>{source.source_name}</td>
-                <td>{source.item_count}</td>
-                <td>{source.signal_count}</td>
-                <td>{source.trade_count}</td>
-                <td>{(source.win_rate * 100).toFixed(1)}%</td>
-                <td>{(source.conversion_to_signal * 100).toFixed(1)}%</td>
-                <td>{(source.conversion_to_trade * 100).toFixed(1)}%</td>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Items</th>
+                <th>Signals</th>
+                <th>Trades</th>
+                <th>Win Rate</th>
+                <th>Signal Rate</th>
+                <th>Trade Rate</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sources.map((source) => (
+                <tr key={`${source.source_type}-${source.source_id ?? "global"}`}>
+                  <td>{source.source_name}</td>
+                  <td>{source.item_count}</td>
+                  <td>{source.signal_count}</td>
+                  <td>{source.trade_count}</td>
+                  <td>{(source.win_rate * 100).toFixed(1)}%</td>
+                  <td>{(source.conversion_to_signal * 100).toFixed(1)}%</td>
+                  <td>{(source.conversion_to_trade * 100).toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

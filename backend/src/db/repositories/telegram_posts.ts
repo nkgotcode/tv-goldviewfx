@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type TelegramPostInsert = {
@@ -14,7 +14,7 @@ export type TelegramPostInsert = {
 };
 
 export async function findTelegramPostByExternalId(sourceId: string, externalId: string) {
-  const result = await supabase
+  const result = await convex
     .from("telegram_posts")
     .select("*")
     .eq("source_id", sourceId)
@@ -24,7 +24,7 @@ export async function findTelegramPostByExternalId(sourceId: string, externalId:
 }
 
 export async function findTelegramPostByContentHash(sourceId: string, contentHash: string) {
-  const result = await supabase
+  const result = await convex
     .from("telegram_posts")
     .select("*")
     .eq("source_id", sourceId)
@@ -35,17 +35,17 @@ export async function findTelegramPostByContentHash(sourceId: string, contentHas
 }
 
 export async function insertTelegramPost(payload: TelegramPostInsert) {
-  const result = await supabase.from("telegram_posts").insert(payload).select("*").single();
+  const result = await convex.from("telegram_posts").insert(payload).select("*").single();
   return assertNoError(result, "insert telegram post");
 }
 
 export async function updateTelegramPost(id: string, payload: Partial<TelegramPostInsert>) {
-  const result = await supabase.from("telegram_posts").update(payload).eq("id", id).select("*").single();
+  const result = await convex.from("telegram_posts").update(payload).eq("id", id).select("*").single();
   return assertNoError(result, "update telegram post");
 }
 
 export async function getTelegramPostById(id: string) {
-  const result = await supabase.from("telegram_posts").select("*").eq("id", id).single();
+  const result = await convex.from("telegram_posts").select("*").eq("id", id).single();
   return assertNoError(result, "get telegram post");
 }
 
@@ -59,7 +59,7 @@ export async function listTelegramPosts(filters: {
   page?: number;
   pageSize?: number;
 }) {
-  const query = supabase
+  const query = convex
     .from("telegram_posts")
     .select("*", { count: "exact" })
     .order("published_at", { ascending: false });

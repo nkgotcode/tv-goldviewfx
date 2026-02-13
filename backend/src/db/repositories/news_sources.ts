@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type NewsSourceInsert = {
@@ -9,7 +9,7 @@ export type NewsSourceInsert = {
 };
 
 export async function upsertNewsSource(payload: NewsSourceInsert) {
-  const result = await supabase
+  const result = await convex
     .from("news_sources")
     .upsert(
       {
@@ -28,11 +28,11 @@ export async function upsertNewsSource(payload: NewsSourceInsert) {
 }
 
 export async function listNewsSources() {
-  const result = await supabase.from("news_sources").select("*").order("name", { ascending: true });
+  const result = await convex.from("news_sources").select("*").order("name", { ascending: true });
   return assertNoError(result, "list news sources");
 }
 
 export async function getNewsSourceByIdentifier(identifier: string) {
-  const result = await supabase.from("news_sources").select("*").eq("identifier", identifier).maybeSingle();
+  const result = await convex.from("news_sources").select("*").eq("identifier", identifier).maybeSingle();
   return result.data;
 }

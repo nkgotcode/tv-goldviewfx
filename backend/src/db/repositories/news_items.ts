@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type NewsItemInsert = {
@@ -14,7 +14,7 @@ export type NewsItemInsert = {
 };
 
 export async function findNewsByHash(contentHash: string) {
-  const result = await supabase
+  const result = await convex
     .from("news_items")
     .select("*")
     .eq("content_hash", contentHash)
@@ -24,7 +24,7 @@ export async function findNewsByHash(contentHash: string) {
 }
 
 export async function findNewsByExternalId(sourceId: string, externalId: string) {
-  const result = await supabase
+  const result = await convex
     .from("news_items")
     .select("*")
     .eq("source_id", sourceId)
@@ -34,7 +34,7 @@ export async function findNewsByExternalId(sourceId: string, externalId: string)
 }
 
 export async function insertNewsItem(payload: NewsItemInsert) {
-  const result = await supabase
+  const result = await convex
     .from("news_items")
     .insert({
       source_id: payload.source_id,
@@ -59,7 +59,7 @@ export async function listNewsItems(filters?: {
   page?: number;
   pageSize?: number;
 }) {
-  const query = supabase
+  const query = convex
     .from("news_items")
     .select("*", { count: "exact" })
     .order("published_at", { ascending: false });

@@ -15,6 +15,11 @@ export type AgentVersion = {
   algorithmLabel?: string;
   hyperparameterSummary?: string;
   artifactUri?: string;
+  artifactChecksum?: string;
+  artifactSizeBytes?: number;
+  datasetVersionId?: string | null;
+  datasetHash?: string | null;
+  featureSetVersionId?: string | null;
   status: AgentVersionStatus;
   promotedAt?: string | null;
 };
@@ -108,7 +113,10 @@ export type EvaluationReport = {
   status: "pass" | "fail";
   createdAt: string;
   datasetVersionId?: string | null;
+  datasetHash?: string | null;
   featureSetVersionId?: string | null;
+  artifactUri?: string | null;
+  backtestRunId?: string | null;
 };
 
 export type LearningUpdate = {
@@ -126,6 +134,11 @@ export type MarketInputSnapshot = {
   id: string;
   pair: TradingPair;
   capturedAt: string;
+  datasetVersionId?: string | null;
+  datasetHash?: string | null;
+  featureSetVersionId?: string | null;
+  agentVersionId?: string | null;
+  artifactUri?: string | null;
   marketFeaturesRef?: string | null;
   chartFeaturesRef?: string | null;
   ideaFeaturesRef?: string | null;
@@ -163,6 +176,10 @@ export type InferenceRequest = {
   learningEnabled?: boolean;
   learningWindowMinutes?: number | null;
   policyVersion?: string | null;
+  artifactUri?: string | null;
+  artifactChecksum?: string | null;
+  artifactDownloadUrl?: string | null;
+  artifactBase64?: string | null;
 };
 
 export type InferenceResponse = {
@@ -186,6 +203,63 @@ export type EvaluationRequest = {
   agentVersionId?: string | null;
   datasetVersionId?: string | null;
   featureSetVersionId?: string | null;
+  datasetHash?: string | null;
+  artifactUri?: string | null;
+  artifactChecksum?: string | null;
+  artifactDownloadUrl?: string | null;
+  artifactBase64?: string | null;
+  decisionThreshold?: number | null;
+  windowSize?: number | null;
+  stride?: number | null;
+  datasetFeatures?: Array<{
+    timestamp: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }>;
+};
+
+export type TrainingRequest = {
+  pair: TradingPair;
+  periodStart: string;
+  periodEnd: string;
+  datasetVersionId?: string | null;
+  featureSetVersionId?: string | null;
+  datasetHash?: string | null;
+  windowSize?: number;
+  stride?: number;
+  timesteps: number;
+  seed?: number | null;
+  datasetFeatures?: Array<{
+    timestamp: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }>;
+};
+
+export type TrainingResponse = {
+  artifactBase64: string;
+  artifactChecksum: string;
+  artifactSizeBytes: number;
+  algorithmLabel: string;
+  hyperparameterSummary: string;
+};
+
+export type ModelArtifact = {
+  id: string;
+  agentVersionId: string;
+  artifactUri: string;
+  artifactChecksum: string;
+  artifactSizeBytes: number;
+  contentType?: string | null;
+  trainingWindowStart?: string | null;
+  trainingWindowEnd?: string | null;
+  createdAt?: string | null;
 };
 
 export type HealthResponse = {
@@ -202,6 +276,14 @@ export type DatasetPreviewRequest = {
   windowSize?: number;
   stride?: number;
   featureSetVersionId?: string | null;
+  features?: Array<{
+    timestamp: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }>;
 };
 
 export type DatasetPreviewResponse = {
@@ -214,8 +296,13 @@ export type DatasetPreviewResponse = {
     startAt?: string;
     endAt?: string;
     checksum: string;
+    dataset_hash?: string;
+    datasetHash?: string;
     feature_set_version_id?: string | null;
     featureSetVersionId?: string | null;
+    window_size?: number;
+    windowSize?: number;
+    stride?: number;
     created_at?: string;
     createdAt?: string;
   };

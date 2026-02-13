@@ -17,4 +17,7 @@ def test_dataset_preview_returns_version(client):
     assert response.status_code == 200
     body = response.json()
     assert body["version"]["checksum"]
+    assert body["version"]["dataset_hash"]
+    assert body["version"]["window_size"] == 5
+    assert body["version"]["stride"] == 1
     assert body["window_count"] > 0

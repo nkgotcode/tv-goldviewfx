@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { apiRequest } from "./fixtures";
+import { parseListResponse } from "./fixtures/api_list";
+import { tradeSchema } from "./fixtures/schemas";
 
 const dashboardBaseUrl =
   process.env.E2E_DASHBOARD_BASE_URL ?? process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -11,7 +13,7 @@ test("Trade detail page opens", async ({ page }) => {
   const api = await apiRequest(apiBaseUrl);
   const tradesResponse = await api.get("/trades");
   expect(tradesResponse.ok()).toBeTruthy();
-  const trades = await tradesResponse.json();
+  const trades = parseListResponse(tradeSchema, await tradesResponse.json());
   if (!Array.isArray(trades) || trades.length === 0) {
     test.skip(true, "No trades available");
   }

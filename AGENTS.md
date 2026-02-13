@@ -3,10 +3,10 @@
 Auto-generated from all feature plans. Last updated: 2026-01-12
 
 ## Active Technologies
-- Supabase Postgres with pgvector for similarity data (001-trading-idea-platform)
-- TypeScript (latest stable) on Bun (latest stable) + Bun runtime, Cheerio, Supabase JS client, Zod, Hono, BingX API (direct), Next.js (latest stable), React, refine.dev, shadcn/ui (001-trading-idea-platform)
-- TypeScript (latest stable) on Bun (latest stable); Python 3.12+ via uv for RL training/inference service + Bun, Hono, Supabase JS, Zod, Next.js/React, Nautilus Trader, Stable-Baselines3 (Gymnasium interface), BingX API (perpetual market data + trading) (002-rl-trading-agent)
-- Supabase Postgres for configs, decisions, metrics, and evaluation reports; Supabase Storage for model artifacts and checkpoints (002-rl-trading-agent)
+- Convex database for similarity data (store embeddings as document fields) (001-trading-idea-platform)
+- TypeScript (latest stable) on Bun (latest stable) + Bun runtime, Cheerio, Convex JS client, Zod, Hono, BingX API (direct), Next.js (latest stable), React, refine.dev, shadcn/ui (001-trading-idea-platform)
+- TypeScript (latest stable) on Bun (latest stable); Python 3.12+ via uv for RL training/inference service + Bun, Hono, Convex JS client, Zod, Next.js/React, Nautilus Trader, Stable-Baselines3 (Gymnasium interface), BingX API (perpetual market data + trading) (002-rl-trading-agent)
+- Convex database for configs, decisions, metrics, and evaluation reports; Convex file storage for model artifacts and checkpoints (002-rl-trading-agent)
 
 ## Project Structure
 
@@ -22,7 +22,7 @@ tests/
 - Backend tests: `bun test`
 - Frontend dev: `cd frontend && bun run dev`
 - RL service tests: `cd backend/rl-service && uv run pytest`
-- Local Supabase ports: API 55421, DB 55422, Studio 55423, Inbucket 55424, Analytics 55427, Analytics Syslog 55428 (`supabase/config.toml`)
+- Convex dev deployment: `npx convex dev`
 - E2E ingestion fixtures: `TRADINGVIEW_USE_HTML=true TRADINGVIEW_HTML_PATH=../tradingview.html FETCH_FULL=false TELEGRAM_MESSAGES_PATH=../tests/e2e/fixtures/telegram_messages.json`
 - Scripted E2E run: `./scripts/e2e-local.sh`
 - E2E script notes: auto-selects free backend/frontend ports and sets `BINGX_MARKET_DATA_MOCK=true`.

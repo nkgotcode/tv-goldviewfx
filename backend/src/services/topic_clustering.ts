@@ -1,4 +1,4 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 
 const STOP_WORDS = new Set([
   "the",
@@ -51,7 +51,7 @@ export async function runTopicClustering(period: "weekly" | "monthly") {
   const days = period === "weekly" ? 7 : 30;
   const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
-  const ideasResult = await supabase
+  const ideasResult = await convex
     .from("ideas")
     .select("id, title, content, published_at, ingested_at")
     .gte("published_at", windowStart.toISOString())
@@ -63,7 +63,7 @@ export async function runTopicClustering(period: "weekly" | "monthly") {
   const keywords = extractKeywords(combinedText).slice(0, 8);
   const label = keywords.length ? keywords.slice(0, 2).join(" / ") : "General";
 
-  const clusterResult = await supabase
+  const clusterResult = await convex
     .from("topic_clusters")
     .insert({
       period,
@@ -84,7 +84,7 @@ export async function runTopicClustering(period: "weekly" | "monthly") {
       score: 1,
     }));
     if (topicRows.length) {
-      await supabase.from("idea_topics").upsert(topicRows, { onConflict: "idea_id,cluster_id" });
+      await convex.from("idea_topics").upsert(topicRows, { onConflict: "idea_id,cluster_id" });
     }
   }
 

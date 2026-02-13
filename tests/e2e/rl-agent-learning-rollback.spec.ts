@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { apiRequest } from "./fixtures";
+import { parseListResponse } from "./fixtures/api_list";
+import { agentVersionSchema } from "./fixtures/schemas";
 import { triggerLearningUpdate } from "./fixtures/rl-agent";
 
 test.skip(!process.env.E2E_RUN, "Set E2E_RUN=1 to enable RL agent e2e tests.");
@@ -7,7 +9,7 @@ test.skip(!process.env.E2E_RUN, "Set E2E_RUN=1 to enable RL agent e2e tests.");
 test("Learning rollback promotes fallback version", async () => {
   const api = await apiRequest();
   const versionsResponse = await api.get("/agents/gold-rl-agent/versions");
-  const versions = await versionsResponse.json();
+  const versions = parseListResponse(agentVersionSchema, await versionsResponse.json());
 
   const promoted = versions.find((version: any) => version.status === "promoted");
   const retired = versions.find((version: any) => version.status === "retired");
@@ -24,7 +26,7 @@ test("Learning rollback promotes fallback version", async () => {
   });
 
   const refreshedResponse = await api.get("/agents/gold-rl-agent/versions");
-  const refreshed = await refreshedResponse.json();
+  const refreshed = parseListResponse(agentVersionSchema, await refreshedResponse.json());
   const rollbackTarget = refreshed.find((version: any) => version.id === retired.id);
   expect(rollbackTarget.status).toBe("promoted");
 });

@@ -268,7 +268,7 @@
 - **Purpose**: Stores RBAC roles for operators and analysts.
 - **Fields**:
   - id (uuid)
-  - user_id (uuid, Supabase auth user)
+  - user_id (uuid, Convex auth user)
   - role (enum: operator, analyst)
   - created_at, updated_at (timestamps)
 

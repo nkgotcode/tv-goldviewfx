@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("ideas endpoint requires Supabase configuration", () => {});
+  test.skip("ideas endpoint requires Convex configuration", () => {});
 } else {
   test("GET /ideas returns an array", async () => {
     const response = await app.request("/ideas");

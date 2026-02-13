@@ -3,10 +3,10 @@ import { insertAgentRun, getAgentRun } from "../../src/db/repositories/agent_run
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 import { runDataSourceMonitor } from "../../src/jobs/data_source_monitor";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("data source monitor requires Supabase configuration", () => {});
+  test.skip("data source monitor requires Convex configuration", () => {});
 } else {
   test("data source monitor pauses runs when sources are stale", async () => {
     const run = await insertAgentRun({

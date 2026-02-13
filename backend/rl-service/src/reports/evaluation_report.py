@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from schemas import EvaluationReport, TradingPair
@@ -12,6 +12,9 @@ def build_evaluation_report(
     metrics: EvaluationMetrics,
     exposure_by_pair: dict[str, float],
     criteria: PromotionCriteria | None = None,
+    dataset_hash: str | None = None,
+    artifact_uri: str | None = None,
+    backtest_run_id: str | None = None,
 ) -> EvaluationReport:
     decision = evaluate_promotion(metrics, criteria or PromotionCriteria())
     status = "pass" if decision.promote else "fail"
@@ -24,5 +27,8 @@ def build_evaluation_report(
         trade_count=metrics.trade_count,
         exposure_by_pair=exposure_by_pair,
         status=status,
-        created_at=datetime.utcnow(),
+        dataset_hash=dataset_hash,
+        artifact_uri=artifact_uri,
+        backtest_run_id=backtest_run_id,
+        created_at=datetime.now(timezone.utc),
     )

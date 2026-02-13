@@ -5,6 +5,22 @@ from typing import Iterable
 
 from schemas import AuxiliarySignal, MarketSnapshot
 
+FEATURE_KEYS = [
+    "last_price",
+    "price_change",
+    "volatility",
+    "volume_avg",
+    "spread",
+    "ideas_score",
+    "signals_score",
+    "news_score",
+    "ocr_score",
+    "news_confidence_avg",
+    "ocr_confidence_avg",
+    "ocr_text_length_avg",
+    "aux_score",
+]
+
 
 def resolve_signal_conflicts(signals: Iterable[AuxiliarySignal], neutral_band: float = 0.1) -> float:
     weighted = []
@@ -105,3 +121,7 @@ def extract_features(
     features = extract_market_features(market)
     features.update(extract_aux_features(ideas, signals, news, ocr))
     return features
+
+
+def vectorize_features(features: dict[str, float]) -> list[float]:
+    return [float(features.get(key, 0.0)) for key in FEATURE_KEYS]

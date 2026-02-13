@@ -10,6 +10,7 @@ from api.inference import router as inference_router
 from api.evaluations import router as evaluations_router
 from api.datasets import router as datasets_router
 from api.monitoring import router as monitoring_router
+from api.training import router as training_router
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(evaluations_router)
     app.include_router(datasets_router)
     app.include_router(monitoring_router)
+    app.include_router(training_router)
 
     @app.get("/")
     def root() -> dict[str, str]:

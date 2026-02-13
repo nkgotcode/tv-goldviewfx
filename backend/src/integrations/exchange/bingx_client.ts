@@ -1,5 +1,11 @@
 import { createHmac } from "node:crypto";
-import type { ExchangeAdapter, OrderRequest, OrderResult } from "./adapter";
+import type {
+  CancelOrderRequest,
+  ExchangeAdapter,
+  OrderDetail,
+  OrderRequest,
+  OrderResult,
+} from "./adapter";
 
 type BingxConfig = {
   apiKey: string;
@@ -87,18 +93,67 @@ export class BingXExchangeAdapter implements ExchangeAdapter {
       });
     }
 
+    if (request.reduceOnly) {
+      params.reduceOnly = true;
+    }
+
     const payload = await this.request<BingxOrderPayload>("POST", "/openApi/swap/v2/trade/order", params);
     const orderId = payload?.order?.orderId ?? payload?.orderId ?? "unknown";
     return { orderId: String(orderId), status: "placed" };
   }
 
-  async getOrderDetail(orderId: string, instrument: string) {
-    const payload = await this.request<BingxOrderPayload>("GET", "/openApi/swap/v2/trade/order", {
-      orderId,
-      symbol: instrument,
-    });
+  async getOrderDetail(orderId: string, instrument: string): Promise<OrderDetail> {
+    const detail = await this.getOrderDetailInternal({ orderId, instrument });
+    if (!detail) {
+      throw new Error("Order detail missing");
+    }
+    return detail;
+  }
+
+  async getOrderDetailByClientOrderId(clientOrderId: string, instrument: string): Promise<OrderDetail | null> {
+    return this.getOrderDetailInternal({ clientOrderId, instrument, allowMissing: true });
+  }
+
+  async cancelOrder(request: CancelOrderRequest): Promise<OrderResult> {
+    if (!request.orderId && !request.clientOrderId) {
+      throw new Error("Missing order id for cancel");
+    }
+    const params: Record<string, string | number | boolean> = {
+      symbol: request.instrument,
+    };
+    if (request.orderId) {
+      params.orderId = request.orderId;
+    }
+    if (request.clientOrderId) {
+      params.clientOrderId = request.clientOrderId;
+    }
+    const payload = await this.request<BingxOrderPayload>("DELETE", "/openApi/swap/v2/trade/order", params);
+    const orderId = payload?.order?.orderId ?? payload?.orderId ?? request.orderId ?? request.clientOrderId ?? "unknown";
+    return { orderId: String(orderId), status: "cancelled" };
+  }
+
+  private async getOrderDetailInternal(params: {
+    orderId?: string;
+    clientOrderId?: string;
+    instrument: string;
+    allowMissing?: boolean;
+  }): Promise<OrderDetail | null> {
+    const query: Record<string, string | number | boolean> = {
+      symbol: params.instrument,
+    };
+    if (params.orderId) {
+      query.orderId = params.orderId;
+    }
+    if (params.clientOrderId) {
+      query.clientOrderId = params.clientOrderId;
+    }
+    const payload = await this.request<BingxOrderPayload>("GET", "/openApi/swap/v2/trade/order", query);
+    if (!payload?.order && !payload?.orderId) {
+      return params.allowMissing ? null : { orderId: params.orderId ?? params.clientOrderId ?? "unknown" };
+    }
+    const orderId = payload?.order?.orderId ?? payload?.orderId ?? params.orderId ?? params.clientOrderId ?? "unknown";
     return {
-      orderId: String(payload?.order?.orderId ?? orderId),
+      orderId: String(orderId),
       executedQty: parseNumber(payload?.order?.executedQty),
       avgPrice: parseNumber(payload?.order?.avgPrice),
       status: payload?.order?.status ?? "UNKNOWN",

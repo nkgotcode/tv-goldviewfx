@@ -90,7 +90,7 @@ export async function runBingxMarketDataIngest(options: BingxIngestOptions = {})
   const pairs = options.pairs ?? DEFAULT_PAIRS;
   const intervals = options.intervals ?? parseIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? DEFAULT_INTERVALS;
   const backfill = options.backfill ?? env.BINGX_MARKET_DATA_BACKFILL;
-  const maxBatches =
+  let maxBatches =
     typeof options.maxBatches === "number" && options.maxBatches > 0
       ? options.maxBatches
       : backfill
@@ -98,7 +98,12 @@ export async function runBingxMarketDataIngest(options: BingxIngestOptions = {})
         : 1;
   const now = options.now ?? new Date();
   const trigger = options.trigger ?? "schedule";
-  const mockEnabled = env.BINGX_MARKET_DATA_MOCK || isTruthy(process.env.E2E_RUN);
+  const rawMockFlag = process.env.BINGX_MARKET_DATA_MOCK;
+  const mockOverride = rawMockFlag === undefined ? null : isTruthy(rawMockFlag);
+  const mockEnabled = mockOverride ?? (env.BINGX_MARKET_DATA_MOCK || isTruthy(process.env.E2E_RUN));
+  if (backfill && trigger === "schedule" && !Number.isFinite(maxBatches)) {
+    maxBatches = Math.max(1, env.DATA_GAP_HEAL_MAX_BATCHES);
+  }
   let wsSkipMap: Map<string, "ok" | "stale" | "unavailable"> | null = null;
   if (env.BINGX_WS_ENABLED && env.BINGX_WS_PAUSE_REST && !backfill && trigger === "schedule" && usesDefaultFetcher) {
     try {
@@ -128,23 +133,6 @@ export async function runBingxMarketDataIngest(options: BingxIngestOptions = {})
     mark_index: { newCount: 0, updatedCount: 0, errorCount: 0 },
     ticker: { newCount: 0, updatedCount: 0, errorCount: 0 },
   };
-
-  const feedDecisions = await Promise.all(
-    feedKeys.map((feed) => shouldRunIngestion({ sourceType: "bingx", sourceId: null, feed, trigger })),
-  );
-  for (const [index, feed] of feedKeys.entries()) {
-    if (feedDecisions[index]?.allowed) {
-      feedRuns[feed] = await createIngestionRun({
-        source_type: "bingx",
-        source_id: null,
-        feed,
-        trigger,
-        status: "running",
-      });
-    } else {
-      logInfo("BingX ingestion skipped", { feed, reason: feedDecisions[index]?.reason });
-    }
-  }
 
   let runError: Error | null = null;
 
@@ -234,6 +222,23 @@ export async function runBingxMarketDataIngest(options: BingxIngestOptions = {})
         logInfo("BingX ingest complete (mock)", summary);
       }
       return summaries;
+    }
+
+    const feedDecisions = await Promise.all(
+      feedKeys.map((feed) => shouldRunIngestion({ sourceType: "bingx", sourceId: null, feed, trigger })),
+    );
+    for (const [index, feed] of feedKeys.entries()) {
+      if (feedDecisions[index]?.allowed) {
+        feedRuns[feed] = await createIngestionRun({
+          source_type: "bingx",
+          source_id: null,
+          feed,
+          trigger,
+          status: "running",
+        });
+      } else {
+        logInfo("BingX ingestion skipped", { feed, reason: feedDecisions[index]?.reason });
+      }
     }
 
     for (const pair of pairs) {

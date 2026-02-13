@@ -6,10 +6,10 @@ import { insertIdeaMedia } from "../../src/db/repositories/idea_media";
 import { hashContent } from "../../src/services/dedup";
 import { runOcrBatch } from "../../src/services/ocr";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("ocr tests require Supabase configuration", () => {});
+  test.skip("ocr tests require Convex configuration", () => {});
 } else {
   test("idea OCR endpoint returns media", async () => {
     const source = await getOrCreateSource("tradingview", `ocr-${Date.now()}`, "OCR Source");

@@ -1,5 +1,5 @@
-import { supabase } from "../../client";
-import { assertNoError } from "../base";
+import { convexClient } from "../../client";
+import { anyApi } from "convex/server";
 
 export type BingxOrderBookSnapshotInsert = {
   pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
@@ -11,20 +11,19 @@ export type BingxOrderBookSnapshotInsert = {
 };
 
 export async function insertOrderBookSnapshot(payload: BingxOrderBookSnapshotInsert) {
-  const result = await supabase.from("bingx_orderbook_snapshots").insert(payload).select("*").single();
-  return assertNoError(result, "insert bingx orderbook snapshot");
+  try {
+    return await convexClient.mutation(anyApi.bingx_orderbook_snapshots.insertOne, { row: payload });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`insert bingx orderbook snapshot: ${message}`);
+  }
 }
 
 export async function getLatestOrderBookTime(pair: BingxOrderBookSnapshotInsert["pair"]) {
-  const result = await supabase
-    .from("bingx_orderbook_snapshots")
-    .select("captured_at")
-    .eq("pair", pair)
-    .order("captured_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (result.error) {
-    throw new Error(`get latest orderbook time: ${result.error.message}`);
+  try {
+    return await convexClient.query(anyApi.bingx_orderbook_snapshots.latestTime, { pair });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`get latest orderbook time: ${message}`);
   }
-  return result.data?.captured_at ?? null;
 }

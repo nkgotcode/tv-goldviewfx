@@ -3,12 +3,12 @@ import { fileURLToPath } from "node:url";
 import app from "../../src/api/routes/index";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 const baseFixture = fileURLToPath(new URL("../fixtures/telegram_messages.json", import.meta.url));
 const editFixture = fileURLToPath(new URL("../fixtures/telegram_messages_edit.json", import.meta.url));
 
 if (!hasEnv) {
-  test.skip("telegram dedup requires Supabase configuration", () => {});
+  test.skip("telegram dedup requires Convex configuration", () => {});
 } else {
   test("telegram ingestion deduplicates and handles edits/removals", async () => {
     process.env.TELEGRAM_MESSAGES_PATH = baseFixture;

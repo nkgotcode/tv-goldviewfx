@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type SignalInsert = {
@@ -12,7 +12,7 @@ export type SignalInsert = {
 };
 
 export async function insertSignal(payload: SignalInsert) {
-  const result = await supabase.from("signals").insert(payload).select("*").single();
+  const result = await convex.from("signals").insert(payload).select("*").single();
   return assertNoError(result, "insert signal");
 }
 
@@ -25,7 +25,7 @@ export async function listSignals(filters?: {
   page?: number;
   pageSize?: number;
 }) {
-  const query = supabase
+  const query = convex
     .from("signals")
     .select("*", { count: "exact" })
     .order("generated_at", { ascending: false });
@@ -57,7 +57,7 @@ export async function listSignals(filters?: {
 }
 
 export async function listRecentSignals(limit = 10) {
-  const result = await supabase
+  const result = await convex
     .from("signals")
     .select("*")
     .order("generated_at", { ascending: false })

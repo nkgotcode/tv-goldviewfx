@@ -3,11 +3,11 @@ import { fileURLToPath } from "node:url";
 import app from "../../src/api/routes/index";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 const fixturePath = fileURLToPath(new URL("../fixtures/telegram_messages.json", import.meta.url));
 
 if (!hasEnv) {
-  test.skip("telegram ingestion requires Supabase configuration", () => {});
+  test.skip("telegram ingestion requires Convex configuration", () => {});
 } else {
   test("POST /telegram/ingest ingests messages and creates signals", async () => {
     process.env.TELEGRAM_MESSAGES_PATH = fixturePath;

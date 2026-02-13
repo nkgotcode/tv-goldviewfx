@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type IdeaMediaInsert = {
@@ -12,7 +12,7 @@ export type IdeaMediaInsert = {
 };
 
 export async function insertIdeaMedia(payload: IdeaMediaInsert) {
-  const result = await supabase
+  const result = await convex
     .from("idea_media")
     .upsert(
       {
@@ -33,7 +33,7 @@ export async function insertIdeaMedia(payload: IdeaMediaInsert) {
 }
 
 export async function listIdeaMedia(ideaId: string) {
-  const result = await supabase
+  const result = await convex
     .from("idea_media")
     .select("*")
     .eq("idea_id", ideaId)
@@ -42,7 +42,7 @@ export async function listIdeaMedia(ideaId: string) {
 }
 
 export async function listPendingIdeaMedia(limit = 25) {
-  const result = await supabase
+  const result = await convex
     .from("idea_media")
     .select("*")
     .eq("ocr_status", "pending")
@@ -52,7 +52,7 @@ export async function listPendingIdeaMedia(limit = 25) {
 }
 
 export async function updateIdeaMedia(id: string, payload: Partial<IdeaMediaInsert> & { ocr_status?: string }) {
-  const result = await supabase
+  const result = await convex
     .from("idea_media")
     .update({
       media_url: payload.media_url,

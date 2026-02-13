@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type LearningUpdateInsert = {
@@ -12,20 +12,29 @@ export type LearningUpdateInsert = {
 };
 
 export async function insertLearningUpdate(payload: LearningUpdateInsert) {
-  const result = await supabase.from("learning_updates").insert(payload).select("*").single();
+  const result = await convex.from("learning_updates").insert(payload).select("*").single();
   return assertNoError(result, "insert learning update");
 }
 
 export async function updateLearningUpdate(id: string, payload: Partial<LearningUpdateInsert>) {
-  const result = await supabase.from("learning_updates").update(payload).eq("id", id).select("*").single();
+  const result = await convex.from("learning_updates").update(payload).eq("id", id).select("*").single();
   return assertNoError(result, "update learning update");
 }
 
 export async function listLearningUpdates(agentVersionId: string) {
-  const result = await supabase
+  const result = await convex
     .from("learning_updates")
     .select("*")
     .eq("agent_version_id", agentVersionId)
     .order("started_at", { ascending: false });
   return assertNoError(result, "list learning updates");
+}
+
+export async function listRecentLearningUpdates(limit = 5) {
+  const result = await convex
+    .from("learning_updates")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  return assertNoError(result, "list recent learning updates");
 }

@@ -1,11 +1,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requireOperatorRole } from "../middleware/rbac";
 import { validateJson } from "../middleware/validate";
 import { tradingPairSchema } from "../../rl/schemas";
 import { runTradingViewSync } from "../../services/tradingview_sync";
 import { runTelegramIngest } from "../../services/telegram_ingest";
 import { runBingxMarketDataIngest } from "../../services/bingx_market_data_ingest";
 import { getIngestionStatus } from "../../services/ingestion_status";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 const syncRequestSchema = z.object({
   source_id: z.string().optional(),
@@ -30,7 +32,7 @@ ingestionRoutes.get("/status", async (c) => {
   return c.json(status);
 });
 
-ingestionRoutes.post("/tradingview/sync", validateJson(syncRequestSchema), async (c) => {
+ingestionRoutes.post("/tradingview/sync", requireOperatorRole, validateJson(syncRequestSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof syncRequestSchema>;
   const result = await runTradingViewSync({
     trigger: "manual",
@@ -38,16 +40,28 @@ ingestionRoutes.post("/tradingview/sync", validateJson(syncRequestSchema), async
     fetchFull: payload.full_content,
     includeUpdates: payload.include_updates,
   });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "ingestion.tradingview.sync",
+    resource_type: "tradingview",
+    metadata: payload,
+  });
   return c.json(result, 202);
 });
 
-ingestionRoutes.post("/telegram/ingest", validateJson(telegramIngestSchema), async (c) => {
+ingestionRoutes.post("/telegram/ingest", requireOperatorRole, validateJson(telegramIngestSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof telegramIngestSchema>;
   const result = await runTelegramIngest({ sourceId: payload.source_id, trigger: "manual" });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "ingestion.telegram.ingest",
+    resource_type: "telegram",
+    resource_id: payload.source_id,
+  });
   return c.json(result, 202);
 });
 
-ingestionRoutes.post("/bingx/backfill", validateJson(bingxRequestSchema), async (c) => {
+ingestionRoutes.post("/bingx/backfill", requireOperatorRole, validateJson(bingxRequestSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof bingxRequestSchema>;
   const result = await runBingxMarketDataIngest({
     pairs: payload.pairs,
@@ -56,10 +70,16 @@ ingestionRoutes.post("/bingx/backfill", validateJson(bingxRequestSchema), async 
     backfill: true,
     trigger: "manual",
   });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "ingestion.bingx.backfill",
+    resource_type: "bingx",
+    metadata: payload,
+  });
   return c.json(result, 202);
 });
 
-ingestionRoutes.post("/bingx/refresh", validateJson(bingxRequestSchema), async (c) => {
+ingestionRoutes.post("/bingx/refresh", requireOperatorRole, validateJson(bingxRequestSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof bingxRequestSchema>;
   const result = await runBingxMarketDataIngest({
     pairs: payload.pairs,
@@ -67,6 +87,12 @@ ingestionRoutes.post("/bingx/refresh", validateJson(bingxRequestSchema), async (
     maxBatches: payload.max_batches ?? 1,
     backfill: false,
     trigger: "manual",
+  });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "ingestion.bingx.refresh",
+    resource_type: "bingx",
+    metadata: payload,
   });
   return c.json(result, 202);
 });

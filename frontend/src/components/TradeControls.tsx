@@ -6,6 +6,7 @@ import { fetchAgentConfig, updateAgentConfig, type AgentConfig } from "../servic
 export default function TradeControls() {
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -14,6 +15,10 @@ export default function TradeControls() {
       try {
         const data = await fetchAgentConfig();
         if (mounted) setConfig(data);
+      } catch (err) {
+        if (mounted) {
+          setError(err instanceof Error ? err.message : "Unable to load trade configuration.");
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -26,6 +31,10 @@ export default function TradeControls() {
 
   if (loading) {
     return <div className="empty">Loading trade controls…</div>;
+  }
+
+  if (error) {
+    return <div className="empty">{error}</div>;
   }
 
   if (!config) {
@@ -97,12 +106,48 @@ export default function TradeControls() {
           </button>
         </div>
         <div className="control-row">
+          <label>Max Position Size</label>
+          <input
+            type="number"
+            value={config.max_position_size}
+            onChange={(event) =>
+              setConfig({ ...config, max_position_size: Number(event.target.value) })
+            }
+          />
+        </div>
+        <div className="control-row">
+          <label>Daily Loss Limit</label>
+          <input
+            type="number"
+            value={config.daily_loss_limit}
+            onChange={(event) =>
+              setConfig({ ...config, daily_loss_limit: Number(event.target.value) })
+            }
+          />
+        </div>
+        <div className="control-row">
           <label>Min Confidence</label>
           <input
             value={config.min_confidence_score ?? 0}
             onChange={(event) =>
               setConfig({ ...config, min_confidence_score: Number(event.target.value) })
             }
+          />
+        </div>
+        <div className="control-row">
+          <label>Allowed Instruments</label>
+          <textarea
+            value={(config.allowed_instruments ?? []).join(",")}
+            onChange={(event) =>
+              setConfig({
+                ...config,
+                allowed_instruments: event.target.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+              })
+            }
+            placeholder="GOLD-USDT, XAUTUSDT"
           />
         </div>
         <div className="control-row">

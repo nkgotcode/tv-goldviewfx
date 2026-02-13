@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type SourcePolicyInsert = {
@@ -10,7 +10,7 @@ export type SourcePolicyInsert = {
 };
 
 export async function upsertSourcePolicy(payload: SourcePolicyInsert) {
-  const result = await supabase
+  const result = await convex
     .from("source_policies")
     .upsert(
       {
@@ -30,12 +30,12 @@ export async function upsertSourcePolicy(payload: SourcePolicyInsert) {
 }
 
 export async function listSourcePolicies() {
-  const result = await supabase.from("source_policies").select("*").order("updated_at", { ascending: false });
+  const result = await convex.from("source_policies").select("*").order("updated_at", { ascending: false });
   return assertNoError(result, "list source policies");
 }
 
 export async function getSourcePolicy(sourceType: string, sourceId?: string | null) {
-  const query = supabase.from("source_policies").select("*").eq("source_type", sourceType);
+  const query = convex.from("source_policies").select("*").eq("source_type", sourceType);
   if (sourceId === undefined || sourceId === null) {
     query.is("source_id", null);
   } else {

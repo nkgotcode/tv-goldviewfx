@@ -66,6 +66,10 @@ class InferenceRequest(BaseModel):
     learning_enabled: bool = True
     learning_window_minutes: int | None = None
     policy_version: str | None = None
+    artifact_uri: str | None = None
+    artifact_checksum: str | None = None
+    artifact_download_url: str | None = None
+    artifact_base64: str | None = None
 
 
 class TradeDecision(BaseModel):
@@ -89,6 +93,17 @@ class EvaluationRequest(BaseModel):
     period_start: datetime
     period_end: datetime
     agent_version_id: str | None = None
+    dataset_version_id: str | None = None
+    feature_set_version_id: str | None = None
+    dataset_hash: str | None = None
+    artifact_uri: str | None = None
+    artifact_checksum: str | None = None
+    artifact_download_url: str | None = None
+    artifact_base64: str | None = None
+    dataset_features: list[dict] | None = None
+    decision_threshold: float | None = None
+    window_size: int = 30
+    stride: int = 1
 
 
 class EvaluationReport(BaseModel):
@@ -100,6 +115,9 @@ class EvaluationReport(BaseModel):
     trade_count: int
     exposure_by_pair: dict[str, float] = Field(default_factory=dict)
     status: Literal["pass", "fail"]
+    dataset_hash: str | None = None
+    artifact_uri: str | None = None
+    backtest_run_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -117,6 +135,7 @@ class DatasetRequest(BaseModel):
     window_size: int = 30
     stride: int = 1
     feature_set_version_id: str | None = None
+    features: list[dict] | None = None
 
 
 class DatasetVersionPayload(BaseModel):
@@ -126,6 +145,9 @@ class DatasetVersionPayload(BaseModel):
     start_at: datetime
     end_at: datetime
     checksum: str
+    dataset_hash: str | None = None
+    window_size: int | None = None
+    stride: int | None = None
     feature_set_version_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -149,3 +171,23 @@ class DriftCheckResponse(BaseModel):
     baseline_value: float
     current_value: float
     delta: float
+
+
+class TrainingRequest(BaseModel):
+    pair: TradingPair
+    period_start: datetime
+    period_end: datetime
+    dataset_hash: str | None = None
+    dataset_features: list[dict] | None = None
+    window_size: int = 30
+    stride: int = 1
+    timesteps: int = 5_000
+    seed: int | None = None
+
+
+class TrainingResponse(BaseModel):
+    artifact_base64: str
+    artifact_checksum: str
+    artifact_size_bytes: int
+    algorithm_label: str
+    hyperparameter_summary: str

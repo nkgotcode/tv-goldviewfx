@@ -12,7 +12,7 @@ test("Partial fill handling keeps execution record", async () => {
 
   const run = await startAgentRun(api, {
     mode: "paper",
-    pair: "PAXGUSDT",
+    pair: "Gold-USDT",
     riskLimitSetId: limitId,
     learningEnabled: true,
     learningWindowMinutes: 30,

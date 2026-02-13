@@ -9,10 +9,10 @@ import { updateAgentConfig } from "../../src/db/repositories/agent_config";
 import { insertTrade } from "../../src/db/repositories/trades";
 import { executeTrade } from "../../src/services/trade_execution";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("source gating tests require Supabase configuration", () => {});
+  test.skip("source gating tests require Convex configuration", () => {});
 } else {
   test("source policy blocks low confidence signals", async () => {
     const source = await getOrCreateSource("tradingview", `gate-${Date.now()}`, "Gate Source");

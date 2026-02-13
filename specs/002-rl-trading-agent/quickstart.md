@@ -39,7 +39,7 @@
 
 - Run unit, integration, and end-to-end test suites before enabling live trading.
 - Verify edge case handling for risk limit breaches, stale data sources, partial fills, and extreme volatility.
-- Run all tests against the local Supabase Docker stack using seeded data (see `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`).
+- Run all tests against a Convex dev deployment using seeded data (see `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-test-data.md`).
 - Confirm BingX market data coverage includes the required candle history before training or evaluation runs.
 - Confirm dataset lineage and quality metrics are recorded for the run.
 

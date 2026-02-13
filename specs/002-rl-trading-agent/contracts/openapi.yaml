@@ -231,6 +231,24 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/EvaluationReport"
+  /agents/{agentId}/training:
+    post:
+      summary: Run a training job
+      parameters:
+        - $ref: "#/components/parameters/agentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainingRequest"
+      responses:
+        "201":
+          description: Training run result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingRunResponse"
   /agents/{agentId}/versions:
     get:
       summary: List agent versions
@@ -959,8 +977,14 @@ components:
           format: date-time
         checksum:
           type: string
+        datasetHash:
+          type: string
         featureSetVersionId:
           type: string
+        windowSize:
+          type: integer
+        stride:
+          type: integer
         createdAt:
           type: string
           format: date-time
@@ -1177,7 +1201,47 @@ components:
           type: string
         featureSetVersionId:
           type: string
+        decisionThreshold:
+          type: number
+        windowSize:
+          type: integer
+        stride:
+          type: integer
       required: [pair, periodStart, periodEnd]
+    TrainingRequest:
+      type: object
+      properties:
+        pair:
+          $ref: "#/components/schemas/TradingPair"
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        datasetVersionId:
+          type: string
+        featureSetVersionId:
+          type: string
+        windowSize:
+          type: integer
+        stride:
+          type: integer
+        timesteps:
+          type: integer
+        seed:
+          type: integer
+      required: [pair, periodStart, periodEnd]
+    TrainingRunResponse:
+      type: object
+      properties:
+        agentVersion:
+          $ref: "#/components/schemas/AgentVersion"
+        datasetVersion:
+          $ref: "#/components/schemas/DatasetVersion"
+        artifact:
+          $ref: "#/components/schemas/ModelArtifact"
+      required: [agentVersion, datasetVersion, artifact]
     EvaluationReport:
       type: object
       properties:
@@ -1203,7 +1267,16 @@ components:
         datasetVersionId:
           type: string
           nullable: true
+        datasetHash:
+          type: string
+          nullable: true
         featureSetVersionId:
+          type: string
+          nullable: true
+        artifactUri:
+          type: string
+          nullable: true
+        backtestRunId:
           type: string
           nullable: true
       required: [id, pair, winRate, netPnlAfterFees, maxDrawdown, tradeCount, status]
@@ -1222,4 +1295,46 @@ components:
           format: date-time
         artifactUri:
           type: string
+        artifactChecksum:
+          type: string
+        artifactSizeBytes:
+          type: integer
+        trainingWindowStart:
+          type: string
+          format: date-time
+        trainingWindowEnd:
+          type: string
+          format: date-time
+        algorithmLabel:
+          type: string
+        hyperparameterSummary:
+          type: string
       required: [id, status]
+    ModelArtifact:
+      type: object
+      properties:
+        id:
+          type: string
+        agentVersionId:
+          type: string
+        artifactUri:
+          type: string
+        artifactChecksum:
+          type: string
+        artifactSizeBytes:
+          type: integer
+        contentType:
+          type: string
+          nullable: true
+        trainingWindowStart:
+          type: string
+          format: date-time
+          nullable: true
+        trainingWindowEnd:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, agentVersionId, artifactUri, artifactChecksum, artifactSizeBytes]

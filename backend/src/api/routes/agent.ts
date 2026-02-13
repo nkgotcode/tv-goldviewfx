@@ -40,6 +40,7 @@ export const agentRoutes = new Hono();
 export const rlAgentRoutes = new Hono();
 
 agentRoutes.use("*", withOpsIdentity);
+rlAgentRoutes.use("*", withOpsIdentity);
 
 agentRoutes.get("/config", async (c) => {
   try {
@@ -187,7 +188,7 @@ rlAgentRoutes.get("/:agentId", async (c) => {
   });
 });
 
-rlAgentRoutes.post("/:agentId/start", validateJson(agentStartRequestSchema), async (c) => {
+rlAgentRoutes.post("/:agentId/start", requireOperatorRole, validateJson(agentStartRequestSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof agentStartRequestSchema>;
   const run = await startAgentRun({
     mode: payload.mode,
@@ -198,37 +199,74 @@ rlAgentRoutes.post("/:agentId/start", validateJson(agentStartRequestSchema), asy
     datasetVersionId: payload.datasetVersionId,
     featureSetVersionId: payload.featureSetVersionId,
   });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "rl_agent.start",
+    resource_type: "agent_run",
+    resource_id: run.id,
+    metadata: payload,
+  });
   return c.json(run);
 });
 
-rlAgentRoutes.post("/:agentId/pause", async (c) => {
+rlAgentRoutes.post("/:agentId/pause", requireOperatorRole, async (c) => {
   const status = await getAgentStatus();
-  if (!status.currentRun || status.currentRun.status !== "running") {
+  if (!status.currentRun) {
+    return c.json({ error: "No active run" }, 404);
+  }
+  if (status.currentRun.status === "paused") {
+    return c.json(status.currentRun);
+  }
+  if (status.currentRun.status !== "running") {
     return c.json({ error: "No active run" }, 404);
   }
   const run = await pauseAgentRun(status.currentRun.id);
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "rl_agent.pause",
+    resource_type: "agent_run",
+    resource_id: run.id,
+  });
   return c.json(run);
 });
 
-rlAgentRoutes.post("/:agentId/resume", async (c) => {
+rlAgentRoutes.post("/:agentId/resume", requireOperatorRole, async (c) => {
   const status = await getAgentStatus();
-  if (!status.currentRun || status.currentRun.status !== "paused") {
+  if (!status.currentRun) {
+    return c.json({ error: "No paused run" }, 404);
+  }
+  if (status.currentRun.status === "running") {
+    return c.json(status.currentRun);
+  }
+  if (status.currentRun.status !== "paused") {
     return c.json({ error: "No paused run" }, 404);
   }
   const run = await resumeAgentRun(status.currentRun.id);
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "rl_agent.resume",
+    resource_type: "agent_run",
+    resource_id: run.id,
+  });
   return c.json(run);
 });
 
-rlAgentRoutes.post("/:agentId/stop", async (c) => {
+rlAgentRoutes.post("/:agentId/stop", requireOperatorRole, async (c) => {
   const status = await getAgentStatus();
   if (!status.currentRun) {
     return c.json({ error: "No active run" }, 404);
   }
   const run = await stopAgentRun(status.currentRun.id);
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "rl_agent.stop",
+    resource_type: "agent_run",
+    resource_id: run.id,
+  });
   return c.json(run);
 });
 
-rlAgentRoutes.patch("/:agentId/config", validateJson(agentConfigPatchSchema), async (c) => {
+rlAgentRoutes.patch("/:agentId/config", requireOperatorRole, validateJson(agentConfigPatchSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof agentConfigPatchSchema>;
   const status = await getAgentStatus();
   if (!status.currentRun) {
@@ -238,6 +276,13 @@ rlAgentRoutes.patch("/:agentId/config", validateJson(agentConfigPatchSchema), as
     learningEnabled: payload.learningEnabled,
     learningWindowMinutes: payload.learningWindowMinutes,
     riskLimitSetId: payload.riskLimitSetId,
+  });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "rl_agent.config.update",
+    resource_type: "agent_run",
+    resource_id: updated.id,
+    metadata: payload,
   });
   return c.json(updated);
 });
@@ -249,6 +294,7 @@ rlAgentRoutes.get("/:agentId/runs", async (c) => {
 
 rlAgentRoutes.post(
   "/:agentId/runs/:runId/decisions",
+  requireOperatorRole,
   validateJson(decisionRequestSchema),
   async (c) => {
     const payload = c.get("validatedBody") as z.infer<typeof decisionRequestSchema>;
@@ -265,12 +311,19 @@ rlAgentRoutes.post(
       recentTrades: payload.recentTrades,
       simulateExecutionStatus: payload.simulateExecutionStatus,
     });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "rl_agent.decision",
+      resource_type: "agent_run",
+      resource_id: c.req.param("runId"),
+    });
     return c.json(result);
   },
 );
 
 rlAgentRoutes.post(
   "/:agentId/learning-updates",
+  requireOperatorRole,
   validateJson(learningUpdateSchema),
   async (c) => {
     const payload = c.get("validatedBody") as z.infer<typeof learningUpdateSchema>;
@@ -281,6 +334,13 @@ rlAgentRoutes.post(
       windowEnd: payload.windowEnd,
       metrics: payload.metrics,
       rollbackVersionId: payload.rollbackVersionId,
+    });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "rl_agent.learning_update",
+      resource_type: "agent_version",
+      resource_id: payload.agentVersionId,
+      metadata: payload,
     });
     return c.json(update);
   },

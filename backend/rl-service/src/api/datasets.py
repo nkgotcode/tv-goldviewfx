@@ -21,6 +21,8 @@ def _parse_interval_seconds(interval: str) -> int:
 
 
 def _build_features(request: DatasetRequest) -> list[dict]:
+    if request.features:
+        return request.features
     step_seconds = _parse_interval_seconds(request.interval)
     total_seconds = (request.end_at - request.start_at).total_seconds()
     count = int(total_seconds // step_seconds)
@@ -30,10 +32,14 @@ def _build_features(request: DatasetRequest) -> list[dict]:
     base_price = 2300.0 if request.pair == "Gold-USDT" else 2100.0
     for idx in range(count):
         timestamp = request.start_at + timedelta(seconds=idx * step_seconds)
+        price = base_price + idx * 0.2
         features.append(
             {
                 "timestamp": timestamp.isoformat(),
-                "price": base_price + idx * 0.2,
+                "open": price,
+                "high": price + 0.4,
+                "low": price - 0.4,
+                "close": price + 0.2,
                 "volume": 100 + idx,
             }
         )

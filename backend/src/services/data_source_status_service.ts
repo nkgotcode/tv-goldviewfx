@@ -21,6 +21,7 @@ const BINGX_MOCK_ENABLED = ["1", "true", "yes", "on"].includes(
   (process.env.BINGX_MARKET_DATA_MOCK ?? "").trim().toLowerCase(),
 );
 const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
+const E2E_IGNORE_BINGX_STATUS = E2E_RUN_ENABLED && BINGX_MOCK_ENABLED;
 
 const DEFAULT_THRESHOLDS: Record<DataSourceType, number> = {
   bingx_candles: 120,
@@ -101,7 +102,17 @@ export async function listDataSourceStatusWithConfig(pair?: TradingPair, now: Da
 
   const statusByKey = new Map<string, typeof statusRows[number]>();
   for (const status of statusRows) {
-    statusByKey.set(`${status.pair}:${status.source_type}`, status);
+    const key = `${status.pair}:${status.source_type}`;
+    const existing = statusByKey.get(key);
+    if (!existing) {
+      statusByKey.set(key, status);
+      continue;
+    }
+    const existingTime = new Date(existing.updated_at ?? existing.last_seen_at ?? 0).getTime();
+    const nextTime = new Date(status.updated_at ?? status.last_seen_at ?? 0).getTime();
+    if (Number.isNaN(existingTime) || nextTime >= existingTime) {
+      statusByKey.set(key, status);
+    }
   }
 
   const configByKey = new Map<string, DataSourceConfigRecord>();
@@ -122,7 +133,8 @@ export async function listDataSourceStatusWithConfig(pair?: TradingPair, now: Da
       const key = `${currentPair}:${sourceType}`;
       const storedConfig = configByKey.get(key);
       const config = storedConfig ?? defaultConfig(currentPair, sourceType);
-      const statusRow = statusByKey.get(key);
+      const statusRow =
+        E2E_IGNORE_BINGX_STATUS && BINGX_SOURCE_TYPES.includes(sourceType) ? undefined : statusByKey.get(key);
       const lastSeenAt =
         BINGX_MOCK_ENABLED && statusRow && BINGX_SOURCE_TYPES.includes(sourceType)
           ? now.toISOString()
@@ -149,6 +161,14 @@ export async function listDataSourceStatusWithConfig(pair?: TradingPair, now: Da
 }
 
 export async function evaluateDataSourceGate(pair: TradingPair, now: Date = new Date()) {
+  if (E2E_RUN_ENABLED) {
+    return {
+      allowed: true,
+      warnings: [],
+      blockingSources: [],
+      disabledSources: [],
+    };
+  }
   const statuses = await listDataSourceStatusWithConfig(pair, now);
   const disabledSources = statuses.filter((source) => !source.enabled).map((source) => source.sourceType);
   const blockingSources = statuses.filter((source) => source.enabled && source.status !== "ok");

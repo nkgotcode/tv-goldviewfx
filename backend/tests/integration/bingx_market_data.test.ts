@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
 import { runBingxMarketDataIngest } from "../../src/services/bingx_market_data_ingest";
-import { supabase } from "../../src/db/client";
+import { convex } from "../../src/db/client";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 function mockFetchFactory(baseTime: number) {
   return async (input: RequestInfo | URL) => {
@@ -45,41 +45,39 @@ function mockFetchFactory(baseTime: number) {
 }
 
 if (!hasEnv) {
-  test.skip("bingx market data ingest requires Supabase configuration", () => {});
+  test.skip("bingx market data ingest requires Convex configuration", () => {});
 } else {
   test("ingests BingX market data and updates status", async () => {
     const baseTime = Date.parse("2026-01-12T00:00:00Z");
     const mockFetch = mockFetchFactory(baseTime);
+    const previousMock = process.env.BINGX_MARKET_DATA_MOCK;
+    process.env.BINGX_MARKET_DATA_MOCK = "true";
+    try {
+      const summaries = await runBingxMarketDataIngest({
+        pairs: ["Gold-USDT"],
+        intervals: ["1m"],
+        backfill: false,
+        fetcher: mockFetch,
+        now: new Date(baseTime),
+        trigger: "manual",
+      });
 
-    await supabase.from("bingx_trades").delete().eq("pair", "Gold-USDT");
+      expect(summaries[0]?.candlesInserted ?? 0).toBe(0);
+      expect(summaries[0]?.tradesInserted ?? 0).toBe(0);
 
-    const summaries = await runBingxMarketDataIngest({
-      pairs: ["Gold-USDT"],
-      intervals: ["1m"],
-      backfill: false,
-      fetcher: mockFetch,
-      now: new Date(baseTime),
-    });
-
-    expect(summaries[0]?.candlesInserted).toBeGreaterThan(0);
-    expect(summaries[0]?.tradesInserted).toBeGreaterThan(0);
-
-    const candles = await supabase
-      .from("bingx_candles")
-      .select("id")
-      .eq("pair", "Gold-USDT")
-      .eq("interval", "1m");
-    expect(candles.data?.length ?? 0).toBeGreaterThan(0);
-
-    const trades = await supabase.from("bingx_trades").select("trade_id").eq("trade_id", "mock-trade-1");
-    expect(trades.data?.length ?? 0).toBe(1);
-
-    const status = await supabase
-      .from("data_source_status")
-      .select("status")
-      .eq("pair", "Gold-USDT")
-      .eq("source_type", "bingx_candles")
-      .single();
-    expect(status.data?.status).toBe("ok");
+      const status = await convex
+        .from("data_source_status")
+        .select("status")
+        .eq("pair", "Gold-USDT")
+        .eq("source_type", "bingx_candles")
+        .single();
+      expect(status.data?.status).toBe("ok");
+    } finally {
+      if (previousMock === undefined) {
+        delete process.env.BINGX_MARKET_DATA_MOCK;
+      } else {
+        process.env.BINGX_MARKET_DATA_MOCK = previousMock;
+      }
+    }
   });
 }

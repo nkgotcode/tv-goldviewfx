@@ -34,4 +34,4 @@
 - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
 - Checklist updated after dependency freshness and external API requirements were added.
 - Checklist reviewed after adding ingestion quality, analytics, governance, safety, news, and OCR scope.
-- Implementation details (BingX, Supabase, Next.js) are explicitly required by scope and are treated as accepted exceptions for this feature.
+- Implementation details (BingX, Convex, Next.js) are explicitly required by scope and are treated as accepted exceptions for this feature.

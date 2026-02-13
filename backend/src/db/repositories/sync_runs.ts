@@ -1,14 +1,15 @@
-import { supabase } from "../client";
-import { assertNoError } from "./base";
+import { convexClient } from "../client";
+import { anyApi } from "convex/server";
 
 export async function createSyncRun(sourceId: string) {
-  const result = await supabase
-    .from("sync_runs")
-    .insert({ source_id: sourceId, status: "running" })
-    .select("*")
-    .single();
-
-  return assertNoError(result, "create sync run");
+  try {
+    return await convexClient.mutation(anyApi.sync_runs.create, {
+      source_id: sourceId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`create sync run: ${message}`);
+  }
 }
 
 export async function completeSyncRun(
@@ -24,11 +25,10 @@ export async function completeSyncRun(
     parseConfidence?: number | null;
   },
 ) {
-  const result = await supabase
-    .from("sync_runs")
-    .update({
+  try {
+    const result = await convexClient.mutation(anyApi.sync_runs.complete, {
+      id,
       status: payload.status,
-      finished_at: new Date().toISOString(),
       new_count: payload.newCount,
       updated_count: payload.updatedCount,
       error_count: payload.errorCount,
@@ -36,19 +36,27 @@ export async function completeSyncRun(
       coverage_pct: payload.coveragePct ?? null,
       missing_fields_count: payload.missingFieldsCount ?? null,
       parse_confidence: payload.parseConfidence ?? null,
-    })
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  return assertNoError(result, "complete sync run");
+    });
+    if (!result) {
+      throw new Error("missing data");
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`complete sync run: ${message}`);
+  }
 }
 
 export async function listSyncRuns(sourceId?: string) {
-  const query = supabase.from("sync_runs").select("*").order("started_at", { ascending: false });
-  if (sourceId) {
-    query.eq("source_id", sourceId);
+  try {
+    const result = await convexClient.query(anyApi.sync_runs.list, {
+      source_id: sourceId ?? undefined,
+      page: 1,
+      page_size: 50,
+    });
+    return result?.data ?? [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`list sync runs: ${message}`);
   }
-  const result = await query;
-  return assertNoError(result, "list sync runs");
 }

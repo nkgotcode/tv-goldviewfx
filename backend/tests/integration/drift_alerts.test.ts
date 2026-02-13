@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { insertDriftAlert } from "../../src/db/repositories/drift_alerts";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("drift alerts require Supabase configuration", () => {});
+  test.skip("drift alerts require Convex configuration", () => {});
 } else {
   test("drift alerts endpoint lists recorded alerts", async () => {
     const created = await insertDriftAlert({

@@ -3,7 +3,7 @@
 **Feature Branch**: `001-trading-idea-platform`  
 **Created**: 2026-01-10  
 **Status**: Draft  
-**Input**: User description: "build a complete application that would scrape from https://www.tradingview.com/u/Goldviewfx/ for all of the trading ideas on the profile view and then extract full content of each post to then save to my Supabase DB that then later on gets sentiment analyzed and get vectorized that would also get saved on the DB. This then will power a trading agent on gold on exchanges that would allows futures trading on Gold. This trading system powered by the agent will also have a dashboard to display all the trading ideas and all the trades made or being made using React and shadcn and refine.dev. The system also will later on take in telegram post that I will pay for preimum subscription to enrich the trading ideas Which will also power the agent. I only initialized the project folder a little bit So it will need to be restructured to be logical."
+**Input**: User description: "build a complete application that would scrape from https://www.tradingview.com/u/Goldviewfx/ for all of the trading ideas on the profile view and then extract full content of each post to then save to my Convex DB that then later on gets sentiment analyzed and get vectorized that would also get saved on the DB. This then will power a trading agent on gold on exchanges that would allows futures trading on Gold. This trading system powered by the agent will also have a dashboard to display all the trading ideas and all the trades made or being made using React and shadcn and refine.dev. The system also will later on take in telegram post that I will pay for preimum subscription to enrich the trading ideas Which will also power the agent. I only initialized the project folder a little bit So it will need to be restructured to be logical."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -312,7 +312,7 @@ is stored and shown in the detail view.
 - The initial scope focuses on gold futures; other instruments are out of scope.
 - Live trading is opt-in and requires explicit operator enablement.
 - Regulatory compliance and broker account setup are handled by the operator.
-- RBAC enforcement relies on Supabase auth or an equivalent identity provider.
+- RBAC enforcement relies on Convex auth or an equivalent identity provider.
 
 ### Key Entities *(include if feature involves data)*
 

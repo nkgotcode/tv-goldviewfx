@@ -12,7 +12,7 @@ test("Volatility spike safety pauses run", async () => {
 
   const run = await startAgentRun(api, {
     mode: "paper",
-    pair: "XAUTUSDT",
+    pair: "Gold-USDT",
     riskLimitSetId: limitId,
     learningEnabled: true,
     learningWindowMinutes: 30,

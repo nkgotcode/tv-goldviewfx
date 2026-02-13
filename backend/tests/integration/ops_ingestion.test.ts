@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("ops ingestion endpoints require Supabase configuration", () => {});
+  test.skip("ops ingestion endpoints require Convex configuration", () => {});
 } else {
   test("GET /ops/ingestion/status returns sources", async () => {
     const response = await app.request("/ops/ingestion/status");

@@ -93,26 +93,28 @@ export default function SourceGatingPanel() {
       </div>
 
       {policies.length ? (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Source</th>
-              <th>Enabled</th>
-              <th>Min Confidence</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {policies.map((policy) => (
-              <tr key={policy.id}>
-                <td>{`${policy.source_type}:${policy.source_id ?? "global"}`}</td>
-                <td>{policy.enabled ? "yes" : "no"}</td>
-                <td>{policy.min_confidence_score ?? "N/A"}</td>
-                <td>{policy.notes ?? "N/A"}</td>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Enabled</th>
+                <th>Min Confidence</th>
+                <th>Notes</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {policies.map((policy) => (
+                <tr key={policy.id}>
+                  <td>{`${policy.source_type}:${policy.source_id ?? "global"}`}</td>
+                  <td>{policy.enabled ? "yes" : "no"}</td>
+                  <td>{policy.min_confidence_score ?? "N/A"}</td>
+                  <td className="clamp-2">{policy.notes ?? "N/A"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="inline-muted">No source policies configured.</div>
       )}

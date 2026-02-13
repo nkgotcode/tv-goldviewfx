@@ -38,6 +38,7 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+convex/_generated/
 
 # IntelliJ based IDEs
 .idea
@@ -52,3 +53,5 @@ venv/
 
 # Windows
 Thumbs.db
+
+*.jsonl

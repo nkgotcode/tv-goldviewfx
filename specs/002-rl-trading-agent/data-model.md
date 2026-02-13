@@ -16,6 +16,8 @@
 - algorithm_label
 - hyperparameter_summary
 - artifact_uri
+- artifact_checksum
+- artifact_size_bytes
 - status (draft, evaluating, promoted, retired)
 - promoted_at
 
@@ -26,10 +28,34 @@
 **Relationships**:
 - one AgentVersion has many EvaluationReports
 - one AgentVersion can be active for many AgentRuns
+- one AgentVersion references one ModelArtifact
 
 **State transitions**:
 - draft -> evaluating -> promoted -> retired
 - evaluating -> retired (if evaluation fails)
+
+---
+
+### ModelArtifact
+
+**Purpose**: Stores durable model artifact metadata for registry and rollback.
+
+**Key fields**:
+- id
+- agent_version_id
+- artifact_uri
+- artifact_checksum
+- artifact_size_bytes
+- content_type
+- created_at
+- training_window_start, training_window_end
+
+**Validation rules**:
+- artifact_uri required
+- artifact_checksum required
+
+**Relationships**:
+- one ModelArtifact belongs to one AgentVersion
 
 ---
 
@@ -202,12 +228,18 @@
 - interval
 - start_at, end_at
 - checksum
+- dataset_hash
+- window_size
+- stride
 - feature_set_version_id
 - created_at
 
 **Validation rules**:
 - checksum required
+- dataset_hash required
 - start_at < end_at
+- window_size > 0
+- stride > 0
 
 ---
 
@@ -441,7 +473,10 @@
 - exposure_by_pair
 - status (pass, fail)
 - dataset_version_id (nullable)
+- dataset_hash (nullable)
 - feature_set_version_id (nullable)
+- artifact_uri (nullable)
+- backtest_run_id (nullable)
 - created_at
 
 **Validation rules**:
@@ -481,6 +516,11 @@
 - id
 - pair
 - captured_at
+- dataset_version_id (nullable)
+- dataset_hash (nullable)
+- feature_set_version_id (nullable)
+- agent_version_id (nullable)
+- artifact_uri (nullable)
 - market_features_ref
 - chart_features_ref
 - idea_features_ref

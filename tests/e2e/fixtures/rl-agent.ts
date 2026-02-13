@@ -1,11 +1,13 @@
 import type { APIRequestContext } from "@playwright/test";
+import { parseListResponse } from "./api_list";
+import { riskLimitSchema } from "./schemas";
 
 export async function fetchRiskLimitSets(api: APIRequestContext) {
   const response = await api.get("/risk-limits");
   if (!response.ok()) {
     throw new Error(`Failed to fetch risk limits: ${response.status()}`);
   }
-  return (await response.json()) as Array<{ id: string }>;
+  return parseListResponse(riskLimitSchema, await response.json());
 }
 
 export async function startAgentRun(api: APIRequestContext, payload: Record<string, unknown>) {

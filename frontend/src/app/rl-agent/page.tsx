@@ -85,6 +85,12 @@ export default function RlAgentPage() {
     () => riskLimits.find((limit) => limit.id === activeRun?.risk_limit_set_id) ?? null,
     [riskLimits, activeRun],
   );
+  const gateTone =
+    status?.promotionGateStatus === "pass"
+      ? "status-ok"
+      : status?.promotionGateStatus === "fail"
+        ? "status-bad"
+        : "status-muted";
 
   const handleStart = async () => {
     if (!riskLimitId) {
@@ -160,6 +166,31 @@ export default function RlAgentPage() {
       </section>
 
       {error ? <div className="empty">{error}</div> : null}
+
+      <section className="summary-grid">
+        <div className="summary-card" data-tone="ember">
+          <span>Run Status</span>
+          <strong>{activeRun?.status ?? "idle"}</strong>
+          <div className="inline-muted">{activeRun?.mode ?? "paper"} mode</div>
+        </div>
+        <div className="summary-card" data-tone="teal">
+          <span>Promotion Gate</span>
+          <strong>{status?.promotionGateStatus ?? "unknown"}</strong>
+          <div className="inline-muted">
+            <span className={`status-pill ${gateTone}`}>Gate status</span>
+          </div>
+        </div>
+        <div className="summary-card" data-tone="slate">
+          <span>Active Version</span>
+          <strong>{activeVersion?.name ?? activeVersion?.id ?? "—"}</strong>
+          <div className="inline-muted">{activeRun?.pair ?? "Gold-USDT"}</div>
+        </div>
+        <div className="summary-card" data-tone="clay">
+          <span>Kill Switch</span>
+          <strong>{status?.killSwitchEnabled ? "Armed" : "Standby"}</strong>
+          <div className="inline-muted">Safety latch</div>
+        </div>
+      </section>
 
       <section className="rl-grid">
         <div className="table-card">

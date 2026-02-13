@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type EvaluationReportInsert = {
@@ -7,7 +7,10 @@ export type EvaluationReportInsert = {
   period_start: string;
   period_end: string;
   dataset_version_id?: string | null;
+  dataset_hash?: string | null;
   feature_set_version_id?: string | null;
+  artifact_uri?: string | null;
+  backtest_run_id?: string | null;
   win_rate: number;
   net_pnl_after_fees: number;
   max_drawdown: number;
@@ -17,12 +20,12 @@ export type EvaluationReportInsert = {
 };
 
 export async function insertEvaluationReport(payload: EvaluationReportInsert) {
-  const result = await supabase.from("evaluation_reports").insert(payload).select("*").single();
+  const result = await convex.from("evaluation_reports").insert(payload).select("*").single();
   return assertNoError(result, "insert evaluation report");
 }
 
 export async function listEvaluationReports(agentVersionId?: string) {
-  const query = supabase.from("evaluation_reports").select("*").order("created_at", { ascending: false });
+  const query = convex.from("evaluation_reports").select("*").order("created_at", { ascending: false });
   if (agentVersionId) {
     query.eq("agent_version_id", agentVersionId);
   }
@@ -31,12 +34,12 @@ export async function listEvaluationReports(agentVersionId?: string) {
 }
 
 export async function getEvaluationReport(id: string) {
-  const result = await supabase.from("evaluation_reports").select("*").eq("id", id).single();
+  const result = await convex.from("evaluation_reports").select("*").eq("id", id).single();
   return assertNoError(result, "get evaluation report");
 }
 
 export async function getLatestEvaluationReport(filters: { agentVersionId?: string; pair?: string } = {}) {
-  const query = supabase.from("evaluation_reports").select("*").order("created_at", { ascending: false }).limit(1);
+  const query = convex.from("evaluation_reports").select("*").order("created_at", { ascending: false }).limit(1);
   if (filters.agentVersionId) {
     query.eq("agent_version_id", filters.agentVersionId);
   }

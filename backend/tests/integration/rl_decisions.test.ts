@@ -6,7 +6,7 @@ import { listTradeExecutionsByDecision } from "../../src/db/repositories/trade_e
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 import { BINGX_SOURCE_TYPES } from "../../src/services/data_source_status_service";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 function buildCandles() {
   const now = Date.now();
@@ -23,7 +23,7 @@ function buildCandles() {
 }
 
 if (!hasEnv) {
-  test.skip("rl decision pipeline requires Supabase configuration", () => {});
+  test.skip("rl decision pipeline requires Convex configuration", () => {});
 } else {
   test("decision pipeline links executions", async () => {
     const riskLimit = await insertRiskLimitSet({
@@ -32,14 +32,14 @@ if (!hasEnv) {
       leverage_cap: 3,
       max_daily_loss: 200,
       max_drawdown: 300,
-      max_open_positions: 2,
+      max_open_positions: 1000000,
       active: true,
     });
 
     await insertAgentVersion({
       name: `Decision Version ${Date.now()}`,
       status: "promoted",
-      artifact_uri: "supabase://models/test",
+      artifact_uri: "convex://models/test",
     });
 
     const now = new Date().toISOString();

@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type AgentConfigUpdate = {
@@ -36,7 +36,7 @@ const DEFAULT_CONFIG = {
 };
 
 export async function getAgentConfig() {
-  const result = await supabase
+  const result = await convex
     .from("agent_configurations")
     .select("*")
     .order("updated_at", { ascending: false })
@@ -47,7 +47,7 @@ export async function getAgentConfig() {
     return result.data;
   }
 
-  const created = await supabase
+  const created = await convex
     .from("agent_configurations")
     .insert(DEFAULT_CONFIG)
     .select("*")
@@ -58,7 +58,7 @@ export async function getAgentConfig() {
 
 export async function updateAgentConfig(payload: AgentConfigUpdate) {
   const current = await getAgentConfig();
-  const updated = await supabase
+  const updated = await convex
     .from("agent_configurations")
     .update({
       ...payload,

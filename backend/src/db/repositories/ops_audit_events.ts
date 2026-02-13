@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type OpsAuditInsert = {
@@ -10,7 +10,7 @@ export type OpsAuditInsert = {
 };
 
 export async function insertOpsAuditEvent(payload: OpsAuditInsert) {
-  const result = await supabase
+  const result = await convex
     .from("ops_audit_events")
     .insert({
       actor: payload.actor,
@@ -26,7 +26,7 @@ export async function insertOpsAuditEvent(payload: OpsAuditInsert) {
 }
 
 export async function listOpsAuditEvents(limit = 100) {
-  const result = await supabase
+  const result = await convex
     .from("ops_audit_events")
     .select("*")
     .order("created_at", { ascending: false })

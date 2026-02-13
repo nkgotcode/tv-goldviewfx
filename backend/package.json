@@ -11,8 +11,8 @@
     "telegram:session": "bun run scripts/telegram-session.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.90.1",
     "cheerio": "^1.1.2",
+    "convex": "^1.31.6",
     "hono": "^4.11.3",
     "playwright": "^1.57.0",
     "telegram": "^2.26.22",

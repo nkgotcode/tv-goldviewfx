@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 
-def test_evaluations_endpoint_returns_report(client):
+def test_evaluations_endpoint_requires_features(client):
     now = datetime.now(tz=timezone.utc)
     payload = {
         "pair": "Gold-USDT",
@@ -11,11 +11,7 @@ def test_evaluations_endpoint_returns_report(client):
 
     response = client.post("/evaluations", json=payload)
 
-    assert response.status_code == 200
-    report = response.json()
-    assert report["pair"] == "Gold-USDT"
-    assert report["trade_count"] > 0
-    assert report["status"] in ("pass", "fail")
+    assert response.status_code == 400
 
 
 def test_evaluations_endpoint_rejects_empty_window(client):

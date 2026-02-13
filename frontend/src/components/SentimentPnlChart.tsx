@@ -35,24 +35,26 @@ export default function SentimentPnlChart() {
       <h3>Sentiment vs PnL</h3>
       <p>Correlation between idea sentiment and realized performance.</p>
       <div className="inline-muted">Correlation: {data.correlation.toFixed(3)}</div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Sentiment</th>
-            <th>Avg PnL</th>
-            <th>Trades</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.by_sentiment.map((row) => (
-            <tr key={row.label}>
-              <td>{row.label}</td>
-              <td>{row.avg_pnl.toFixed(2)}</td>
-              <td>{row.trade_count}</td>
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Sentiment</th>
+              <th>Avg PnL</th>
+              <th>Trades</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.by_sentiment.map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td>{row.avg_pnl.toFixed(2)}</td>
+                <td>{row.trade_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

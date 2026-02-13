@@ -1,11 +1,12 @@
 import { getAgentConfig, updateAgentConfig } from "../db/repositories/agent_config";
 import { listRecentSignals } from "../db/repositories/signals";
-import { insertTrade, updateTradeStatus } from "../db/repositories/trades";
+import { insertTrade } from "../db/repositories/trades";
 import { executeTrade } from "../services/trade_execution";
 import { evaluateTrade } from "../services/risk_engine";
 import { auditTrade } from "../services/trade_audit";
 import { evaluateSourcePolicy } from "../services/source_policy_service";
 import { getPromotionMetrics } from "../services/trade_analytics";
+import { transitionTradeStatus } from "../services/trade_state_machine";
 
 const DEFAULT_INSTRUMENT = "GOLD-USDT";
 
@@ -109,16 +110,20 @@ export async function runTradingAgentOnce() {
       });
 
       if (execution.status === "filled") {
-        await updateTradeStatus(trade.id, "filled");
+        await transitionTradeStatus(trade.id, "filled");
         executed += 1;
         auditTrade("filled", { trade_id: trade.id });
       } else if (execution.status === "failed") {
-        await updateTradeStatus(trade.id, "rejected");
+        await transitionTradeStatus(trade.id, "rejected");
         rejected += 1;
         auditTrade("rejected", { trade_id: trade.id, reason: "execution_failed" });
+      } else if (execution.status === "partial") {
+        await transitionTradeStatus(trade.id, "partial");
       }
     } catch (error) {
-      await updateTradeStatus(trade.id, "rejected");
+      await transitionTradeStatus(trade.id, "rejected", {
+        reason: error instanceof Error ? error.message : "execution_failed",
+      });
       rejected += 1;
       auditTrade("rejected", {
         trade_id: trade.id,

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { apiRequest } from "./fixtures";
-import { readListResponse } from "./fixtures/api_list";
+import { parseListResponse } from "./fixtures/api_list";
+import { agentVersionSchema } from "./fixtures/schemas";
 import { runEvaluation } from "./fixtures/rl-evaluations";
 
 test.skip(!process.env.E2E_RUN, "Set E2E_RUN=1 to enable RL evaluation e2e tests.");
@@ -9,7 +10,7 @@ test("Evaluation workflow returns pass report", async ({ page }) => {
   const api = await apiRequest();
   const versionsResponse = await api.get("/agents/gold-rl-agent/versions");
   expect(versionsResponse.ok()).toBeTruthy();
-  const versions = readListResponse<{ id: string }>(await versionsResponse.json());
+  const versions = parseListResponse(agentVersionSchema, await versionsResponse.json());
   const versionId = versions[0]?.id;
   expect(versionId).toBeTruthy();
 

@@ -18,7 +18,9 @@ export const agentVersionFixture: AgentVersionInsert = {
   training_window_end: new Date().toISOString(),
   algorithm_label: "PPO",
   hyperparameter_summary: "gamma=0.99",
-  artifact_uri: "supabase://models/rl-test",
+  artifact_uri: "convex://models/rl-test",
+  artifact_checksum: "test-checksum",
+  artifact_size_bytes: 128,
   status: "draft",
 };
 

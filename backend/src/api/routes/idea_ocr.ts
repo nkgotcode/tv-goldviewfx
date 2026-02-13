@@ -4,6 +4,7 @@ import { validateJson } from "../middleware/validate";
 import { listIdeaMedia } from "../../db/repositories/idea_media";
 import { runOcrBatch } from "../../services/ocr";
 import { requireOperatorRole } from "../middleware/rbac";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 const runSchema = z.object({
   limit: z.number().int().positive().optional(),
@@ -20,5 +21,11 @@ ideaOcrRoutes.get("/:ideaId", async (c) => {
 ideaOcrRoutes.post("/run", requireOperatorRole, validateJson(runSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof runSchema>;
   const result = await runOcrBatch(payload.limit ?? 10);
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "ocr.run",
+    resource_type: "ocr",
+    metadata: payload,
+  });
   return c.json(result, 202);
 });

@@ -103,3 +103,70 @@ export async function resumeAgentRun(agentId = "gold-rl-agent") {
 export async function stopAgentRun(agentId = "gold-rl-agent") {
   return fetchJson<AgentRun>(`/agents/${agentId}/stop`, { method: "POST" });
 }
+
+export type OnlineLearningConfig = {
+  enabled: boolean;
+  intervalMin: number;
+  pair: string;
+  trainWindowMin: number;
+  evalWindowMin: number;
+  evalLagMin: number;
+  windowSize: number;
+  stride: number;
+  timesteps: number;
+  decisionThreshold: number;
+  autoRollForward: boolean;
+};
+
+export type OnlineLearningReport = {
+  id: string;
+  agentVersionId: string;
+  pair: string;
+  periodStart: string;
+  periodEnd: string;
+  winRate: number;
+  netPnlAfterFees: number;
+  maxDrawdown: number;
+  tradeCount: number;
+  backtestRunId?: string | null;
+  status: "pass" | "fail";
+  createdAt?: string | null;
+};
+
+export type OnlineLearningUpdate = {
+  id: string;
+  agentVersionId: string;
+  windowStart: string;
+  windowEnd: string;
+  status: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  evaluationReportId?: string | null;
+  evaluationReport?: OnlineLearningReport | null;
+};
+
+export type OnlineLearningStatus = {
+  generatedAt: string;
+  config: OnlineLearningConfig;
+  rlService: { url: string; mock: boolean };
+  latestUpdates: OnlineLearningUpdate[];
+  latestReport?: OnlineLearningReport | null;
+};
+
+export async function fetchOnlineLearningStatus(limit = 5): Promise<OnlineLearningStatus | null> {
+  const query = limit ? `?limit=${limit}` : "";
+  try {
+    return await fetchJson<OnlineLearningStatus>(`/ops/learning/status${query}`);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("404")) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function runOnlineLearningNow() {
+  return fetchJson<{ status: string }>(`/ops/learning/run`, {
+    method: "POST",
+  });
+}

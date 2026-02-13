@@ -5,6 +5,7 @@ import { listNewsSources } from "../../db/repositories/news_sources";
 import { listNewsItems } from "../../db/repositories/news_items";
 import { runNewsIngest } from "../../services/news_ingest";
 import { requireOperatorRole } from "../middleware/rbac";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 const ingestSchema = z.object({});
 
@@ -27,5 +28,10 @@ newsRoutes.get("/items", async (c) => {
 
 newsRoutes.post("/ingest", requireOperatorRole, validateJson(ingestSchema), async (c) => {
   const result = await runNewsIngest("manual");
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "news.ingest",
+    resource_type: "news",
+  });
   return c.json(result, 202);
 });

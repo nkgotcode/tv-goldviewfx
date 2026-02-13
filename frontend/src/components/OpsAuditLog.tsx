@@ -12,6 +12,7 @@ function formatDate(value: string) {
 export default function OpsAuditLog() {
   const [events, setEvents] = useState<OpsAuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -20,6 +21,10 @@ export default function OpsAuditLog() {
         const payload = await fetchOpsAudit();
         if (mounted) {
           setEvents(payload.data ?? []);
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(err instanceof Error ? err.message : "Unable to load audit log.");
         }
       } finally {
         if (mounted) setLoading(false);
@@ -37,29 +42,37 @@ export default function OpsAuditLog() {
       <p>Every operator action is captured with metadata and timestamps.</p>
       {loading ? (
         <div className="empty">Loading audit log…</div>
+      ) : error ? (
+        <div className="empty">{error}</div>
       ) : events.length === 0 ? (
         <div className="empty">No audit events recorded.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Actor</th>
-              <th>Action</th>
-              <th>Resource</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((event) => (
-              <tr key={event.id}>
-                <td>{formatDate(event.created_at)}</td>
-                <td>{event.actor}</td>
-                <td>{event.action}</td>
-                <td>{event.resource_type}</td>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Resource</th>
+                <th>Resource ID</th>
+                <th>Metadata</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {events.map((event) => (
+                <tr key={event.id}>
+                  <td>{formatDate(event.created_at)}</td>
+                  <td>{event.actor}</td>
+                  <td>{event.action}</td>
+                  <td>{event.resource_type}</td>
+                  <td className="mono">{event.resource_id ?? "—"}</td>
+                  <td>{Object.keys(event.metadata ?? {}).length} fields</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

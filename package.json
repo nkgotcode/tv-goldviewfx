@@ -17,12 +17,15 @@
   ],
   "devDependencies": {
     "@playwright/test": "^1.57.0",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "zod": "^4.3.5"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "cheerio": "^1.1.2"
+    "cheerio": "^1.1.2",
+    "convex": "^1.31.6",
+    "pg": "^8.17.2"
   }
 }

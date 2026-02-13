@@ -23,12 +23,18 @@
 | Evaluation workflow | US2 | tests/e2e/rl-evaluations.spec.ts | Pass report produced |
 | Evaluation thresholds | US2 | tests/e2e/rl-evaluations-fail.spec.ts | Fail status on low metrics |
 | Evaluation missing data | US2 | tests/e2e/rl-evaluations-missing-data.spec.ts | Empty window rejected |
+| RL training flow | US2 | tests/e2e/rl-training-flow.spec.ts | Train → evaluate → promote succeeds |
 | Ingestion analytics | US3 | tests/e2e/ingestion-controls.spec.ts | Controls + status render |
 | Data source disable | US3 | tests/e2e/rl-data-sources.spec.ts | Config toggles applied |
 | Data source stale | US3 | tests/e2e/rl-data-sources-stale.spec.ts | Stale sources detected |
 | Data source missing | US3 | tests/e2e/rl-data-sources-missing.spec.ts | Missing data flagged |
+| Data integrity gates | US3 | tests/e2e/rl-data-integrity.spec.ts | Candle gaps flagged |
 | Ops dashboard | US3 | tests/e2e/rl-ops-dashboard.spec.ts | Ops controls render |
+| Ops alerts | US3 | tests/e2e/ops-alerts.spec.ts | Alert list returns |
+| Retry queue | US3 | tests/e2e/ops-retry-queue.spec.ts | Retry queue list returns |
 | Governance controls | US5 | tests/e2e/rl-governance.spec.ts | Kill switch + gates visible |
 | Feature inputs | US6 | tests/e2e/rl-feature-inputs.spec.ts | Feature set toggles listed |
 | Dashboard lists | US4 | tests/e2e/dashboard.spec.ts | Summary + filters render |
 | Trade drill-down | US4 | tests/e2e/dashboard-trade-detail.spec.ts | Trade detail view renders |
+| Trade reconciliation | US4 | tests/e2e/trade-reconciliation.spec.ts | Reconcile endpoint responds |
+| Account risk guardrails | US4 | tests/e2e/account-risk.spec.ts | Risk policy + state returned |

@@ -4,6 +4,7 @@ import { validateJson } from "../middleware/validate";
 import { listSourcePolicies, upsertSourcePolicy } from "../../db/repositories/source_policies";
 import { requireOperatorRole } from "../middleware/rbac";
 import { logWarn } from "../../services/logger";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 const policySchema = z.object({
   source_id: z.string().uuid().nullable().optional(),
@@ -33,6 +34,13 @@ sourcePoliciesRoutes.put("/", requireOperatorRole, validateJson(policySchema), a
     enabled: payload.enabled,
     min_confidence_score: payload.min_confidence_score ?? null,
     notes: payload.notes ?? null,
+  });
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "source_policy.upsert",
+    resource_type: "source_policy",
+    resource_id: policy.id ?? null,
+    metadata: payload,
   });
   return c.json(policy);
 });

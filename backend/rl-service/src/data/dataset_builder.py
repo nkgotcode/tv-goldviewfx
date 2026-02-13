@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
 from uuid import uuid4
 
@@ -42,15 +42,19 @@ def build_dataset(
     windows = build_feature_windows(features, window_size, stride)
     dataset_version = None
     if metadata:
+        dataset_hash = compute_dataset_checksum(windows, metadata)
         dataset_version = {
             "id": str(uuid4()),
             "pair": metadata.get("pair"),
             "interval": metadata.get("interval", "1m"),
             "start_at": metadata.get("start_at"),
             "end_at": metadata.get("end_at"),
-            "checksum": compute_dataset_checksum(windows, metadata),
+            "checksum": dataset_hash,
+            "dataset_hash": dataset_hash,
             "feature_set_version_id": metadata.get("feature_set_version_id"),
-            "created_at": datetime.utcnow(),
+            "window_size": window_size,
+            "stride": stride,
+            "created_at": datetime.now(timezone.utc),
         }
     return {
         "window_size": window_size,

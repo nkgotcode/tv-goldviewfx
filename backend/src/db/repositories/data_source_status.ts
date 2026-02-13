@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type DataSourceStatusInsert = {
@@ -23,7 +23,7 @@ export type DataSourceStatusInsert = {
 };
 
 export async function upsertDataSourceStatus(payload: DataSourceStatusInsert) {
-  const result = await supabase
+  const result = await convex
     .from("data_source_status")
     .upsert(payload, { onConflict: "pair,source_type" })
     .select("*")
@@ -32,7 +32,7 @@ export async function upsertDataSourceStatus(payload: DataSourceStatusInsert) {
 }
 
 export async function listDataSourceStatus(pair?: DataSourceStatusInsert["pair"]) {
-  const query = supabase.from("data_source_status").select("*").order("source_type", { ascending: true });
+  const query = convex.from("data_source_status").select("*").order("source_type", { ascending: true });
   if (pair) {
     query.eq("pair", pair);
   }

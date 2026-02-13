@@ -1,8 +1,14 @@
 import { Hono } from "hono";
 import { getTradingSummary, getTradingMetrics } from "../../services/trade_analytics";
 import { logWarn } from "../../services/logger";
+import { reconcileTradeExecutions } from "../../services/trade_reconciliation";
+import { getAccountRiskSummary } from "../../services/account_risk_service";
+import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 export const opsTradingRoutes = new Hono();
+
+opsTradingRoutes.use("*", withOpsIdentity);
 
 opsTradingRoutes.get("/summary", async (c) => {
   try {
@@ -30,5 +36,31 @@ opsTradingRoutes.get("/metrics", async (c) => {
   } catch (error) {
     logWarn("Failed to load trading metrics", { error: String(error) });
     return c.json({ generated_at: new Date().toISOString(), series: [] });
+  }
+});
+
+opsTradingRoutes.post("/reconcile", requireOperatorRole, async (c) => {
+  try {
+    const result = await reconcileTradeExecutions();
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "trading.reconcile",
+      resource_type: "trade_execution",
+      metadata: result,
+    });
+    return c.json({ ...result, reconciled_at: new Date().toISOString() });
+  } catch (error) {
+    logWarn("Failed to reconcile trades", { error: String(error) });
+    return c.json({ error: "reconcile_failed" }, 500);
+  }
+});
+
+opsTradingRoutes.get("/risk", async (c) => {
+  try {
+    const summary = await getAccountRiskSummary();
+    return c.json(summary);
+  } catch (error) {
+    logWarn("Failed to load account risk summary", { error: String(error) });
+    return c.json({ error: "risk_summary_failed" }, 500);
   }
 });

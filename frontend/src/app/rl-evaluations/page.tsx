@@ -86,6 +86,29 @@ export default function RlEvaluationsPage() {
 
       {error ? <div className="empty">{error}</div> : null}
 
+      <section className="summary-grid">
+        <div className="summary-card" data-tone="ember">
+          <span>Reports</span>
+          <strong>{reports.length}</strong>
+          <div className="inline-muted">Evaluation runs</div>
+        </div>
+        <div className="summary-card" data-tone="teal">
+          <span>Selected</span>
+          <strong>{selectedReport?.status ?? "—"}</strong>
+          <div className="inline-muted">{selectedReport?.pair ?? "No report"}</div>
+        </div>
+        <div className="summary-card" data-tone="slate">
+          <span>Win Rate</span>
+          <strong>{selectedReport ? `${(selectedReport.win_rate * 100).toFixed(1)}%` : "—"}</strong>
+          <div className="inline-muted">Latest evaluation</div>
+        </div>
+        <div className="summary-card" data-tone="clay">
+          <span>Version</span>
+          <strong>{versionId || "—"}</strong>
+          <div className="inline-muted">Active selection</div>
+        </div>
+      </section>
+
       <section className="rl-grid">
         <div className="table-card">
           <h3>Run Evaluation</h3>
@@ -165,6 +188,34 @@ export default function RlEvaluationsPage() {
             </tbody>
           </table>
         )}
+      </section>
+
+      <section className="module-section">
+        <div className="section-head">
+          <div>
+            <span>Evaluation Routine</span>
+            <h2>Promotion readiness</h2>
+            <p>Standardize checks before enabling a model for live trading.</p>
+          </div>
+        </div>
+        <div className="playbook-grid">
+          <article className="playbook-card" data-tone="slate">
+            <strong>Risk Thresholds</strong>
+            <ul className="bullet-list">
+              <li>Compare max drawdown to the active risk set.</li>
+              <li>Validate win rate and trade count consistency.</li>
+              <li>Confirm net PnL after fees.</li>
+            </ul>
+          </article>
+          <article className="playbook-card" data-tone="teal">
+            <strong>Backtest Integrity</strong>
+            <ul className="bullet-list">
+              <li>Verify candle coverage for the evaluation window.</li>
+              <li>Ensure feature set version matches run config.</li>
+              <li>Archive artifacts with version tags.</li>
+            </ul>
+          </article>
+        </div>
       </section>
 
       {loading && reports.length === 0 ? <div className="empty">Loading evaluation reports…</div> : null}

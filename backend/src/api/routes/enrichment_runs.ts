@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { supabase } from "../../db/client";
+import { convex } from "../../db/client";
 import { listEnrichmentRevisions } from "../../db/repositories/enrichment_runs";
 
 export const enrichmentRunsRoutes = new Hono();
 
 enrichmentRunsRoutes.get("/", async (c) => {
-  const result = await supabase
+  const result = await convex
     .from("enrichment_runs")
     .select("*")
     .order("started_at", { ascending: false })

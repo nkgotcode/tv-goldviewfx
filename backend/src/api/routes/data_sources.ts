@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { validateJson } from "../middleware/validate";
 import { dataSourceConfigSchema, tradingPairSchema } from "../../rl/schemas";
 import {
@@ -12,6 +13,7 @@ import { getSourceById, listSourcesByType } from "../../db/repositories/sources"
 import { runTradingViewSync } from "../../services/tradingview_sync";
 import { runTelegramIngest } from "../../services/telegram_ingest";
 import { runBingxMarketDataIngest } from "../../services/bingx_market_data_ingest";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 const dataSourceBackfillSchema = z.object({
   sourceType: z.string().min(1),
@@ -21,6 +23,8 @@ const dataSourceBackfillSchema = z.object({
 });
 
 export const dataSourcesRoutes = new Hono();
+
+dataSourcesRoutes.use("*", withOpsIdentity);
 
 dataSourcesRoutes.get("/status", async (c) => {
   const pair = c.req.query("pair") as z.infer<typeof tradingPairSchema> | undefined;
@@ -38,7 +42,7 @@ dataSourcesRoutes.get("/status", async (c) => {
   );
 });
 
-dataSourcesRoutes.patch("/config", validateJson(dataSourceConfigSchema), async (c) => {
+dataSourcesRoutes.patch("/config", requireOperatorRole, validateJson(dataSourceConfigSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof dataSourceConfigSchema>;
   const sources = payload.sources ?? [];
   const updatedSources = [];
@@ -61,6 +65,12 @@ dataSourcesRoutes.patch("/config", validateJson(dataSourceConfigSchema), async (
     }
   }
 
+  await recordOpsAudit({
+    actor: c.get("opsActor") ?? "system",
+    action: "data_sources.config.update",
+    resource_type: "data_source_config",
+    metadata: payload,
+  });
   return c.json({ sources: updatedSources });
 });
 
@@ -97,14 +107,26 @@ dataSourcesRoutes.get("/runs", async (c) => {
   return c.json(filtered);
 });
 
-dataSourcesRoutes.post("/backfill", validateJson(dataSourceBackfillSchema), async (c) => {
+dataSourcesRoutes.post("/backfill", requireOperatorRole, validateJson(dataSourceBackfillSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof dataSourceBackfillSchema>;
   if (payload.sourceType.startsWith("bingx_")) {
     await runBingxMarketDataIngest({ pairs: [payload.pair], backfill: true });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "data_sources.backfill",
+      resource_type: "bingx",
+      metadata: payload,
+    });
     return c.json({ status: "accepted" }, 202);
   }
   if (payload.sourceType === "ideas") {
     await runTradingViewSync({ trigger: "manual" });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "data_sources.backfill",
+      resource_type: "tradingview",
+      metadata: payload,
+    });
     return c.json({ status: "accepted" }, 202);
   }
   if (payload.sourceType === "signals") {
@@ -114,6 +136,12 @@ dataSourcesRoutes.post("/backfill", validateJson(dataSourceBackfillSchema), asyn
       return c.json({ error: "No telegram source configured" }, 400);
     }
     await runTelegramIngest({ sourceId: source.id, trigger: "manual" });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "data_sources.backfill",
+      resource_type: "telegram",
+      metadata: payload,
+    });
     return c.json({ status: "accepted" }, 202);
   }
   return c.json({ error: "Unsupported source type" }, 400);

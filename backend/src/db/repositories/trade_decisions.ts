@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type TradeDecisionInsert = {
@@ -11,15 +11,17 @@ export type TradeDecisionInsert = {
   policy_version_label?: string | null;
   risk_check_result?: "pass" | "fail";
   reason?: string | null;
+  reference_price?: number | null;
+  trace_id?: string | null;
 };
 
 export async function insertTradeDecision(payload: TradeDecisionInsert) {
-  const result = await supabase.from("trade_decisions").insert(payload).select("*").single();
+  const result = await convex.from("trade_decisions").insert(payload).select("*").single();
   return assertNoError(result, "insert trade decision");
 }
 
 export async function listTradeDecisions(agentRunId: string) {
-  const result = await supabase
+  const result = await convex
     .from("trade_decisions")
     .select("*")
     .eq("agent_run_id", agentRunId)
@@ -29,6 +31,6 @@ export async function listTradeDecisions(agentRunId: string) {
 }
 
 export async function getTradeDecision(id: string) {
-  const result = await supabase.from("trade_decisions").select("*").eq("id", id).single();
+  const result = await convex.from("trade_decisions").select("*").eq("id", id).single();
   return assertNoError(result, "get trade decision");
 }

@@ -4,10 +4,10 @@ import { insertDatasetVersion } from "../../src/db/repositories/dataset_versions
 import { insertDatasetLineage } from "../../src/db/repositories/dataset_lineage";
 import { insertFeatureSetVersion } from "../../src/db/repositories/feature_set_versions";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("dataset routes require Supabase configuration", () => {});
+  test.skip("dataset routes require Convex configuration", () => {});
 } else {
   test("dataset routes return versions and lineage", async () => {
     const featureSet = await insertFeatureSetVersion({
@@ -20,6 +20,9 @@ if (!hasEnv) {
       start_at: new Date(Date.now() - 3600000).toISOString(),
       end_at: new Date().toISOString(),
       checksum: `chk-${Date.now()}`,
+      dataset_hash: `hash-${Date.now()}`,
+      window_size: 30,
+      stride: 1,
       feature_set_version_id: featureSet.id,
     });
     await insertDatasetLineage({
@@ -37,6 +40,7 @@ if (!hasEnv) {
     expect(detailResponse.status).toBe(200);
     const detail = await detailResponse.json();
     expect(detail.id).toBe(dataset.id);
+    expect(detail.dataset_hash).toBeTruthy();
 
     const lineageResponse = await rlApiRequest(`/datasets/${dataset.id}/lineage`, { method: "GET" });
     expect(lineageResponse.status).toBe(200);

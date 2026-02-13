@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("rbac tests require Supabase configuration", () => {});
+  test.skip("rbac tests require Convex configuration", () => {});
 } else {
   test("analyst role cannot update agent config", async () => {
     const response = await app.request("/agent/config", {
@@ -31,5 +31,38 @@ if (!hasEnv) {
       }),
     });
     expect(response.status).toBe(403);
+  });
+
+  test("analyst role cannot reconcile trades", async () => {
+    const response = await app.request("/ops/trading/reconcile", {
+      method: "POST",
+      headers: {
+        "x-ops-role": "analyst",
+      },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  test("api token ignores role overrides", async () => {
+    const previousToken = process.env.API_TOKEN;
+    process.env.API_TOKEN = "test-token";
+    try {
+      const response = await app.request("/agent/config", {
+        method: "PUT",
+        headers: {
+          authorization: "Bearer test-token",
+          "content-type": "application/json",
+          "x-ops-role": "analyst",
+        },
+        body: JSON.stringify({ enabled: true }),
+      });
+      expect(response.status).toBe(200);
+    } finally {
+      if (previousToken) {
+        process.env.API_TOKEN = previousToken;
+      } else {
+        delete process.env.API_TOKEN;
+      }
+    }
   });
 }

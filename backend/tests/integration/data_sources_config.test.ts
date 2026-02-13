@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { rlApiRequest } from "../fixtures/rl_api";
 import { listDataSourceConfigs } from "../../src/db/repositories/data_source_configs";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("data source config requires Supabase configuration", () => {});
+  test.skip("data source config requires Convex configuration", () => {});
 } else {
   test("data source config updates all pairs", async () => {
     const response = await rlApiRequest("/data-sources/config", {

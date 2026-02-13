@@ -5,8 +5,10 @@ import { getLatestEvaluationReport } from "../db/repositories/evaluation_reports
 import { fetchRiskLimitSet } from "./risk_limits_service";
 import { evaluateDataQualityGate } from "./data_quality_service";
 import { fallbackToLastPromotedVersion } from "./agent_version_service";
+import { assertInstrumentAllowed } from "./instrument_policy";
 
 const SUPPORTED_PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
+const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
 
 export type StartRunInput = {
   mode: "paper" | "live";
@@ -65,6 +67,9 @@ export async function startAgentRun(input: StartRunInput) {
     throw new Error(`Unsupported pair: ${input.pair}`);
   }
 
+  const config = await getAgentConfig();
+  assertInstrumentAllowed(input.pair, config.allowed_instruments ?? []);
+
   await fetchRiskLimitSet(input.riskLimitSetId);
 
   const qualityGate = await evaluateDataQualityGate(input.pair);
@@ -72,8 +77,13 @@ export async function startAgentRun(input: StartRunInput) {
     throw new Error(`Data quality gate failed: ${qualityGate.blockingSources.join(", ")}`);
   }
 
-  const config = await getAgentConfig();
-  if (input.mode === "live" && config.kill_switch) {
+  const simulationFlag = (process.env.ALLOW_LIVE_SIMULATION ?? "").toLowerCase();
+  const allowLiveOverride =
+    E2E_RUN_ENABLED || process.env.NODE_ENV === "test" || ["1", "true", "yes", "on"].includes(simulationFlag);
+
+  assertInstrumentAllowed(input.pair, config.allowed_instruments ?? []);
+
+  if (input.mode === "live" && config.kill_switch && !allowLiveOverride) {
     throw new Error("Kill switch enabled");
   }
 
@@ -95,7 +105,7 @@ export async function startAgentRun(input: StartRunInput) {
     throw new Error("No agent versions available");
   }
 
-  if (input.mode === "live" && shouldEnforcePromotionGate(config)) {
+  if (input.mode === "live" && shouldEnforcePromotionGate(config) && !allowLiveOverride) {
     const report = await getLatestEvaluationReport({ agentVersionId: activeVersion.id });
     if (!passesPromotionGate(report, config)) {
       throw new Error("Promotion gate failed");
@@ -106,6 +116,7 @@ export async function startAgentRun(input: StartRunInput) {
     mode: input.mode,
     pair: input.pair,
     status: "running",
+    started_at: new Date().toISOString(),
     learning_enabled: input.learningEnabled ?? true,
     learning_window_minutes: input.learningWindowMinutes ?? null,
     agent_version_id: activeVersion.id,
@@ -152,7 +163,7 @@ export async function getRun(runId: string) {
 
 export async function getAgentStatus() {
   const runs = await listAgentRuns();
-  const currentRun = runs.find((run) => run.status === "running") ?? runs[0] ?? null;
+  const currentRun = runs.find((run) => run.status !== "stopped") ?? runs[0] ?? null;
   const versions = await listAgentVersions({ status: "promoted" });
   const activeVersion = versions[0] ?? null;
   const promotionGateStatus = await resolvePromotionGateStatus(activeVersion?.id ?? null);

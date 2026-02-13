@@ -22,7 +22,7 @@ test("Risk limit breach pauses run", async () => {
 
   const run = await startAgentRun(api, {
     mode: "paper",
-    pair: "XAUTUSDT",
+    pair: "Gold-USDT",
     riskLimitSetId: limit.id,
     learningEnabled: true,
     learningWindowMinutes: 30,

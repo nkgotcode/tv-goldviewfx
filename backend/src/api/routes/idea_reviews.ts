@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { validateJson } from "../middleware/validate";
-import { supabase } from "../../db/client";
+import { convex } from "../../db/client";
 import { setIdeaReviewStatus } from "../../services/idea_review_service";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { recordOpsAudit } from "../../services/ops_audit";
@@ -17,7 +17,7 @@ ideaReviewRoutes.use("*", withOpsIdentity);
 
 ideaReviewRoutes.get("/:ideaId", async (c) => {
   const ideaId = c.req.param("ideaId");
-  const result = await supabase
+  const result = await convex
     .from("ideas")
     .select("id, review_status, reviewed_at, reviewed_by")
     .eq("id", ideaId)

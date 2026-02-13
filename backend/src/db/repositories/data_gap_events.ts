@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type DataGapEventStatus = "open" | "healing" | "resolved";
@@ -23,7 +23,7 @@ export async function getDataGapEventByKey(params: {
   gap_start: string;
   gap_end: string;
 }) {
-  const query = supabase
+  const query = convex
     .from("data_gap_events")
     .select("*")
     .eq("pair", params.pair)
@@ -51,7 +51,7 @@ export async function upsertDataGapEvent(payload: DataGapEventInsert) {
   const status: DataGapEventStatus = payload.status ?? "open";
 
   if (!existing) {
-    const result = await supabase
+    const result = await convex
       .from("data_gap_events")
       .insert({
         pair: payload.pair,
@@ -73,7 +73,7 @@ export async function upsertDataGapEvent(payload: DataGapEventInsert) {
     return { event: assertNoError(result, "insert data gap event"), created: true };
   }
 
-  const result = await supabase
+  const result = await convex
     .from("data_gap_events")
     .update({
       expected_interval_seconds: payload.expected_interval_seconds ?? existing.expected_interval_seconds,
@@ -95,7 +95,7 @@ export async function listOpenDataGapEvents(params?: {
   source_type?: string;
   limit?: number;
 }) {
-  const query = supabase
+  const query = convex
     .from("data_gap_events")
     .select("*")
     .in("status", ["open", "healing"])
@@ -114,7 +114,7 @@ export async function listOpenDataGapEvents(params?: {
 }
 
 export async function resolveDataGapEvent(id: string) {
-  const result = await supabase
+  const result = await convex
     .from("data_gap_events")
     .update({ status: "resolved", resolved_at: new Date().toISOString() })
     .eq("id", id)
@@ -124,10 +124,10 @@ export async function resolveDataGapEvent(id: string) {
 }
 
 export async function recordGapHealAttempt(id: string) {
-  const current = await supabase.from("data_gap_events").select("heal_attempts").eq("id", id).single();
+  const current = await convex.from("data_gap_events").select("heal_attempts").eq("id", id).single();
   const currentRow = assertNoError(current, "load data gap heal attempts");
   const healAttempts = (currentRow.heal_attempts ?? 0) + 1;
-  const result = await supabase
+  const result = await convex
     .from("data_gap_events")
     .update({
       status: "healing",

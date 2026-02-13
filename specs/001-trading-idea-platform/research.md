@@ -22,7 +22,7 @@
 
 ## Decision: Vector storage
 
-- **Decision**: Store similarity vectors in Supabase Postgres using pgvector and
+- **Decision**: Store similarity vectors in Convex documents (embedding arrays) and
   maintain a separate enrichment table for model metadata.
 - **Rationale**: Keeps all derived data in a single store with similarity search
   support and minimal operational overhead.

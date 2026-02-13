@@ -2,22 +2,22 @@ import { test, expect } from "bun:test";
 import { insertAgentVersion, getAgentVersion } from "../../src/db/repositories/agent_versions";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("rl version routes require Supabase configuration", () => {});
+  test.skip("rl version routes require Convex configuration", () => {});
 } else {
   test("promote and rollback agent versions", async () => {
     const baseVersion = await insertAgentVersion({
       name: `Base Version ${Date.now()}`,
       status: "promoted",
-      artifact_uri: "supabase://models/base",
+      artifact_uri: "convex://models/base",
     });
 
     const nextVersion = await insertAgentVersion({
       name: `Next Version ${Date.now()}`,
       status: "evaluating",
-      artifact_uri: "supabase://models/next",
+      artifact_uri: "convex://models/next",
     });
 
     const promoteResponse = await rlApiRequest(

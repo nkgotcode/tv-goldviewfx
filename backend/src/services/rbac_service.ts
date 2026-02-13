@@ -1,4 +1,4 @@
-import { supabase } from "../db/client";
+import { convex } from "../db/client";
 
 export type OpsRole = "operator" | "analyst";
 
@@ -12,6 +12,9 @@ function normalizeRole(role?: string | null): OpsRole | null {
 }
 
 export async function resolveRole(actor?: string | null, headerRole?: string | null): Promise<OpsRole> {
+  if (process.env.API_TOKEN && process.env.API_TOKEN.trim().length > 0) {
+    return "operator";
+  }
   const override = normalizeRole(headerRole);
   if (override) {
     return override;
@@ -19,7 +22,7 @@ export async function resolveRole(actor?: string | null, headerRole?: string | n
   if (!actor) {
     return "operator";
   }
-  const result = await supabase
+  const result = await convex
     .from("role_assignments")
     .select("role")
     .eq("actor", actor)

@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("dashboard endpoint requires Supabase configuration", () => {});
+  test.skip("dashboard endpoint requires Convex configuration", () => {});
 } else {
   test("GET /dashboard/summary returns metrics", async () => {
     const response = await app.request("/dashboard/summary");

@@ -1,4 +1,5 @@
 import { logInfo } from "./logger";
+import { recordDecisionLatencyMetric } from "./observability_service";
 
 export function recordDecisionLatency(params: {
   runId: string;
@@ -6,6 +7,7 @@ export function recordDecisionLatency(params: {
   mode?: string;
   latencyMs: number;
   warnings?: string[];
+  traceId?: string | null;
 }) {
   logInfo("rl.metrics.decision_latency", {
     run_id: params.runId,
@@ -14,6 +16,14 @@ export function recordDecisionLatency(params: {
     latency_ms: params.latencyMs,
     warnings: params.warnings ?? [],
   });
+  recordDecisionLatencyMetric({
+    runId: params.runId,
+    pair: params.pair,
+    mode: params.mode,
+    latencyMs: params.latencyMs,
+    warnings: params.warnings,
+    traceId: params.traceId ?? null,
+  }).catch(() => {});
 }
 
 export function recordLearningWindow(params: {

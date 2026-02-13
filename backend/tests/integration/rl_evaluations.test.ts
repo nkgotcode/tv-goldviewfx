@@ -2,16 +2,16 @@ import { test, expect } from "bun:test";
 import { insertAgentVersion } from "../../src/db/repositories/agent_versions";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 
 if (!hasEnv) {
-  test.skip("rl evaluations require Supabase configuration", () => {});
+  test.skip("rl evaluations require Convex configuration", () => {});
 } else {
   test("evaluation workflow persists reports", async () => {
     const version = await insertAgentVersion({
       name: `Eval Version ${Date.now()}`,
       status: "promoted",
-      artifact_uri: "supabase://models/eval",
+      artifact_uri: "convex://models/eval",
     });
 
     const periodEnd = new Date();
@@ -33,6 +33,8 @@ if (!hasEnv) {
     expect(report.agent_version_id).toBe(version.id);
     expect(report.pair).toBe("Gold-USDT");
     expect(report.trade_count).toBeGreaterThan(0);
+    expect(report.dataset_hash).toBeTruthy();
+    expect(report.artifact_uri).toBeTruthy();
 
     const listResponse = await rlApiRequest(`/agents/gold-rl-agent/evaluations?agentVersionId=${version.id}`);
     expect(listResponse.status).toBe(200);

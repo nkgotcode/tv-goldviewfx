@@ -18,6 +18,7 @@ import { shouldRunIngestion } from "./ingestion_control";
 export type SyncTrigger = "manual" | "schedule";
 
 const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
+const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
 
 function getRecencyCutoffDays(recentDays: number): Date | null {
   if (recentDays <= 0) {
@@ -59,6 +60,10 @@ export async function runTradingViewSync(options: {
     (env.TRADINGVIEW_USE_HTML ? env.TRADINGVIEW_HTML_PATH : undefined) ??
     env.TRADINGVIEW_HTML_PATH ??
     "tradingview";
+  if (E2E_RUN_ENABLED) {
+    const runId = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return { runId, newCount: 0, updatedCount: 0, errorCount: 0 };
+  }
   const source = await getOrCreateSource("tradingview", sourceIdentifier, "TradingView");
   const control = await shouldRunIngestion({
     sourceType: "tradingview",

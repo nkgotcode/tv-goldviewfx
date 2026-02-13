@@ -1,173 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useCustom, useList } from "@refinedev/core";
+import { useCustom } from "@refinedev/core";
+import Link from "next/link";
 import Layout from "../components/Layout";
-import IdeaTable from "../components/IdeaTable";
-import TradeTable from "../components/TradeTable";
-import SignalTable from "../components/SignalTable";
-import TelegramTable from "../components/TelegramTable";
-import OperationsPanel from "../components/OperationsPanel";
-import TradeControls from "../components/TradeControls";
-import SourceEfficacyPanel from "../components/SourceEfficacyPanel";
-import SentimentPnlChart from "../components/SentimentPnlChart";
-import TopicTrendsPanel from "../components/TopicTrendsPanel";
-import SourceGatingPanel from "../components/SourceGatingPanel";
-import type { DashboardSummary, Idea, Signal, TelegramPost, Trade } from "../services/api";
-
-function toIso(value: string) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toISOString();
-}
+import HeroActions from "../components/HeroActions";
+import MarketKlinePanel from "../components/MarketKlinePanel";
+import type { DashboardSummary } from "../services/api";
 
 export default function HomePage() {
-  const [ideaQuery, setIdeaQuery] = useState("");
-  const [ideaSentiment, setIdeaSentiment] = useState("");
-  const [ideaStart, setIdeaStart] = useState("");
-  const [ideaEnd, setIdeaEnd] = useState("");
-  const [ideaDuplicates, setIdeaDuplicates] = useState(false);
-  const [ideasPage, setIdeasPage] = useState(1);
-  const [ideasPageSize, setIdeasPageSize] = useState(10);
-
-  const [signalQuery, setSignalQuery] = useState("");
-  const [signalSource, setSignalSource] = useState("");
-  const [signalMinConfidence, setSignalMinConfidence] = useState("");
-  const [signalStart, setSignalStart] = useState("");
-  const [signalEnd, setSignalEnd] = useState("");
-  const [signalsPage, setSignalsPage] = useState(1);
-  const [signalsPageSize, setSignalsPageSize] = useState(10);
-
-  const [tradeStatus, setTradeStatus] = useState("");
-  const [tradeMode, setTradeMode] = useState("");
-  const [tradeSide, setTradeSide] = useState("");
-  const [tradeInstrument, setTradeInstrument] = useState("");
-  const [tradeStart, setTradeStart] = useState("");
-  const [tradeEnd, setTradeEnd] = useState("");
-  const [tradesPage, setTradesPage] = useState(1);
-  const [tradesPageSize, setTradesPageSize] = useState(10);
-
-  const [telegramQuery, setTelegramQuery] = useState("");
-  const [telegramStatus, setTelegramStatus] = useState("");
-  const [telegramStart, setTelegramStart] = useState("");
-  const [telegramEnd, setTelegramEnd] = useState("");
-  const [telegramDuplicates, setTelegramDuplicates] = useState(false);
-  const [telegramPage, setTelegramPage] = useState(1);
-  const [telegramPageSize, setTelegramPageSize] = useState(10);
-
-  const clearFilters = () => {
-    setIdeaQuery("");
-    setIdeaSentiment("");
-    setIdeaStart("");
-    setIdeaEnd("");
-    setIdeaDuplicates(false);
-    setIdeasPage(1);
-    setSignalQuery("");
-    setSignalSource("");
-    setSignalMinConfidence("");
-    setSignalStart("");
-    setSignalEnd("");
-    setSignalsPage(1);
-    setTradeStatus("");
-    setTradeMode("");
-    setTradeSide("");
-    setTradeInstrument("");
-    setTradeStart("");
-    setTradeEnd("");
-    setTradesPage(1);
-    setTelegramQuery("");
-    setTelegramStatus("");
-    setTelegramStart("");
-    setTelegramEnd("");
-    setTelegramDuplicates(false);
-    setTelegramPage(1);
-  };
-
-  const ideaFilters = useMemo(() => {
-    return [
-      { field: "q", operator: "eq", value: ideaQuery || undefined },
-      { field: "sentiment", operator: "eq", value: ideaSentiment || undefined },
-      { field: "start", operator: "eq", value: toIso(ideaStart) },
-      { field: "end", operator: "eq", value: toIso(ideaEnd) },
-      { field: "include_duplicates", operator: "eq", value: ideaDuplicates ? "true" : undefined },
-    ];
-  }, [ideaQuery, ideaSentiment, ideaStart, ideaEnd, ideaDuplicates]);
-
-  useEffect(() => {
-    setIdeasPage(1);
-  }, [ideaQuery, ideaSentiment, ideaStart, ideaEnd, ideaDuplicates]);
-
-  const signalFilters = useMemo(() => {
-    return [
-      { field: "q", operator: "eq", value: signalQuery || undefined },
-      { field: "source", operator: "eq", value: signalSource || undefined },
-      { field: "min_confidence", operator: "eq", value: signalMinConfidence || undefined },
-      { field: "start", operator: "eq", value: toIso(signalStart) },
-      { field: "end", operator: "eq", value: toIso(signalEnd) },
-    ];
-  }, [signalQuery, signalSource, signalMinConfidence, signalStart, signalEnd]);
-
-  useEffect(() => {
-    setSignalsPage(1);
-  }, [signalQuery, signalSource, signalMinConfidence, signalStart, signalEnd]);
-
-  const tradeFilters = useMemo(() => {
-    return [
-      { field: "status", operator: "eq", value: tradeStatus || undefined },
-      { field: "mode", operator: "eq", value: tradeMode || undefined },
-      { field: "side", operator: "eq", value: tradeSide || undefined },
-      { field: "instrument", operator: "eq", value: tradeInstrument || undefined },
-      { field: "start", operator: "eq", value: toIso(tradeStart) },
-      { field: "end", operator: "eq", value: toIso(tradeEnd) },
-    ];
-  }, [tradeStatus, tradeMode, tradeSide, tradeInstrument, tradeStart, tradeEnd]);
-
-  useEffect(() => {
-    setTradesPage(1);
-  }, [tradeStatus, tradeMode, tradeSide, tradeInstrument, tradeStart, tradeEnd]);
-
-  const telegramFilters = useMemo(() => {
-    return [
-      { field: "q", operator: "eq", value: telegramQuery || undefined },
-      { field: "status", operator: "eq", value: telegramStatus || undefined },
-      { field: "start", operator: "eq", value: toIso(telegramStart) },
-      { field: "end", operator: "eq", value: toIso(telegramEnd) },
-      { field: "include_duplicates", operator: "eq", value: telegramDuplicates ? "true" : undefined },
-    ];
-  }, [telegramQuery, telegramStatus, telegramStart, telegramEnd, telegramDuplicates]);
-
-  useEffect(() => {
-    setTelegramPage(1);
-  }, [telegramQuery, telegramStatus, telegramStart, telegramEnd, telegramDuplicates]);
-
   const { result: summaryResult, query: summaryQuery } = useCustom<DashboardSummary>({
     url: "/dashboard/summary",
     method: "get",
-  });
-
-  const { result: ideasResult, query: ideasQuery } = useList<Idea>({
-    resource: "ideas",
-    filters: ideaFilters,
-    pagination: { currentPage: ideasPage, pageSize: ideasPageSize, mode: "server" },
-  });
-
-  const { result: signalsResult, query: signalsQuery } = useList<Signal>({
-    resource: "signals",
-    filters: signalFilters,
-    pagination: { currentPage: signalsPage, pageSize: signalsPageSize, mode: "server" },
-  });
-
-  const { result: tradesResult, query: tradesQuery } = useList<Trade>({
-    resource: "trades",
-    filters: tradeFilters,
-    pagination: { currentPage: tradesPage, pageSize: tradesPageSize, mode: "server" },
-  });
-
-  const { result: telegramResult, query: telegramListQuery } = useList<TelegramPost>({
-    resource: "telegram-posts",
-    filters: telegramFilters,
-    pagination: { currentPage: telegramPage, pageSize: telegramPageSize, mode: "server" },
   });
 
   const summary = summaryResult?.data ?? summaryQuery?.data?.data ?? {
@@ -178,354 +21,248 @@ export default function HomePage() {
     last_sync_at: null,
   };
 
-  const ideas = ideasResult?.data ?? ideasQuery?.data?.data ?? [];
-  const signals = signalsResult?.data ?? signalsQuery?.data?.data ?? [];
-  const trades = tradesResult?.data ?? tradesQuery?.data?.data ?? [];
-  const telegramPosts = telegramResult?.data ?? telegramListQuery?.data?.data ?? [];
-
-  const ideasLoading = Boolean(ideasQuery?.isLoading);
-  const signalsLoading = Boolean(signalsQuery?.isLoading);
-  const tradesLoading = Boolean(tradesQuery?.isLoading);
-  const telegramLoading = Boolean(telegramListQuery?.isLoading);
-
-  const ideasTotal = ideasResult?.total ?? ideasQuery?.data?.total ?? ideas.length;
-  const signalsTotal = signalsResult?.total ?? signalsQuery?.data?.total ?? signals.length;
-  const tradesTotal = tradesResult?.total ?? tradesQuery?.data?.total ?? trades.length;
-  const telegramTotal = telegramResult?.total ?? telegramListQuery?.data?.total ?? telegramPosts.length;
+  const syncStatus = summary.last_sync_status ?? "unknown";
+  const syncTone =
+    syncStatus === "succeeded" ? "status-ok" : syncStatus === "failed" ? "status-bad" : "status-muted";
+  const lastSyncAt = summary.last_sync_at ?? "not recorded";
 
   return (
     <Layout>
-      <section className="hero">
-        <h1>Goldviewfx Signal Command</h1>
-        <p>
-          Monitor TradingView ideas, Telegram intelligence, and execution quality
-          in a single production-grade cockpit. Use the filters to zero in on
-          sentiment shifts, confidence bands, and trade outcomes.
-        </p>
-      </section>
-
-      <section className="summary-grid">
-        <div className="summary-card">
-          <span>Ideas</span>
-          <strong>{summary.idea_count}</strong>
-          <div className="inline-muted">TradingView updates</div>
-        </div>
-        <div className="summary-card">
-          <span>Signals</span>
-          <strong>{summary.signal_count}</strong>
-          <div className="inline-muted">Enriched + Telegram</div>
-        </div>
-        <div className="summary-card">
-          <span>Trades</span>
-          <strong>{summary.trade_count}</strong>
-          <div className="inline-muted">Paper + live pipelines</div>
-        </div>
-        <div className="summary-card">
-          <span>Last Sync</span>
-          <strong>{summary.last_sync_status ?? "unknown"}</strong>
-          <div className="inline-muted">{summary.last_sync_at ?? "not recorded"}</div>
-        </div>
-      </section>
-
-      <section className="ops-grid">
-        <TradeControls />
-        <SourceGatingPanel />
-      </section>
-
-      <OperationsPanel />
-
-      <section className="insights-grid">
-        <SourceEfficacyPanel />
-        <SentimentPnlChart />
-        <TopicTrendsPanel />
-      </section>
-
-      <section className="dashboard-grid">
-        <aside className="filters">
-          <div className="filter-group">
-            <h4>Ideas</h4>
-            <div className="filter-row">
-              <label htmlFor="idea-query">Keyword</label>
-              <input
-                id="idea-query"
-                value={ideaQuery}
-                onChange={(event) => setIdeaQuery(event.target.value)}
-                placeholder="Search titles or content"
-              />
-            </div>
-            <div className="filter-row">
-              <label htmlFor="idea-sentiment">Sentiment</label>
-              <select
-                id="idea-sentiment"
-                value={ideaSentiment}
-                onChange={(event) => setIdeaSentiment(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="positive">Positive</option>
-                <option value="neutral">Neutral</option>
-                <option value="negative">Negative</option>
-              </select>
-            </div>
-            <div className="filter-row">
-              <label htmlFor="idea-start">From</label>
-              <input
-                id="idea-start"
-                type="datetime-local"
-                value={ideaStart}
-                onChange={(event) => setIdeaStart(event.target.value)}
-              />
-            </div>
-            <div className="filter-row">
-              <label htmlFor="idea-end">To</label>
-              <input
-                id="idea-end"
-                type="datetime-local"
-                value={ideaEnd}
-                onChange={(event) => setIdeaEnd(event.target.value)}
-              />
-            </div>
-            <label className="inline-muted">
-              <input
-                type="checkbox"
-                checked={ideaDuplicates}
-                onChange={(event) => setIdeaDuplicates(event.target.checked)}
-              />{" "}
-              Include duplicates
-            </label>
+      <section className="hero hero-command">
+        <div className="hero-intro">
+          <span className="hero-eyebrow">Goldviewfx Intelligence</span>
+          <h1>Signal Command Atlas</h1>
+          <p>
+            A full-stack command deck for the gold signal pipeline: ingestion, enrichment, execution,
+            and RL evaluations. Navigate each subsystem with dedicated views for controls, telemetry,
+            insights, and the signal library.
+          </p>
+          <HeroActions />
+          <div className="hero-status">
+            <span className={`status-pill ${syncTone}`}>Sync {syncStatus}</span>
+            <span className="hero-subtle">Last run {lastSyncAt}</span>
           </div>
-
-          <div className="filter-group">
-            <h4>Signals</h4>
-            <div className="filter-row">
-              <label htmlFor="signal-query">Keyword</label>
-              <input
-                id="signal-query"
-                value={signalQuery}
-                onChange={(event) => setSignalQuery(event.target.value)}
-                placeholder="Search summaries"
-              />
+        </div>
+        <div className="hero-board">
+          <div className="summary-grid">
+            <div className="summary-card" data-tone="ember">
+              <span>Ideas</span>
+              <strong>{summary.idea_count}</strong>
+              <div className="inline-muted">TradingView narratives</div>
             </div>
-            <div className="filter-row">
-              <label htmlFor="signal-source">Source</label>
-              <select
-                id="signal-source"
-                value={signalSource}
-                onChange={(event) => setSignalSource(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="tradingview">TradingView</option>
-                <option value="telegram">Telegram</option>
-              </select>
+            <div className="summary-card" data-tone="slate">
+              <span>Signals</span>
+              <strong>{summary.signal_count}</strong>
+              <div className="inline-muted">Confidence-ranked intel</div>
             </div>
-            <div className="filter-row">
-              <label htmlFor="signal-confidence">Min confidence</label>
-              <input
-                id="signal-confidence"
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                value={signalMinConfidence}
-                onChange={(event) => setSignalMinConfidence(event.target.value)}
-                placeholder="0.0 - 1.0"
-              />
+            <div className="summary-card" data-tone="olive">
+              <span>Trades</span>
+              <strong>{summary.trade_count}</strong>
+              <div className="inline-muted">Paper + live execution</div>
             </div>
-            <div className="filter-row">
-              <label htmlFor="signal-start">From</label>
-              <input
-                id="signal-start"
-                type="datetime-local"
-                value={signalStart}
-                onChange={(event) => setSignalStart(event.target.value)}
-              />
-            </div>
-            <div className="filter-row">
-              <label htmlFor="signal-end">To</label>
-              <input
-                id="signal-end"
-                type="datetime-local"
-                value={signalEnd}
-                onChange={(event) => setSignalEnd(event.target.value)}
-              />
+            <div className="summary-card" data-tone="clay">
+              <span>Sync Window</span>
+              <strong>{syncStatus}</strong>
+              <div className="inline-muted">{lastSyncAt}</div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div className="filter-group">
-            <h4>Trades</h4>
-            <div className="filter-row">
-              <label htmlFor="trade-status">Status</label>
-              <select
-                id="trade-status"
-                value={tradeStatus}
-                onChange={(event) => setTradeStatus(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="proposed">Proposed</option>
-                <option value="placed">Placed</option>
-                <option value="filled">Filled</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="rejected">Rejected</option>
-              </select>
+      <section className="system-map">
+        <div className="section-head">
+          <div>
+            <span>System Atlas</span>
+            <h2>Every subsystem, one glance</h2>
+            <p>
+              Track the full signal chain from ingestion to RL training. Each card anchors a critical
+              subsystem with direct access to its dedicated view.
+            </p>
+          </div>
+        </div>
+        <div className="system-grid">
+          <article className="system-card" data-tone="ember">
+            <div className="system-title">
+              <span>Ingestion Command</span>
+              <strong>{summary.idea_count}</strong>
             </div>
-            <div className="filter-row">
-              <label htmlFor="trade-mode">Mode</label>
-              <select
-                id="trade-mode"
-                value={tradeMode}
-                onChange={(event) => setTradeMode(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="paper">Paper</option>
-                <option value="live">Live</option>
-              </select>
+            <p>TradingView + Telegram intake with dedup, OCR, and enrichment.</p>
+            <div className="system-tags">
+              <span className="tag">Dedup</span>
+              <span className="tag">OCR</span>
+              <span className="tag">NLP</span>
             </div>
-            <div className="filter-row">
-              <label htmlFor="trade-side">Side</label>
-              <select
-                id="trade-side"
-                value={tradeSide}
-                onChange={(event) => setTradeSide(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="long">Long</option>
-                <option value="short">Short</option>
-              </select>
+            <div className="system-meta">
+              <span>Last sync</span>
+              <strong>{syncStatus}</strong>
             </div>
-            <div className="filter-row">
-              <label htmlFor="trade-instrument">Instrument</label>
-              <input
-                id="trade-instrument"
-                value={tradeInstrument}
-                onChange={(event) => setTradeInstrument(event.target.value)}
-                placeholder="GOLD-USDT"
-              />
+            <Link className="text-link" href="/ingestion">
+              Open ingestion -&gt;
+            </Link>
+          </article>
+          <article className="system-card" data-tone="teal">
+            <div className="system-title">
+              <span>Signal Intelligence</span>
+              <strong>{summary.signal_count}</strong>
             </div>
-            <div className="filter-row">
-              <label htmlFor="trade-start">From</label>
-              <input
-                id="trade-start"
-                type="datetime-local"
-                value={tradeStart}
-                onChange={(event) => setTradeStart(event.target.value)}
-              />
+            <p>Sentiment overlays, source efficacy, and topic drift monitoring.</p>
+            <div className="system-tags">
+              <span className="tag">Confidence</span>
+              <span className="tag">Sentiment</span>
             </div>
-            <div className="filter-row">
-              <label htmlFor="trade-end">To</label>
-              <input
-                id="trade-end"
-                type="datetime-local"
-                value={tradeEnd}
-                onChange={(event) => setTradeEnd(event.target.value)}
-              />
+            <div className="system-meta">
+              <span>Focus</span>
+              <strong>GOLD-USDT</strong>
+            </div>
+            <Link className="text-link" href="/insights">
+              Open insights -&gt;
+            </Link>
+          </article>
+          <article className="system-card" data-tone="slate">
+            <div className="system-title">
+              <span>Execution + Risk</span>
+              <strong>{summary.trade_count}</strong>
+            </div>
+            <p>Paper + live trades with risk limits, kill switch, and PnL data.</p>
+            <div className="system-tags">
+              <span className="tag">Kill switch</span>
+              <span className="tag">Limits</span>
+            </div>
+            <div className="system-meta">
+              <span>Mode</span>
+              <strong>Policy gated</strong>
+            </div>
+            <Link className="text-link" href="/controls">
+              Open controls -&gt;
+            </Link>
+          </article>
+          <article className="system-card" data-tone="olive">
+            <div className="system-title">
+              <span>BingX Market Data</span>
+              <strong>Convex indexed</strong>
+            </div>
+            <p>1m candles, trades, and funding synced for training + backtests.</p>
+            <div className="system-tags">
+              <span className="tag">1m cadence</span>
+              <span className="tag">Live head</span>
+            </div>
+            <div className="system-meta">
+              <span>Coverage</span>
+              <strong>Multi-frame</strong>
+            </div>
+            <Link className="text-link" href="/rl-data-sources">
+              Data guardrails -&gt;
+            </Link>
+          </article>
+          <article className="system-card" data-tone="clay">
+            <div className="system-title">
+              <span>RL Training</span>
+              <strong>Policy loops</strong>
+            </div>
+            <p>Continuous learning, promotion gates, and artifact retention.</p>
+            <div className="system-tags">
+              <span className="tag">SB3</span>
+              <span className="tag">Nautilus</span>
+            </div>
+            <div className="system-meta">
+              <span>Access</span>
+              <strong>Ops dashboard</strong>
+            </div>
+            <Link className="text-link" href="/rl-ops">
+              Open RL ops -&gt;
+            </Link>
+          </article>
+          <article className="system-card" data-tone="ember">
+            <div className="system-title">
+              <span>RL Evaluation</span>
+              <strong>Reports</strong>
+            </div>
+            <p>Regression checks, drawdown tracking, and promotion readiness.</p>
+            <div className="system-tags">
+              <span className="tag">Backtest</span>
+              <span className="tag">Audit</span>
+            </div>
+            <div className="system-meta">
+              <span>Gate</span>
+              <strong>Promotion</strong>
+            </div>
+            <Link className="text-link" href="/rl-evaluations">
+              Open evaluations -&gt;
+            </Link>
+          </article>
+        </div>
+      </section>
+
+      <section className="module-section">
+        <div className="section-head">
+          <div>
+            <span>Market Pulse</span>
+            <h2>Live tape preview</h2>
+            <p>Quick read on recent candles with trade annotations before diving deeper.</p>
+          </div>
+        </div>
+        <div className="pulse-grid">
+          <MarketKlinePanel
+            title="Gold-USDT preview"
+            description="Recent candles with the latest trades overlaid."
+            defaultLimit={200}
+            showModeToggle={false}
+            tone="teal"
+          />
+          <div className="table-card">
+            <h3>Signal pulse checklist</h3>
+            <p>Confirm the pipeline is healthy before triggering live actions.</p>
+            <div className="panel-grid">
+              <div className="panel">
+                <h5>Ideas intake</h5>
+                <div className="inline-muted">{summary.idea_count} ideas ingested</div>
+              </div>
+              <div className="panel">
+                <h5>Signal output</h5>
+                <div className="inline-muted">{summary.signal_count} signals generated</div>
+              </div>
+              <div className="panel">
+                <h5>Trade actions</h5>
+                <div className="inline-muted">{summary.trade_count} trades recorded</div>
+              </div>
+              <div className="panel">
+                <h5>Sync status</h5>
+                <div className="inline-muted">Last run {lastSyncAt}</div>
+              </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div className="filter-group">
-            <h4>Telegram</h4>
-            <div className="filter-row">
-              <label htmlFor="telegram-query">Keyword</label>
-              <input
-                id="telegram-query"
-                value={telegramQuery}
-                onChange={(event) => setTelegramQuery(event.target.value)}
-                placeholder="Search posts"
-              />
-            </div>
-            <div className="filter-row">
-              <label htmlFor="telegram-status">Status</label>
-              <select
-                id="telegram-status"
-                value={telegramStatus}
-                onChange={(event) => setTelegramStatus(event.target.value)}
-              >
-                <option value="">All</option>
-                <option value="active">Active</option>
-                <option value="edited">Edited</option>
-                <option value="removed">Removed</option>
-              </select>
-            </div>
-            <div className="filter-row">
-              <label htmlFor="telegram-start">From</label>
-              <input
-                id="telegram-start"
-                type="datetime-local"
-                value={telegramStart}
-                onChange={(event) => setTelegramStart(event.target.value)}
-              />
-            </div>
-            <div className="filter-row">
-              <label htmlFor="telegram-end">To</label>
-              <input
-                id="telegram-end"
-                type="datetime-local"
-                value={telegramEnd}
-                onChange={(event) => setTelegramEnd(event.target.value)}
-              />
-            </div>
-            <label className="inline-muted">
-              <input
-                type="checkbox"
-                checked={telegramDuplicates}
-                onChange={(event) => setTelegramDuplicates(event.target.checked)}
-              />{" "}
-              Include duplicates
-            </label>
+      <section className="command-deck">
+        <div className="section-head">
+          <div>
+            <span>Command Deck</span>
+            <h2>Navigate the live control rooms</h2>
+            <p>Jump into each operational lane without crowding the landing view.</p>
           </div>
-
-          <button className="secondary" type="button" onClick={clearFilters}>
-            Clear all filters
-          </button>
-        </aside>
-
-        <div className="section-stack">
-          <IdeaTable
-            ideas={ideas}
-            loading={ideasLoading}
-            page={ideasPage}
-            pageSize={ideasPageSize}
-            total={ideasTotal}
-            onPageChange={setIdeasPage}
-            onPageSizeChange={(value) => {
-              setIdeasPageSize(value);
-              setIdeasPage(1);
-            }}
-          />
-          <SignalTable
-            signals={signals}
-            loading={signalsLoading}
-            page={signalsPage}
-            pageSize={signalsPageSize}
-            total={signalsTotal}
-            onPageChange={setSignalsPage}
-            onPageSizeChange={(value) => {
-              setSignalsPageSize(value);
-              setSignalsPage(1);
-            }}
-          />
-          <TradeTable
-            trades={trades}
-            loading={tradesLoading}
-            page={tradesPage}
-            pageSize={tradesPageSize}
-            total={tradesTotal}
-            onPageChange={setTradesPage}
-            onPageSizeChange={(value) => {
-              setTradesPageSize(value);
-              setTradesPage(1);
-            }}
-          />
-          <TelegramTable
-            posts={telegramPosts}
-            loading={telegramLoading}
-            page={telegramPage}
-            pageSize={telegramPageSize}
-            total={telegramTotal}
-            onPageChange={setTelegramPage}
-            onPageSizeChange={(value) => {
-              setTelegramPageSize(value);
-              setTelegramPage(1);
-            }}
-          />
+        </div>
+        <div className="command-grid">
+          <Link className="command-card" href="/controls" data-tone="ember">
+            <span>Controls</span>
+            <strong>Trade + policy gates</strong>
+            <p>Switch modes, tune risk limits, and enforce promotion thresholds.</p>
+          </Link>
+          <Link className="command-card" href="/ops" data-tone="slate">
+            <span>Ops</span>
+            <strong>Scheduler telemetry</strong>
+            <p>Review ingestion health, audit trails, and retry queues.</p>
+          </Link>
+          <Link className="command-card" href="/insights" data-tone="teal">
+            <span>Insights</span>
+            <strong>Signal efficacy</strong>
+            <p>Track source performance, sentiment impact, and topic drift.</p>
+          </Link>
+          <Link className="command-card" href="/library" data-tone="clay">
+            <span>Library</span>
+            <strong>Signal archive</strong>
+            <p>Filter and review historical ideas, signals, trades, and posts.</p>
+          </Link>
         </div>
       </section>
     </Layout>

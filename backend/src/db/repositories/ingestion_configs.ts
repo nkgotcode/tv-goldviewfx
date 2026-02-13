@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type IngestionConfigInsert = {
@@ -15,7 +15,7 @@ export type IngestionConfigInsert = {
 };
 
 export async function upsertIngestionConfig(payload: IngestionConfigInsert) {
-  const result = await supabase
+  const result = await convex
     .from("ingestion_configs")
     .upsert(
       {
@@ -44,7 +44,7 @@ export async function listIngestionConfigs(filters?: {
   sourceId?: string | null;
   feed?: string | null;
 }) {
-  const query = supabase.from("ingestion_configs").select("*").order("updated_at", { ascending: false });
+  const query = convex.from("ingestion_configs").select("*").order("updated_at", { ascending: false });
   if (filters?.sourceType) {
     query.eq("source_type", filters.sourceType);
   }
@@ -67,7 +67,7 @@ export async function listIngestionConfigs(filters?: {
 }
 
 export async function getIngestionConfig(sourceType: string, sourceId?: string | null, feed?: string | null) {
-  const query = supabase
+  const query = convex
     .from("ingestion_configs")
     .select("*")
     .eq("source_type", sourceType);

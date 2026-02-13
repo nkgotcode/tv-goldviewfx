@@ -11,8 +11,7 @@ const booleanFromEnv = z.preprocess((value) => {
 }, z.boolean());
 
 const envSchema = z.object({
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  CONVEX_URL: z.string().url(),
   TRADINGVIEW_PROFILE_URL: z.string().url().optional(),
   TRADINGVIEW_HTML_PATH: z.string().optional(),
   TRADINGVIEW_USE_HTML: booleanFromEnv.default(false),
@@ -86,7 +85,26 @@ const envSchema = z.object({
   DATA_GAP_HEAL_MAX_GAPS_PER_RUN: z.coerce.number().int().positive().default(5),
   DATA_GAP_HEAL_MAX_BATCHES: z.coerce.number().int().positive().default(10),
   DATA_GAP_HEAL_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  TRADE_RECONCILE_INTERVAL_MIN: z.coerce.number().int().positive().default(5),
+  DECISION_LATENCY_SLO_MS: z.coerce.number().int().positive().default(1500),
+  INGESTION_LAG_SLO_SEC: z.coerce.number().int().positive().default(120),
+  SLIPPAGE_SLO_BPS: z.coerce.number().int().positive().default(50),
+  DRIFT_CONFIDENCE_BASELINE: z.coerce.number().min(0).max(1).default(0.5),
+  DRIFT_CONFIDENCE_DELTA: z.coerce.number().min(0).max(1).default(0.3),
+  RETRY_QUEUE_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
   ALLOW_LIVE_SIMULATION: booleanFromEnv.default(false),
+  RL_ENFORCE_PROVENANCE: booleanFromEnv.default(false),
+  RL_ONLINE_LEARNING_ENABLED: booleanFromEnv.default(false),
+  RL_ONLINE_LEARNING_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
+  RL_ONLINE_LEARNING_PAIR: z.enum(["Gold-USDT", "XAUTUSDT", "PAXGUSDT"]).default("Gold-USDT"),
+  RL_ONLINE_LEARNING_TRAIN_WINDOW_MIN: z.coerce.number().int().positive().default(360),
+  RL_ONLINE_LEARNING_EVAL_WINDOW_MIN: z.coerce.number().int().positive().default(120),
+  RL_ONLINE_LEARNING_EVAL_LAG_MIN: z.coerce.number().int().nonnegative().default(1),
+  RL_ONLINE_LEARNING_WINDOW_SIZE: z.coerce.number().int().positive().default(30),
+  RL_ONLINE_LEARNING_STRIDE: z.coerce.number().int().positive().default(1),
+  RL_ONLINE_LEARNING_TIMESTEPS: z.coerce.number().int().positive().default(500),
+  RL_ONLINE_LEARNING_DECISION_THRESHOLD: z.coerce.number().positive().default(0.2),
+  RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD: booleanFromEnv.default(true),
 });
 
 export type Env = z.infer<typeof envSchema>;

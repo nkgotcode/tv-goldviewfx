@@ -5,6 +5,7 @@ import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { getAgentConfig, updateAgentConfig } from "../../db/repositories/agent_config";
 import { listSourcePolicies, upsertSourcePolicy } from "../../db/repositories/source_policies";
 import { auditRlEvent } from "../../services/rl_audit";
+import { recordOpsAudit } from "../../services/ops_audit";
 
 const killSwitchSchema = z.object({
   enabled: z.boolean(),
@@ -55,6 +56,13 @@ rlGovernanceRoutes.post(
       reason: payload.reason ?? null,
       actor: c.get("opsActor") ?? "system",
     });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "kill_switch.update",
+      resource_type: "agent_config",
+      resource_id: updated.id,
+      metadata: payload,
+    });
     return c.json({
       enabled: updated.kill_switch,
       reason: updated.kill_switch_reason ?? null,
@@ -84,6 +92,13 @@ rlGovernanceRoutes.patch(
       agent_id: c.req.param("agentId"),
       actor: c.get("opsActor") ?? "system",
       payload,
+    });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "promotion_gates.update",
+      resource_type: "agent_config",
+      resource_id: updated.id,
+      metadata: payload,
     });
     return c.json({
       promotion_required: updated.promotion_required,
@@ -121,6 +136,12 @@ rlGovernanceRoutes.patch(
       agent_id: c.req.param("agentId"),
       actor: c.get("opsActor") ?? "system",
       count: updated.length,
+    });
+    await recordOpsAudit({
+      actor: c.get("opsActor") ?? "system",
+      action: "source_policies.update",
+      resource_type: "source_policy",
+      metadata: { count: updated.length },
     });
     return c.json(updated);
   },

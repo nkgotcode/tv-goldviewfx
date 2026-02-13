@@ -35,6 +35,10 @@ export default function RlDataSourcesPage() {
       return acc;
     }, {});
   }, [sources]);
+  const totalSources = sources.length;
+  const enabledSources = sources.filter((source) => source.enabled).length;
+  const staleSources = sources.filter((source) => source.status === "stale").length;
+  const unavailableSources = sources.filter((source) => source.status === "unavailable").length;
 
   const handleToggle = async (sourceType: string, enabled: boolean) => {
     setError(null);
@@ -58,6 +62,29 @@ export default function RlDataSourcesPage() {
 
       {error ? <div className="empty">{error}</div> : null}
 
+      <section className="summary-grid">
+        <div className="summary-card" data-tone="ember">
+          <span>Total Sources</span>
+          <strong>{totalSources}</strong>
+          <div className="inline-muted">{enabledSources} enabled</div>
+        </div>
+        <div className="summary-card" data-tone="teal">
+          <span>Stale</span>
+          <strong>{staleSources}</strong>
+          <div className="inline-muted">Needs refresh</div>
+        </div>
+        <div className="summary-card" data-tone="slate">
+          <span>Unavailable</span>
+          <strong>{unavailableSources}</strong>
+          <div className="inline-muted">Paused feeds</div>
+        </div>
+        <div className="summary-card" data-tone="clay">
+          <span>Pairs</span>
+          <strong>{PAIRS.length}</strong>
+          <div className="inline-muted">Active instruments</div>
+        </div>
+      </section>
+
       <section className="rl-grid">
         {PAIRS.map((pair) => (
           <DataSourceStatusTable
@@ -67,6 +94,34 @@ export default function RlDataSourcesPage() {
             onToggle={handleToggle}
           />
         ))}
+      </section>
+
+      <section className="module-section">
+        <div className="section-head">
+          <div>
+            <span>Source Routine</span>
+            <h2>Freshness guardrails</h2>
+            <p>Keep ingestion feeds aligned with the RL agent's expected cadence.</p>
+          </div>
+        </div>
+        <div className="playbook-grid">
+          <article className="playbook-card" data-tone="slate">
+            <strong>Threshold Checks</strong>
+            <ul className="bullet-list">
+              <li>Align freshness thresholds to the smallest candle interval.</li>
+              <li>Review stale sources before resuming live mode.</li>
+              <li>Disable feeds during provider maintenance windows.</li>
+            </ul>
+          </article>
+          <article className="playbook-card" data-tone="teal">
+            <strong>Recovery Flow</strong>
+            <ul className="bullet-list">
+              <li>Trigger backfills for missing candle windows.</li>
+              <li>Confirm last seen timestamps update after refresh.</li>
+              <li>Log escalations in the ops audit trail.</li>
+            </ul>
+          </article>
+        </div>
       </section>
 
       {loading && sources.length === 0 ? <div className="empty">Loading data source status…</div> : null}

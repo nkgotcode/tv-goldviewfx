@@ -3,6 +3,7 @@ import {
   getFeatureSetVersion,
   insertFeatureSetVersion,
   listFeatureSetVersions,
+  updateFeatureSetVersion,
 } from "../db/repositories/feature_set_versions";
 
 export type FeatureSetConfig = {
@@ -44,7 +45,7 @@ export async function resolveFeatureSetVersion(config: FeatureSetConfig) {
   const label = buildFeatureSetLabel(config);
   const existing = await findFeatureSetVersionByLabel(label);
   if (existing) {
-    return existing;
+    return updateFeatureSetVersion(existing.id, {});
   }
   return insertFeatureSetVersion({
     label,
@@ -61,5 +62,10 @@ export async function getFeatureSetConfigById(id?: string | null): Promise<Featu
 }
 
 export async function listFeatureSets() {
-  return listFeatureSetVersions();
+  const versions = await listFeatureSetVersions();
+  return [...versions].sort((left, right) => {
+    const leftTime = Date.parse((left.updated_at ?? left.created_at ?? "") as string) || 0;
+    const rightTime = Date.parse((right.updated_at ?? right.created_at ?? "") as string) || 0;
+    return rightTime - leftTime;
+  });
 }

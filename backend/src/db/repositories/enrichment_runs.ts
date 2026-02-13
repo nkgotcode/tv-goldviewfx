@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type EnrichmentRunInsert = {
@@ -6,7 +6,7 @@ export type EnrichmentRunInsert = {
 };
 
 export async function createEnrichmentRun(payload: EnrichmentRunInsert) {
-  const result = await supabase
+  const result = await convex
     .from("enrichment_runs")
     .insert({ trigger: payload.trigger, status: "running" })
     .select("*")
@@ -18,7 +18,7 @@ export async function completeEnrichmentRun(
   id: string,
   payload: { status: "succeeded" | "failed"; processedCount: number; errorCount: number; errorSummary?: string | null },
 ) {
-  const result = await supabase
+  const result = await convex
     .from("enrichment_runs")
     .update({
       status: payload.status,
@@ -41,7 +41,7 @@ export async function insertEnrichmentRevision(payload: {
   next_payload?: Record<string, unknown> | null;
   diff_summary?: Record<string, unknown> | null;
 }) {
-  const result = await supabase
+  const result = await convex
     .from("enrichment_revisions")
     .insert({
       enrichment_id: payload.enrichment_id,
@@ -58,7 +58,7 @@ export async function insertEnrichmentRevision(payload: {
 }
 
 export async function listEnrichmentRevisions(enrichmentId: string) {
-  const result = await supabase
+  const result = await convex
     .from("enrichment_revisions")
     .select("*")
     .eq("enrichment_id", enrichmentId)

@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type AgentRunInsert = {
@@ -16,17 +16,17 @@ export type AgentRunInsert = {
 };
 
 export async function insertAgentRun(payload: AgentRunInsert) {
-  const result = await supabase.from("agent_runs").insert(payload).select("*").single();
+  const result = await convex.from("agent_runs").insert(payload).select("*").single();
   return assertNoError(result, "insert agent run");
 }
 
 export async function updateAgentRun(id: string, payload: Partial<AgentRunInsert>) {
-  const result = await supabase.from("agent_runs").update(payload).eq("id", id).select("*").single();
+  const result = await convex.from("agent_runs").update(payload).eq("id", id).select("*").single();
   return assertNoError(result, "update agent run");
 }
 
 export async function getAgentRun(id: string) {
-  const result = await supabase.from("agent_runs").select("*").eq("id", id).single();
+  const result = await convex.from("agent_runs").select("*").eq("id", id).single();
   return assertNoError(result, "get agent run");
 }
 
@@ -35,7 +35,7 @@ export async function listAgentRuns(filters: {
   status?: AgentRunInsert["status"];
   mode?: AgentRunInsert["mode"];
 } = {}) {
-  const query = supabase.from("agent_runs").select("*").order("started_at", { ascending: false });
+  const query = convex.from("agent_runs").select("*").order("started_at", { ascending: false });
   if (filters.pair) {
     query.eq("pair", filters.pair);
   }

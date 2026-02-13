@@ -1,4 +1,4 @@
-import { supabase } from "../client";
+import { convex } from "../client";
 import { assertNoError } from "./base";
 
 export type DriftAlertInsert = {
@@ -12,7 +12,7 @@ export type DriftAlertInsert = {
 };
 
 export async function insertDriftAlert(payload: DriftAlertInsert) {
-  const result = await supabase
+  const result = await convex
     .from("drift_alerts")
     .insert({
       agent_id: payload.agent_id,
@@ -30,7 +30,7 @@ export async function insertDriftAlert(payload: DriftAlertInsert) {
 }
 
 export async function listDriftAlerts(agentId?: string) {
-  const query = supabase.from("drift_alerts").select("*").order("detected_at", { ascending: false });
+  const query = convex.from("drift_alerts").select("*").order("detected_at", { ascending: false });
   if (agentId) {
     query.eq("agent_id", agentId);
   }
@@ -39,7 +39,7 @@ export async function listDriftAlerts(agentId?: string) {
 }
 
 export async function updateDriftAlert(id: string, payload: Partial<DriftAlertInsert>) {
-  const result = await supabase
+  const result = await convex
     .from("drift_alerts")
     .update({
       detected_at: payload.detected_at,

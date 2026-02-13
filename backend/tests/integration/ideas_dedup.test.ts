@@ -1,22 +1,22 @@
 import { test, expect } from "bun:test";
 import { fileURLToPath } from "url";
 import { runTradingViewSync } from "../../src/services/tradingview_sync";
-import { supabase } from "../../src/db/client";
+import { convex } from "../../src/db/client";
 
-const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasEnv = Boolean(process.env.CONVEX_URL);
 const htmlPath = fileURLToPath(new URL("../../../tradingview.html", import.meta.url));
 
 async function cleanup(identifier: string) {
-  const sources = await supabase.from("sources").select("id").eq("identifier", identifier);
+  const sources = await convex.from("sources").select("id").eq("identifier", identifier);
   if (sources.data) {
     for (const source of sources.data) {
-      await supabase.from("sources").delete().eq("id", source.id);
+      await convex.from("sources").delete().eq("id", source.id);
     }
   }
 }
 
 if (!hasEnv) {
-  test.skip("dedup integration requires Supabase configuration", () => {});
+  test.skip("dedup integration requires Convex configuration", () => {});
 } else {
   test("sync is idempotent and does not create duplicates", async () => {
     process.env.TRADINGVIEW_HTML_PATH = htmlPath;
