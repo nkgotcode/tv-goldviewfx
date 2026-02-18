@@ -1,5 +1,6 @@
 import "./globals.css";
 import { Karla, Marcellus } from "next/font/google";
+import { Suspense } from "react";
 import Providers from "./providers";
 
 const karla = Karla({
@@ -28,7 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${karla.variable} ${marcellus.variable}`}>
       <body>
-        <Providers>{children}</Providers>
+        <Suspense fallback={null}>
+          <Providers>{children}</Providers>
+        </Suspense>
       </body>
     </html>
   );

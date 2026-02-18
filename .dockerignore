@@ -1,7 +1,9 @@
 node_modules/
+**/node_modules/
 dist/
 build/
 .next/
+**/.next/
 coverage/
 .venv/
 venv/
@@ -12,3 +14,13 @@ Dockerfile*
 .dockerignore
 *.log*
 .env*
+**/.venv/
+**/venv/
+**/__pycache__/
+*.sqlite3
+convex_local_storage/
+test-results/
+screenshots/
+data/
+backend/rl-service/.venv/
+backend/rl-service/.pytest_cache/
