@@ -1,6 +1,11 @@
 import type { Context, Next } from "hono";
 
 export async function authMiddleware(c: Context, next: Next) {
+  const path = new URL(c.req.url).pathname;
+  if (path === "/health" || path.startsWith("/health/")) {
+    return next();
+  }
+
   const token = process.env.API_TOKEN;
   if (!token) {
     return next();
