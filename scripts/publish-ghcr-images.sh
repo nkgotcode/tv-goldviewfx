@@ -11,7 +11,7 @@ build_and_push() {
 
   echo "Building ${image} from ${dockerfile}"
   docker buildx build \
-    --platform linux/amd64 \
+    --platform linux/amd64,linux/arm64 \
     -f "${dockerfile}" \
     -t "${image}" \
     --push \
