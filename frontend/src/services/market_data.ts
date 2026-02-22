@@ -12,7 +12,7 @@ export type BingxCandle = {
   volume: number;
 };
 
-let preferProxyCandles = false;
+let preferProxyCandles = true;
 
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
@@ -60,13 +60,19 @@ export async function fetchBingxCandles(params: {
   limit?: number;
 }) {
   if (preferProxyCandles) {
-    return fetchBingxCandlesViaProxy({
-      pair: params.pair,
-      interval: params.interval,
-      start: params.start,
-      end: params.end,
-      limit: params.limit,
-    });
+    try {
+      const data = await fetchBingxCandlesViaProxy({
+        pair: params.pair,
+        interval: params.interval,
+        start: params.start,
+        end: params.end,
+        limit: params.limit,
+      });
+      preferProxyCandles = true;
+      return data;
+    } catch {
+      preferProxyCandles = false;
+    }
   }
 
   try {
