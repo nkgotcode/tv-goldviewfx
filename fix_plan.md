@@ -27,3 +27,4 @@
 - [x] De-duplicated “All pairs” evaluation runs by resolved BingX symbol to avoid alias duplicates (`Gold-USDT` vs `XAUTUSDT`).
 - [x] Fixed chart history proxy to honor `start/end` range when fetching BingX candles, enabling deep historical pagination in KLine chart loaders.
 - [x] Expanded market chart viewport and default history preload so dashboards open with substantially more candles and taller chart real estate.
+- [x] Made KLine history loading resilient to variable BingX page sizes and sparse/gapped ranges by using adaptive lookback paging instead of fixed-size stop conditions.

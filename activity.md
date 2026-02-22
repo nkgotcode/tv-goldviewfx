@@ -459,3 +459,10 @@ Wrote /Users/itsnk/.codex/skills/binance-api/references/generated/binance-spot-c
 - Commands: `cd backend && bun test --preload ./tests/setup.ts tests/unit/evaluation_service.test.ts tests/integration/rl_evaluations.test.ts`; `cd backend && bun test --preload ./tests/setup.ts tests/unit/evaluation_service.test.ts`; `cd backend/rl-service && uv run pytest tests/integration/test_evaluations_api.py tests/integration/test_evaluation_api.py -q`; `cd frontend && bun run test ./tests/HomePage.test.tsx`; `cd frontend && bun run build`.
 - Verification: Backend evaluation unit tests pass; RL-service evaluation integration tests pass; frontend targeted Vitest test passes; frontend production build still fails on an existing unrelated `CrudFilter` type mismatch in `frontend/src/app/library/page.tsx`.
 - Notes: Metadata now captures both alias/requested pair and resolved BingX symbol so dashboard users can see the actual ticker path used during evaluation.
+
+## 2026-02-22 16:58 CST
+- Task: Fix chart history truncation, make chart panels larger, and prepare Nomad deployment of latest backend/frontend/rl-service fixes.
+- Changes: Updated `frontend/src/components/MarketKlinePanel.tsx` to use adaptive historical lookback paging (handles variable BingX page sizes and sparse gaps), deeper bounded preload, and safer fallback when ranged fetch returns empty; increased dashboard chart footprint in `frontend/src/app/globals.css` (larger panel height and wider card breakpoints).
+- Commands: `cd frontend && bun run test ./tests/HomePage.test.tsx`; `cd frontend && bun run test`.
+- Verification: Frontend Vitest suite passes (`7 files / 8 tests`).
+- Notes: Nomad rollout requires building/pushing new images (`backend`, `frontend`, `rl-service`) and redeploying jobs with preserved worker egress vars.

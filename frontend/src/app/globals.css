@@ -702,7 +702,7 @@ a {
 .pulse-grid {
   display: grid;
   gap: 22px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   align-items: start;
 }
 
@@ -759,13 +759,13 @@ a {
   border-radius: 18px;
   border: 1px solid var(--border);
   background: var(--panel-bg);
-  min-height: clamp(380px, 55vh, 620px);
+  min-height: clamp(460px, 68vh, 860px);
   overflow: hidden;
 }
 
 .chart-canvas {
   width: 100%;
-  height: clamp(380px, 55vh, 620px);
+  height: clamp(460px, 68vh, 860px);
 }
 
 .chart-overlay {

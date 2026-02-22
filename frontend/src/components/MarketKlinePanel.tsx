@@ -7,10 +7,12 @@ import type { Trade } from "../services/api";
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const MODES = ["all", "paper", "live"] as const;
-const INITIAL_BAR_COUNT = 1000;
-const HISTORY_CHUNK_BARS = 1000;
-const PRELOAD_HISTORY_BARS = 6000;
-const UPDATE_FETCH_BARS = 480;
+const INITIAL_BAR_COUNT = 1200;
+const HISTORY_CHUNK_BARS = 500;
+const PRELOAD_HISTORY_REQUESTS = 24;
+const PRELOAD_HISTORY_MAX_BARS = 24_000;
+const MAX_EMPTY_LOOKBACK_ATTEMPTS = 6;
+const UPDATE_FETCH_BARS = 500;
 const LIVE_POLL_MS = 4000;
 
 type TradeMode = (typeof MODES)[number];
@@ -281,24 +283,48 @@ export default function MarketKlinePanel({
       callback: (data: ChartCandle[], more?: boolean | { backward?: boolean; forward?: boolean }) => void;
     }) => {
       try {
+        const fetchOlder = async (anchor: number) => {
+          let bars = HISTORY_CHUNK_BARS;
+          let attempt = 0;
+          while (attempt < MAX_EMPTY_LOOKBACK_ATTEMPTS) {
+            const end = anchor - 1;
+            const start = end - bars * intervalMs;
+            const older = (await fetchRange(start, end, bars)).filter((candle) => candle.timestamp < anchor);
+            if (older.length > 0) {
+              return older;
+            }
+            bars *= 2;
+            attempt += 1;
+          }
+          return [] as ChartCandle[];
+        };
+
         if (type === "init") {
           const now = Date.now() + intervalMs;
           const start = now - INITIAL_BAR_COUNT * intervalMs;
           let data = await fetchRange(start, now, INITIAL_BAR_COUNT);
+          if (data.length === 0) {
+            data = normalizeKlineData(
+              await fetchBingxCandles({
+                pair,
+                interval: timeframe,
+                limit: INITIAL_BAR_COUNT,
+              }),
+            );
+          }
           if (data.length > 0) {
-            let remaining = PRELOAD_HISTORY_BARS;
+            let requestCount = 0;
+            let prependedBars = 0;
             let anchor = data[0].timestamp;
-            while (!canceled && remaining > 0) {
-              const preloadEnd = anchor - 1;
-              const preloadStart = preloadEnd - HISTORY_CHUNK_BARS * intervalMs;
-              const older = (await fetchRange(preloadStart, preloadEnd, HISTORY_CHUNK_BARS)).filter(
-                (candle) => candle.timestamp < anchor,
-              );
+            while (!canceled && requestCount < PRELOAD_HISTORY_REQUESTS && prependedBars < PRELOAD_HISTORY_MAX_BARS) {
+              const older = await fetchOlder(anchor);
               if (older.length === 0) break;
               data = [...older, ...data];
-              anchor = data[0].timestamp;
-              remaining -= older.length;
-              if (older.length < HISTORY_CHUNK_BARS) break;
+              const nextAnchor = data[0].timestamp;
+              if (nextAnchor >= anchor) break;
+              anchor = nextAnchor;
+              prependedBars += older.length;
+              requestCount += 1;
             }
           }
           if (canceled) return;
@@ -317,13 +343,11 @@ export default function MarketKlinePanel({
 
         if (type === "forward") {
           const anchor = timestamp ?? loadedBounds.earliest ?? Date.now();
-          const end = anchor - 1;
-          const start = end - HISTORY_CHUNK_BARS * intervalMs;
-          const data = (await fetchRange(start, end, HISTORY_CHUNK_BARS)).filter((candle) => candle.timestamp < anchor);
+          const data = await fetchOlder(anchor);
           if (canceled) return;
           updateBounds(data);
           addLoadedCount(data.length);
-          callback(data, { forward: data.length >= HISTORY_CHUNK_BARS, backward: true });
+          callback(data, { forward: data.length > 0, backward: true });
           return;
         }
 
