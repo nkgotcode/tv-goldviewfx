@@ -8,6 +8,9 @@ export const tradingPairSchema = z
   .refine((value) => isSupportedPair(value), "Unsupported trading pair");
 export const agentModeSchema = z.enum(["paper", "live"]);
 export const agentRunStatusSchema = z.enum(["running", "paused", "stopped"]);
+export const candleIntervalSchema = z
+  .string()
+  .regex(/^\d+(m|h|d|w|M)$/, "Invalid interval format (expected like 1m, 5m, 1h, 1d)");
 export const dataSourceTypeSchema = z.enum([
   "bingx_candles",
   "bingx_orderbook",
@@ -65,12 +68,18 @@ export const evaluationRequestSchema = z.object({
   pair: tradingPairSchema,
   periodStart: z.string().datetime(),
   periodEnd: z.string().datetime(),
+  interval: candleIntervalSchema.optional(),
   agentVersionId: z.string().uuid().optional(),
   datasetVersionId: z.string().uuid().optional(),
   featureSetVersionId: z.string().uuid().optional(),
   decisionThreshold: z.number().nonnegative().optional(),
   windowSize: z.number().int().positive().optional(),
   stride: z.number().int().positive().optional(),
+  leverage: z.number().positive().optional(),
+  takerFeeBps: z.number().nonnegative().optional(),
+  slippageBps: z.number().nonnegative().optional(),
+  fundingWeight: z.number().nonnegative().optional(),
+  drawdownPenalty: z.number().nonnegative().optional(),
   walkForward: z
     .object({
       folds: z.number().int().min(1).max(24),

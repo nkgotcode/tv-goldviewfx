@@ -2,11 +2,12 @@ import { listAgentVersions, getAgentVersion } from "../db/repositories/agent_ver
 import { insertEvaluationReport, listEvaluationReports } from "../db/repositories/evaluation_reports";
 import { getAgentConfig } from "../db/repositories/agent_config";
 import { loadEnv } from "../config/env";
+import { toBingxSymbol } from "../config/market_catalog";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { rlServiceClient } from "../rl/client";
 import type { EvaluationRequest } from "../rl/schemas";
 import type { EvaluationReport } from "../types/rl";
-import { buildDatasetFeatures, createDatasetVersion } from "./dataset_service";
+import { buildDatasetFeaturesWithProvenance, createDatasetVersion } from "./dataset_service";
 import { getDatasetVersion } from "../db/repositories/dataset_versions";
 import { evaluateDriftForLatestReport } from "./drift_monitoring_service";
 import { resolveArtifactUrl } from "./model_artifact_service";
@@ -78,6 +79,38 @@ function resolveCriteria(config: Record<string, unknown>): PromotionCriteria {
     maxDrawdown: Math.max(resolved.maxDrawdown, E2E_PROMOTION_CRITERIA.maxDrawdown),
     minTradeCount: Math.max(resolved.minTradeCount, E2E_PROMOTION_CRITERIA.minTradeCount),
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function mergeEvaluationMetadata(
+  existing: Record<string, unknown> | null,
+  additions: {
+    parameters: Record<string, unknown>;
+    dataFields: string[];
+    provenance: Record<string, unknown>;
+  },
+) {
+  const metadata = { ...(existing ?? {}) };
+  const existingParameters = asRecord(metadata.parameters) ?? {};
+  metadata.parameters = {
+    ...existingParameters,
+    ...additions.parameters,
+  };
+  metadata.data_fields = additions.dataFields;
+  metadata.dataset_provenance = additions.provenance;
+  metadata.nautilus = {
+    ...((asRecord(metadata.nautilus) ?? {}) as Record<string, unknown>),
+    engine: "nautilus_trader",
+    interval: additions.parameters.interval,
+    window_size: additions.parameters.windowSize,
+    stride: additions.parameters.stride,
+    decision_threshold: additions.parameters.decisionThreshold,
+  };
+  return metadata;
 }
 
 export function normalizeEvaluationReport(
@@ -185,24 +218,29 @@ export async function runEvaluation(request: EvaluationRequest) {
   const agentConfig = await getAgentConfig();
   const criteria = resolveCriteria(agentConfig);
   const rlConfig = loadRlServiceConfig();
+  const requestedInterval = request.interval ?? "1m";
   const dataset = request.datasetVersionId
     ? await getDatasetVersion(request.datasetVersionId)
     : await createDatasetVersion({
         pair: request.pair,
-        interval: "1m",
+        interval: requestedInterval,
         startAt: request.periodStart,
         endAt: request.periodEnd,
         featureSetVersionId: request.featureSetVersionId ?? null,
       });
+  if (request.interval && dataset.interval !== request.interval) {
+    throw new Error(`Dataset interval (${dataset.interval}) does not match requested interval (${request.interval})`);
+  }
+  const interval = request.interval ?? dataset.interval ?? "1m";
   const featureSetVersionId = request.featureSetVersionId ?? dataset.feature_set_version_id ?? null;
   const featureConfig = await getFeatureSetConfigById(featureSetVersionId);
   const featureSchemaFingerprint =
     request.featureSchemaFingerprint ??
     (dataset as Record<string, unknown>).feature_schema_fingerprint ??
     getFeatureSchemaFingerprint(featureConfig);
-  const datasetFeatures = await buildDatasetFeatures({
+  const { features: datasetFeatures, provenance } = await buildDatasetFeaturesWithProvenance({
     pair: request.pair,
-    interval: dataset.interval,
+    interval,
     startAt: dataset.start_at,
     endAt: dataset.end_at,
     windowSize: dataset.window_size ?? 30,
@@ -212,6 +250,11 @@ export async function runEvaluation(request: EvaluationRequest) {
   });
   const windowSize = request.windowSize ?? dataset.window_size ?? 30;
   const stride = request.stride ?? dataset.stride ?? 1;
+  const leverage = request.leverage ?? env.RL_PPO_LEVERAGE_DEFAULT;
+  const takerFeeBps = request.takerFeeBps ?? env.RL_PPO_TAKER_FEE_BPS;
+  const slippageBps = request.slippageBps ?? env.RL_PPO_SLIPPAGE_BPS;
+  const fundingWeight = request.fundingWeight ?? env.RL_PPO_FUNDING_WEIGHT;
+  const drawdownPenalty = request.drawdownPenalty ?? env.RL_PPO_DRAWDOWN_PENALTY;
   const artifactUrl = version.artifact_uri ? await resolveArtifactUrl(version.artifact_uri) : null;
   let reportPayload: EvaluationReport | null = null;
   if (!rlConfig.mock) {
@@ -219,6 +262,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       pair: request.pair,
       periodStart: request.periodStart,
       periodEnd: request.periodEnd,
+      interval,
       agentVersionId: versionId,
       datasetVersionId: dataset.id,
       featureSetVersionId,
@@ -230,11 +274,11 @@ export async function runEvaluation(request: EvaluationRequest) {
       decisionThreshold: request.decisionThreshold ?? null,
       windowSize,
       stride,
-      leverage: env.RL_PPO_LEVERAGE_DEFAULT,
-      takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
-      slippageBps: env.RL_PPO_SLIPPAGE_BPS,
-      fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
-      drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+      leverage,
+      takerFeeBps,
+      slippageBps,
+      fundingWeight,
+      drawdownPenalty,
       walkForward: request.walkForward ?? null,
       featureSchemaFingerprint,
       datasetFeatures,
@@ -250,11 +294,11 @@ export async function runEvaluation(request: EvaluationRequest) {
         windowSize,
         stride,
         timesteps: 200,
-        leverage: env.RL_PPO_LEVERAGE_DEFAULT,
-        takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
-        slippageBps: env.RL_PPO_SLIPPAGE_BPS,
-        fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
-        drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+        leverage,
+        takerFeeBps,
+        slippageBps,
+        fundingWeight,
+        drawdownPenalty,
         feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
         feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
         feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
@@ -291,6 +335,35 @@ export async function runEvaluation(request: EvaluationRequest) {
       report.status = "fail";
     }
   }
+  const reportMetadata = mergeEvaluationMetadata(asRecord(report.metadata), {
+    parameters: {
+      pair: request.pair,
+      requestedPair: request.pair,
+      requestedBingxSymbol: toBingxSymbol(request.pair),
+      resolvedPair: provenance.resolvedPair,
+      resolvedBingxSymbol: provenance.resolvedBingxSymbol,
+      periodStart: request.periodStart,
+      periodEnd: request.periodEnd,
+      interval,
+      agentVersionId: versionId,
+      datasetVersionId: dataset.id,
+      featureSetVersionId,
+      datasetHash: dataset.dataset_hash ?? dataset.checksum ?? null,
+      featureSchemaFingerprint,
+      decisionThreshold: request.decisionThreshold ?? null,
+      windowSize,
+      stride,
+      leverage,
+      takerFeeBps,
+      slippageBps,
+      fundingWeight,
+      drawdownPenalty,
+      walkForward: request.walkForward ?? null,
+    },
+    dataFields: provenance.dataFields,
+    provenance: provenance as unknown as Record<string, unknown>,
+  });
+  report.metadata = reportMetadata;
 
   const inserted = await insertEvaluationReport({
     agent_version_id: versionId,
@@ -307,7 +380,7 @@ export async function runEvaluation(request: EvaluationRequest) {
     max_drawdown: report.max_drawdown,
     trade_count: report.trade_count,
     exposure_by_pair: report.exposure_by_pair,
-    metadata: report.metadata ?? null,
+    metadata: reportMetadata,
     status: report.status,
   });
 

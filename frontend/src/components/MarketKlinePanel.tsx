@@ -7,9 +7,10 @@ import type { Trade } from "../services/api";
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const MODES = ["all", "paper", "live"] as const;
-const INITIAL_BAR_COUNT = 360;
-const HISTORY_CHUNK_BARS = 500;
-const UPDATE_FETCH_BARS = 240;
+const INITIAL_BAR_COUNT = 1000;
+const HISTORY_CHUNK_BARS = 1000;
+const PRELOAD_HISTORY_BARS = 6000;
+const UPDATE_FETCH_BARS = 480;
 const LIVE_POLL_MS = 4000;
 
 type TradeMode = (typeof MODES)[number];
@@ -283,7 +284,23 @@ export default function MarketKlinePanel({
         if (type === "init") {
           const now = Date.now() + intervalMs;
           const start = now - INITIAL_BAR_COUNT * intervalMs;
-          const data = await fetchRange(start, now, INITIAL_BAR_COUNT);
+          let data = await fetchRange(start, now, INITIAL_BAR_COUNT);
+          if (data.length > 0) {
+            let remaining = PRELOAD_HISTORY_BARS;
+            let anchor = data[0].timestamp;
+            while (!canceled && remaining > 0) {
+              const preloadEnd = anchor - 1;
+              const preloadStart = preloadEnd - HISTORY_CHUNK_BARS * intervalMs;
+              const older = (await fetchRange(preloadStart, preloadEnd, HISTORY_CHUNK_BARS)).filter(
+                (candle) => candle.timestamp < anchor,
+              );
+              if (older.length === 0) break;
+              data = [...older, ...data];
+              anchor = data[0].timestamp;
+              remaining -= older.length;
+              if (older.length < HISTORY_CHUNK_BARS) break;
+            }
+          }
           if (canceled) return;
           updateBounds(data);
           setInitCount(data.length);

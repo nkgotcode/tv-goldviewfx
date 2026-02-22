@@ -9,7 +9,7 @@ import { listBingxMarkIndexPrices } from "../db/repositories/bingx_market_data/m
 import { listBingxOpenInterest } from "../db/repositories/bingx_market_data/open_interest";
 import { listBingxTickers } from "../db/repositories/bingx_market_data/tickers";
 import { loadEnv } from "../config/env";
-import { toBingxSymbol } from "../config/market_catalog";
+import { fromBingxSymbol, getSupportedPairs, normalizePairToken, toBingxSymbol } from "../config/market_catalog";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { rlServiceClient } from "../rl/client";
 import type { DatasetPreviewRequest, DatasetPreviewResponse } from "../types/rl";
@@ -85,6 +85,64 @@ type TickerRow = {
   price_change_24h?: number | null;
 };
 
+type DatasetDataSourceEntry = {
+  source: string;
+  pairs: string[];
+  rows: number;
+};
+
+export type DatasetFeatureProvenance = {
+  requestedPair: string;
+  requestedBingxSymbol: string;
+  resolvedPair: string;
+  resolvedBingxSymbol: string;
+  candidatePairs: string[];
+  interval: string;
+  periodStart: string;
+  periodEnd: string;
+  rowCounts: {
+    candles: number;
+    funding: number;
+    openInterest: number;
+    markIndex: number;
+    tickers: number;
+    featureSnapshots: number;
+  };
+  dataSources: DatasetDataSourceEntry[];
+  dataFields: string[];
+  candlesOrigin: "stored" | "live" | "stored+live" | "synthetic";
+  liveFetch: {
+    attemptedSymbols: string[];
+    usedSymbol: string | null;
+    usedRangeStart: string | null;
+    usedRangeEnd: string | null;
+  };
+};
+
+export type DatasetFeatureBuildResult = {
+  features: Array<Record<string, number | string>>;
+  provenance: DatasetFeatureProvenance;
+};
+
+function uniqueValues(values: string[]) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const token = normalizePairToken(value);
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    output.push(value);
+  }
+  return output;
+}
+
+function resolveCandidatePairs(requestedPair: string) {
+  const requestedSymbol = toBingxSymbol(requestedPair);
+  const requestedToken = normalizePairToken(requestedSymbol);
+  const aliasPairs = getSupportedPairs().filter((pair) => normalizePairToken(toBingxSymbol(pair)) === requestedToken);
+  return uniqueValues([requestedPair, ...aliasPairs]);
+}
+
 function mergeCandles(...groups: CandleRow[][]) {
   const merged = new Map<string, CandleRow>();
   for (const group of groups) {
@@ -130,15 +188,14 @@ async function fetchBingxCandlesDirect(input: DatasetPreviewRequest) {
   const startMs = new Date(input.startAt).getTime();
   const endMs = new Date(input.endAt).getTime();
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-    return [];
+    return { rows: [] as CandleRow[], usedSymbol: null, attemptedSymbols: [] as string[] };
   }
-  const symbols =
-    input.pair === "Gold-USDT"
-      ? ["XAUT-USDT", "PAXG-USDT", "GOLD-USDT"]
-      : [toBingxSymbol(input.pair)];
+  const symbols = resolveCandidatePairs(input.pair).map((pair) => toBingxSymbol(pair));
+  const attemptedSymbols: string[] = [];
 
   let lastError: Error | null = null;
   for (const symbol of symbols) {
+    attemptedSymbols.push(symbol);
     const url = new URL(`${baseUrl}/openApi/swap/v3/quote/klines`);
     url.searchParams.set("symbol", symbol);
     url.searchParams.set("interval", input.interval);
@@ -162,7 +219,8 @@ async function fetchBingxCandlesDirect(input: DatasetPreviewRequest) {
     }
     const rows = normalizeList(body?.data ?? body);
     const intervalMs = parseIntervalMs(input.interval);
-    return rows
+    return {
+      rows: rows
       .map((row) => {
         const openTime = toIso(row?.openTime ?? row?.open_time ?? row?.time ?? row?.[0]);
         const closeTime =
@@ -179,13 +237,16 @@ async function fetchBingxCandlesDirect(input: DatasetPreviewRequest) {
           volume: parseNumber(row?.volume ?? row?.[5]),
         };
       })
-      .filter(Boolean);
+      .filter((row): row is CandleRow => row !== null),
+      usedSymbol: symbol,
+      attemptedSymbols,
+    };
   }
 
   if (lastError) {
     throw lastError;
   }
-  return [];
+  return { rows: [], usedSymbol: null, attemptedSymbols };
 }
 
 type DatasetPreviewVersion = {
@@ -296,7 +357,21 @@ function buildSyntheticFeatures(input: DatasetPreviewRequest) {
   return features;
 }
 
-export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
+function dedupeByTimestamp<T extends Record<string, unknown>>(rows: T[], timeField: keyof T) {
+  const deduped = new Map<string, T>();
+  for (const row of rows) {
+    const key = String(row[timeField] ?? "");
+    if (!key) continue;
+    deduped.set(key, row);
+  }
+  return Array.from(deduped.values());
+}
+
+function resolvePairFromSymbol(symbol: string, fallback: string) {
+  return fromBingxSymbol(symbol) ?? fallback;
+}
+
+export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRequest): Promise<DatasetFeatureBuildResult> {
   const intervalMs = parseIntervalMs(input.interval);
   const startMs = new Date(input.startAt).getTime();
   const endMs = new Date(input.endAt).getTime();
@@ -304,24 +379,39 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
   const allowLiveFetch = !["1", "true", "yes", "on"].includes(
     (process.env.BINGX_MARKET_DATA_MOCK ?? "").toLowerCase(),
   );
+  const candidatePairs = resolveCandidatePairs(input.pair);
+  const requestedBingxSymbol = toBingxSymbol(input.pair);
 
-  let convexCandles: CandleRow[] = [];
-  try {
-    convexCandles = await listBingxCandles({
-      pair: input.pair,
-      interval: input.interval,
-      start: input.startAt,
-      end: input.endAt,
-    });
-  } catch (error) {
-    logWarn("BingX candle query failed; falling back to live API fetch", {
-      pair: input.pair,
-      interval: input.interval,
-      error: String(error),
-    });
-  }
+  const candleResults = await Promise.all(
+    candidatePairs.map(async (candidatePair) => {
+      try {
+        const rows = await listBingxCandles({
+          pair: candidatePair,
+          interval: input.interval,
+          start: input.startAt,
+          end: input.endAt,
+        });
+        return { pair: candidatePair, rows: rows as CandleRow[] };
+      } catch (error) {
+        logWarn("BingX candle query failed; continuing with alias candidates", {
+          requestedPair: input.pair,
+          candidatePair,
+          interval: input.interval,
+          error: String(error),
+        });
+        return { pair: candidatePair, rows: [] as CandleRow[] };
+      }
+    }),
+  );
+  const convexCandles = mergeCandles(...candleResults.map((result) => result.rows));
+  const storedPairsUsed = candleResults.filter((result) => result.rows.length > 0).map((result) => result.pair);
 
   const liveCandles: CandleRow[] = [];
+  let liveUsedSymbol: string | null = null;
+  const liveAttemptedSymbols = new Set<string>();
+  let liveRangeStart: string | null = null;
+  let liveRangeEnd: string | null = null;
+
   const requestLiveRange = async (rangeStartMs: number, rangeEndMs: number, reason: string) => {
     if (!allowLiveFetch) {
       return;
@@ -340,12 +430,20 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
       });
     }
     try {
-      const rangeCandles = await fetchBingxCandlesDirect({
+      const response = await fetchBingxCandlesDirect({
         ...input,
         startAt: new Date(maxStart).toISOString(),
         endAt: new Date(rangeEndMs).toISOString(),
       });
-      liveCandles.push(...rangeCandles);
+      for (const symbol of response.attemptedSymbols) {
+        liveAttemptedSymbols.add(symbol);
+      }
+      if (response.usedSymbol) {
+        liveUsedSymbol = response.usedSymbol;
+        liveRangeStart = new Date(maxStart).toISOString();
+        liveRangeEnd = new Date(rangeEndMs).toISOString();
+      }
+      liveCandles.push(...response.rows);
     } catch (error) {
       logWarn("BingX live candle fetch failed", {
         pair: input.pair,
@@ -374,64 +472,179 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
   }
 
   const candles = mergeCandles(convexCandles, liveCandles);
+  const resolvedBingxSymbol = liveUsedSymbol ?? requestedBingxSymbol;
+  const resolvedPair =
+    storedPairsUsed[0] ??
+    resolvePairFromSymbol(resolvedBingxSymbol, candidatePairs[0] ?? input.pair);
+  let candlesOrigin: DatasetFeatureProvenance["candlesOrigin"] = "stored";
+  if (convexCandles.length > 0 && liveCandles.length > 0) candlesOrigin = "stored+live";
+  if (convexCandles.length === 0 && liveCandles.length > 0) candlesOrigin = "live";
 
   if (candles.length === 0) {
     const config = loadRlServiceConfig();
     const allowSynthetic = config.mock || ["1", "true", "yes", "on"].includes((process.env.BINGX_MARKET_DATA_MOCK ?? "").toLowerCase());
     if (allowSynthetic) {
-      return buildSyntheticFeatures(input);
+      const syntheticFeatures = buildSyntheticFeatures(input);
+      const dataFields = syntheticFeatures.length === 0 ? [] : Object.keys(syntheticFeatures[0] ?? {}).sort();
+      return {
+        features: syntheticFeatures,
+        provenance: {
+          requestedPair: input.pair,
+          requestedBingxSymbol,
+          resolvedPair,
+          resolvedBingxSymbol,
+          candidatePairs,
+          interval: input.interval,
+          periodStart: input.startAt,
+          periodEnd: input.endAt,
+          rowCounts: {
+            candles: syntheticFeatures.length,
+            funding: 0,
+            openInterest: 0,
+            markIndex: 0,
+            tickers: 0,
+            featureSnapshots: 0,
+          },
+          dataSources: [{ source: "synthetic_candles", pairs: [resolvedPair], rows: syntheticFeatures.length }],
+          dataFields,
+          candlesOrigin: "synthetic",
+          liveFetch: {
+            attemptedSymbols: Array.from(liveAttemptedSymbols),
+            usedSymbol: liveUsedSymbol,
+            usedRangeStart: liveRangeStart,
+            usedRangeEnd: liveRangeEnd,
+          },
+        },
+      };
     }
   }
   if (candles.length === 0) {
-    return [];
+    return {
+      features: [],
+      provenance: {
+        requestedPair: input.pair,
+        requestedBingxSymbol,
+        resolvedPair,
+        resolvedBingxSymbol,
+        candidatePairs,
+        interval: input.interval,
+        periodStart: input.startAt,
+        periodEnd: input.endAt,
+        rowCounts: {
+          candles: 0,
+          funding: 0,
+          openInterest: 0,
+          markIndex: 0,
+          tickers: 0,
+          featureSnapshots: 0,
+        },
+        dataSources: [],
+        dataFields: [],
+        candlesOrigin,
+        liveFetch: {
+          attemptedSymbols: Array.from(liveAttemptedSymbols),
+          usedSymbol: liveUsedSymbol,
+          usedRangeStart: liveRangeStart,
+          usedRangeEnd: liveRangeEnd,
+        },
+      },
+    };
   }
 
-  const [fundingRates, openInterest, markIndexPrices, tickers] = await Promise.all([
-    listBingxFundingRates({
-      pair: input.pair,
-      start: input.startAt,
-      end: input.endAt,
-    }).catch((error) => {
-      logWarn("BingX funding-rate query failed; continuing without funding features", {
-        pair: input.pair,
-        error: String(error),
-      });
-      return [] as FundingRateRow[];
-    }),
-    listBingxOpenInterest({
-      pair: input.pair,
-      start: input.startAt,
-      end: input.endAt,
-    }).catch((error) => {
-      logWarn("BingX open-interest query failed; continuing without OI features", {
-        pair: input.pair,
-        error: String(error),
-      });
-      return [] as OpenInterestRow[];
-    }),
-    listBingxMarkIndexPrices({
-      pair: input.pair,
-      start: input.startAt,
-      end: input.endAt,
-    }).catch((error) => {
-      logWarn("BingX mark/index query failed; continuing without mark/index features", {
-        pair: input.pair,
-        error: String(error),
-      });
-      return [] as MarkIndexRow[];
-    }),
-    listBingxTickers({
-      pair: input.pair,
-      start: input.startAt,
-      end: input.endAt,
-    }).catch((error) => {
-      logWarn("BingX ticker query failed; continuing without ticker features", {
-        pair: input.pair,
-        error: String(error),
-      });
-      return [] as TickerRow[];
-    }),
+  const [fundingResults, openInterestResults, markIndexResults, tickerResults] = await Promise.all([
+    Promise.all(
+      candidatePairs.map(async (candidatePair) => {
+        try {
+          const rows = await listBingxFundingRates({
+            pair: candidatePair,
+            start: input.startAt,
+            end: input.endAt,
+          });
+          return { pair: candidatePair, rows: rows as FundingRateRow[] };
+        } catch (error) {
+          logWarn("BingX funding-rate query failed; continuing without funding features", {
+            requestedPair: input.pair,
+            candidatePair,
+            error: String(error),
+          });
+          return { pair: candidatePair, rows: [] as FundingRateRow[] };
+        }
+      }),
+    ),
+    Promise.all(
+      candidatePairs.map(async (candidatePair) => {
+        try {
+          const rows = await listBingxOpenInterest({
+            pair: candidatePair,
+            start: input.startAt,
+            end: input.endAt,
+          });
+          return { pair: candidatePair, rows: rows as OpenInterestRow[] };
+        } catch (error) {
+          logWarn("BingX open-interest query failed; continuing without OI features", {
+            requestedPair: input.pair,
+            candidatePair,
+            error: String(error),
+          });
+          return { pair: candidatePair, rows: [] as OpenInterestRow[] };
+        }
+      }),
+    ),
+    Promise.all(
+      candidatePairs.map(async (candidatePair) => {
+        try {
+          const rows = await listBingxMarkIndexPrices({
+            pair: candidatePair,
+            start: input.startAt,
+            end: input.endAt,
+          });
+          return { pair: candidatePair, rows: rows as MarkIndexRow[] };
+        } catch (error) {
+          logWarn("BingX mark/index query failed; continuing without mark/index features", {
+            requestedPair: input.pair,
+            candidatePair,
+            error: String(error),
+          });
+          return { pair: candidatePair, rows: [] as MarkIndexRow[] };
+        }
+      }),
+    ),
+    Promise.all(
+      candidatePairs.map(async (candidatePair) => {
+        try {
+          const rows = await listBingxTickers({
+            pair: candidatePair,
+            start: input.startAt,
+            end: input.endAt,
+          });
+          return { pair: candidatePair, rows: rows as TickerRow[] };
+        } catch (error) {
+          logWarn("BingX ticker query failed; continuing without ticker features", {
+            requestedPair: input.pair,
+            candidatePair,
+            error: String(error),
+          });
+          return { pair: candidatePair, rows: [] as TickerRow[] };
+        }
+      }),
+    ),
   ]);
+  const fundingRates = dedupeByTimestamp(
+    fundingResults.flatMap((result) => result.rows),
+    "funding_time",
+  ) as FundingRateRow[];
+  const openInterest = dedupeByTimestamp(
+    openInterestResults.flatMap((result) => result.rows),
+    "captured_at",
+  ) as OpenInterestRow[];
+  const markIndexPrices = dedupeByTimestamp(
+    markIndexResults.flatMap((result) => result.rows),
+    "captured_at",
+  ) as MarkIndexRow[];
+  const tickers = dedupeByTimestamp(
+    tickerResults.flatMap((result) => result.rows),
+    "captured_at",
+  ) as TickerRow[];
   const normalizedFunding = normalizeTimeSeries(fundingRates as FundingRateRow[], "funding_time");
   const normalizedOpenInterest = normalizeTimeSeries(openInterest as OpenInterestRow[], "captured_at");
   const normalizedMarkIndex = normalizeTimeSeries(markIndexPrices as MarkIndexRow[], "captured_at");
@@ -504,7 +717,7 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
   const featureSnapshots =
     input.featureSetVersionId && input.featureSchemaFingerprint
       ? await ensureFeatureSnapshots({
-          pair: input.pair,
+          pair: resolvedPair as TradingPair,
           interval: input.interval,
           startAt: input.startAt,
           endAt: input.endAt,
@@ -516,7 +729,7 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
       .filter((snapshot) => snapshot.schema_fingerprint === (input.featureSchemaFingerprint ?? snapshot.schema_fingerprint))
       .map((snapshot) => [snapshot.captured_at, snapshot.features as Record<string, number>]),
   );
-  return candles
+  const features = candles
     .map((candle) => ({
       timestamp: candle.open_time,
       open: candle.open,
@@ -528,6 +741,80 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
       ...(featureByTime.get(candle.open_time) ?? {}),
     }))
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const dataFields = new Set<string>();
+  for (const row of features.slice(0, 100)) {
+    for (const key of Object.keys(row)) {
+      dataFields.add(key);
+    }
+  }
+  const dataSources: DatasetDataSourceEntry[] = [
+    {
+      source: "bingx_candles",
+      pairs: storedPairsUsed.length > 0 ? storedPairsUsed : [resolvedPair],
+      rows: candles.length,
+    },
+    {
+      source: "bingx_funding_rates",
+      pairs: fundingResults.filter((result) => result.rows.length > 0).map((result) => result.pair),
+      rows: fundingRates.length,
+    },
+    {
+      source: "bingx_open_interest",
+      pairs: openInterestResults.filter((result) => result.rows.length > 0).map((result) => result.pair),
+      rows: openInterest.length,
+    },
+    {
+      source: "bingx_mark_index_prices",
+      pairs: markIndexResults.filter((result) => result.rows.length > 0).map((result) => result.pair),
+      rows: markIndexPrices.length,
+    },
+    {
+      source: "bingx_tickers",
+      pairs: tickerResults.filter((result) => result.rows.length > 0).map((result) => result.pair),
+      rows: tickers.length,
+    },
+    {
+      source: "rl_feature_snapshots",
+      pairs: featureSnapshots.length > 0 ? [resolvedPair] : [],
+      rows: featureSnapshots.length,
+    },
+  ].filter((entry) => entry.rows > 0);
+
+  return {
+    features,
+    provenance: {
+      requestedPair: input.pair,
+      requestedBingxSymbol,
+      resolvedPair,
+      resolvedBingxSymbol,
+      candidatePairs,
+      interval: input.interval,
+      periodStart: input.startAt,
+      periodEnd: input.endAt,
+      rowCounts: {
+        candles: candles.length,
+        funding: fundingRates.length,
+        openInterest: openInterest.length,
+        markIndex: markIndexPrices.length,
+        tickers: tickers.length,
+        featureSnapshots: featureSnapshots.length,
+      },
+      dataSources,
+      dataFields: Array.from(dataFields).sort(),
+      candlesOrigin,
+      liveFetch: {
+        attemptedSymbols: Array.from(liveAttemptedSymbols),
+        usedSymbol: liveUsedSymbol,
+        usedRangeStart: liveRangeStart,
+        usedRangeEnd: liveRangeEnd,
+      },
+    },
+  };
+}
+
+export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
+  const result = await buildDatasetFeaturesWithProvenance(input);
+  return result.features;
 }
 
 export async function createDatasetVersion(input: {

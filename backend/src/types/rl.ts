@@ -274,6 +274,7 @@ export type EvaluationRequest = {
   pair: TradingPair;
   periodStart: string;
   periodEnd: string;
+  interval?: string | null;
   agentVersionId?: string | null;
   datasetVersionId?: string | null;
   featureSetVersionId?: string | null;

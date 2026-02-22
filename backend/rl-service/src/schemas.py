@@ -107,6 +107,7 @@ class EvaluationRequest(BaseModel):
     pair: TradingPair
     period_start: datetime
     period_end: datetime
+    interval: str = "1m"
     agent_version_id: str | None = None
     dataset_version_id: str | None = None
     feature_set_version_id: str | None = None

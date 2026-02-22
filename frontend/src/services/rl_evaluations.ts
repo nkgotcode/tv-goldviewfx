@@ -15,13 +15,36 @@ export type EvaluationReport = {
   created_at: string;
   dataset_version_id?: string | null;
   feature_set_version_id?: string | null;
+  dataset_hash?: string | null;
+  artifact_uri?: string | null;
+  backtest_run_id?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type EvaluationRequest = {
   pair: string;
   periodStart: string;
   periodEnd: string;
+  interval?: string;
   agentVersionId?: string;
+  datasetVersionId?: string;
+  featureSetVersionId?: string;
+  decisionThreshold?: number;
+  windowSize?: number;
+  stride?: number;
+  leverage?: number;
+  takerFeeBps?: number;
+  slippageBps?: number;
+  fundingWeight?: number;
+  drawdownPenalty?: number;
+  walkForward?: {
+    folds: number;
+    purgeBars?: number;
+    embargoBars?: number;
+    minTrainBars?: number;
+    strict?: boolean;
+  } | null;
+  featureSchemaFingerprint?: string;
 };
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {

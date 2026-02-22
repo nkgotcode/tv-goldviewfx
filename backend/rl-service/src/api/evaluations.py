@@ -15,6 +15,7 @@ def run_evaluation_endpoint(payload: EvaluationRequest) -> EvaluationReport:
             pair=payload.pair,
             period_start=payload.period_start,
             period_end=payload.period_end,
+            interval=payload.interval,
             dataset_features=payload.dataset_features,
             artifact_base64=payload.artifact_base64,
             artifact_download_url=payload.artifact_download_url,

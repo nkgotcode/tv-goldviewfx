@@ -5,29 +5,14 @@ import { ALL_PAIRS } from "../../config/marketCatalog";
 import Layout from "../../components/Layout";
 import EvaluationReportPanel from "../../components/rl-agent/EvaluationReportPanel";
 import { listAgentVersions, type AgentVersion } from "../../services/rl_agent";
-import { listEvaluationReports, runEvaluation, type EvaluationReport } from "../../services/rl_evaluations";
+import {
+  listEvaluationReports,
+  runEvaluation,
+  type EvaluationReport,
+  type EvaluationRequest,
+} from "../../services/rl_evaluations";
 
 const ALL_PAIRS_OPTION = "__all_pairs__";
-
-type EvaluationReportWithMeta = EvaluationReport & {
-  dataset_hash?: string | null;
-  artifact_uri?: string | null;
-  backtest_run_id?: string | null;
-  metadata?: Record<string, unknown> | null;
-};
-
-type ExtendedEvaluationRequest = {
-  pair: string;
-  periodStart: string;
-  periodEnd: string;
-  agentVersionId?: string;
-  datasetVersionId?: string;
-  featureSetVersionId?: string;
-  decisionThreshold?: number;
-  windowSize?: number;
-  stride?: number;
-  walkForward?: boolean;
-};
 
 function toInputValue(date: Date) {
   return date.toISOString().slice(0, 16);
@@ -50,6 +35,17 @@ function formatDuration(start: string, end: string) {
   const minutes = totalMinutes % 60;
   if (minutes === 0) return `${hours}h`;
   return `${hours}h ${minutes}m`;
+}
+
+function normalizePairToken(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function toBingxSymbolToken(pair: string) {
+  const token = normalizePairToken(pair);
+  if (token === "GOLDUSDT" || token === "GOLD" || token === "XAUTUSDT") return "XAUTUSDT";
+  if (token === "PAXGUSDT") return "PAXGUSDT";
+  return token;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -90,7 +86,25 @@ function extractDataFields(metadata: Record<string, unknown> | null): string[] {
   return [...fields];
 }
 
-function buildRunParams(report: EvaluationReportWithMeta | null): Record<string, unknown> {
+function extractDataSources(metadata: Record<string, unknown> | null) {
+  if (!metadata) return [] as Array<{ source: string; rows: number; pairs: string[] }>;
+  const provenance = asRecord(metadata.dataset_provenance) ?? asRecord(metadata.datasetProvenance);
+  const sources = provenance?.dataSources ?? provenance?.data_sources;
+  if (!Array.isArray(sources)) return [];
+  return sources
+    .map((item) => {
+      const record = asRecord(item);
+      if (!record) return null;
+      const source = typeof record.source === "string" ? record.source : "";
+      const rows = Number(record.rows ?? 0);
+      const pairs = Array.isArray(record.pairs) ? record.pairs.filter((value): value is string => typeof value === "string") : [];
+      if (!source || !Number.isFinite(rows)) return null;
+      return { source, rows, pairs };
+    })
+    .filter((value): value is { source: string; rows: number; pairs: string[] } => value !== null);
+}
+
+function buildRunParams(report: EvaluationReport | null): Record<string, unknown> {
   if (!report) return {};
   const params: Record<string, unknown> = {};
   params.agentVersionId = report.agent_version_id;
@@ -117,19 +131,30 @@ function buildRunParams(report: EvaluationReportWithMeta | null): Record<string,
 }
 
 export default function RlEvaluationsPage() {
-  const [reports, setReports] = useState<EvaluationReportWithMeta[]>([]);
+  const [reports, setReports] = useState<EvaluationReport[]>([]);
   const [versions, setVersions] = useState<AgentVersion[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string>("");
   const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
   const [versionId, setVersionId] = useState<string>("");
   const [periodStart, setPeriodStart] = useState(() => toInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)));
   const [periodEnd, setPeriodEnd] = useState(() => toInputValue(new Date()));
+  const [interval, setInterval] = useState("1m");
   const [datasetVersionId, setDatasetVersionId] = useState("");
   const [featureSetVersionId, setFeatureSetVersionId] = useState("");
   const [decisionThreshold, setDecisionThreshold] = useState("");
   const [windowSize, setWindowSize] = useState("");
   const [stride, setStride] = useState("");
+  const [leverage, setLeverage] = useState("");
+  const [takerFeeBps, setTakerFeeBps] = useState("");
+  const [slippageBps, setSlippageBps] = useState("");
+  const [fundingWeight, setFundingWeight] = useState("");
+  const [drawdownPenalty, setDrawdownPenalty] = useState("");
   const [walkForwardMode, setWalkForwardMode] = useState<"default" | "enabled" | "disabled">("default");
+  const [walkForwardFolds, setWalkForwardFolds] = useState("4");
+  const [walkForwardPurgeBars, setWalkForwardPurgeBars] = useState("0");
+  const [walkForwardEmbargoBars, setWalkForwardEmbargoBars] = useState("0");
+  const [walkForwardMinTrainBars, setWalkForwardMinTrainBars] = useState("");
+  const [walkForwardStrict, setWalkForwardStrict] = useState(true);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
@@ -144,7 +169,7 @@ export default function RlEvaluationsPage() {
         listEvaluationReports("gold-rl-agent", versionId || undefined),
       ]);
       setVersions(agentVersions);
-      setReports(evaluationReports as EvaluationReportWithMeta[]);
+      setReports(evaluationReports as EvaluationReport[]);
       const firstVersion = agentVersions[0];
       if (!versionId && firstVersion) {
         setVersionId(firstVersion.id);
@@ -172,6 +197,15 @@ export default function RlEvaluationsPage() {
   const selectedMetadata = useMemo(() => asRecord(selectedReport?.metadata ?? null), [selectedReport]);
   const selectedRunParams = useMemo(() => buildRunParams(selectedReport), [selectedReport]);
   const selectedDataFields = useMemo(() => extractDataFields(selectedMetadata), [selectedMetadata]);
+  const selectedDataSources = useMemo(() => extractDataSources(selectedMetadata), [selectedMetadata]);
+  const selectedParameters = useMemo(
+    () =>
+      asRecord(selectedMetadata?.parameters) ??
+      asRecord(selectedMetadata?.params) ??
+      asRecord(selectedMetadata?.request) ??
+      asRecord(selectedMetadata?.config),
+    [selectedMetadata],
+  );
 
   const handleRunEvaluation = async () => {
     setActionLoading(true);
@@ -184,17 +218,24 @@ export default function RlEvaluationsPage() {
         throw new Error("Period end must be after period start.");
       }
 
-      const targetPairs = pair === ALL_PAIRS_OPTION ? ALL_PAIRS : [pair];
+      const targetPairs =
+        pair === ALL_PAIRS_OPTION
+          ? ALL_PAIRS.filter((candidate, index, list) => {
+              const symbolToken = toBingxSymbolToken(candidate);
+              return list.findIndex((item) => toBingxSymbolToken(item) === symbolToken) === index;
+            })
+          : [pair];
       if (targetPairs.length === 0) {
         throw new Error("No pairs available for evaluation.");
       }
 
       for (const [index, targetPair] of targetPairs.entries()) {
         setActionNote(`Running ${index + 1}/${targetPairs.length}: ${targetPair}`);
-        const payload: ExtendedEvaluationRequest = {
+        const payload: EvaluationRequest = {
           pair: targetPair,
           periodStart: periodStartIso,
           periodEnd: periodEndIso,
+          interval,
         };
         if (versionId) payload.agentVersionId = versionId;
         if (datasetVersionId.trim()) payload.datasetVersionId = datasetVersionId.trim();
@@ -224,11 +265,85 @@ export default function RlEvaluationsPage() {
           payload.stride = Math.round(parsedStride);
         }
 
-        if (walkForwardMode !== "default") {
-          payload.walkForward = walkForwardMode === "enabled";
+        if (leverage.trim()) {
+          const parsedLeverage = Number(leverage);
+          if (!Number.isFinite(parsedLeverage) || parsedLeverage <= 0) {
+            throw new Error("Leverage must be a positive number.");
+          }
+          payload.leverage = parsedLeverage;
         }
 
-        await runEvaluation("gold-rl-agent", payload as never);
+        if (takerFeeBps.trim()) {
+          const parsedTakerFeeBps = Number(takerFeeBps);
+          if (!Number.isFinite(parsedTakerFeeBps) || parsedTakerFeeBps < 0) {
+            throw new Error("Taker fee must be zero or positive.");
+          }
+          payload.takerFeeBps = parsedTakerFeeBps;
+        }
+
+        if (slippageBps.trim()) {
+          const parsedSlippageBps = Number(slippageBps);
+          if (!Number.isFinite(parsedSlippageBps) || parsedSlippageBps < 0) {
+            throw new Error("Slippage must be zero or positive.");
+          }
+          payload.slippageBps = parsedSlippageBps;
+        }
+
+        if (fundingWeight.trim()) {
+          const parsedFundingWeight = Number(fundingWeight);
+          if (!Number.isFinite(parsedFundingWeight) || parsedFundingWeight < 0) {
+            throw new Error("Funding weight must be zero or positive.");
+          }
+          payload.fundingWeight = parsedFundingWeight;
+        }
+
+        if (drawdownPenalty.trim()) {
+          const parsedDrawdownPenalty = Number(drawdownPenalty);
+          if (!Number.isFinite(parsedDrawdownPenalty) || parsedDrawdownPenalty < 0) {
+            throw new Error("Drawdown penalty must be zero or positive.");
+          }
+          payload.drawdownPenalty = parsedDrawdownPenalty;
+        }
+
+        if (walkForwardMode !== "default") {
+          if (walkForwardMode === "disabled") {
+            payload.walkForward = {
+              folds: 1,
+              purgeBars: 0,
+              embargoBars: 0,
+              strict: false,
+            };
+          } else {
+            const folds = Number(walkForwardFolds || "4");
+            const purgeBars = Number(walkForwardPurgeBars || "0");
+            const embargoBars = Number(walkForwardEmbargoBars || "0");
+            const minTrainBarsRaw = walkForwardMinTrainBars.trim();
+            if (!Number.isFinite(folds) || folds < 1 || folds > 24) {
+              throw new Error("Walk-forward folds must be between 1 and 24.");
+            }
+            if (!Number.isFinite(purgeBars) || purgeBars < 0) {
+              throw new Error("Walk-forward purge bars must be zero or positive.");
+            }
+            if (!Number.isFinite(embargoBars) || embargoBars < 0) {
+              throw new Error("Walk-forward embargo bars must be zero or positive.");
+            }
+            payload.walkForward = {
+              folds: Math.round(folds),
+              purgeBars: Math.round(purgeBars),
+              embargoBars: Math.round(embargoBars),
+              strict: walkForwardStrict,
+            };
+            if (minTrainBarsRaw) {
+              const minTrainBars = Number(minTrainBarsRaw);
+              if (!Number.isFinite(minTrainBars) || minTrainBars <= 0) {
+                throw new Error("Walk-forward min train bars must be a positive number.");
+              }
+              payload.walkForward.minTrainBars = Math.round(minTrainBars);
+            }
+          }
+        }
+
+        await runEvaluation("gold-rl-agent", payload);
       }
       setActionNote(`Completed ${targetPairs.length} evaluation run(s).`);
       await refresh();
@@ -279,7 +394,7 @@ export default function RlEvaluationsPage() {
         <div className="table-card">
           <h3>Run Evaluation</h3>
           <p>
-            Choose one pair or run all pairs, set backtest window and run parameters, then generate reports.
+            Choose one pair or run all pairs, then tune Nautilus and reward settings for this evaluation window.
           </p>
           <div className="form-grid">
             <label>
@@ -310,6 +425,16 @@ export default function RlEvaluationsPage() {
             <label>
               Period End
               <input type="datetime-local" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} />
+            </label>
+            <label>
+              Candle Interval
+              <select value={interval} onChange={(event) => setInterval(event.target.value)}>
+                {["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Dataset Version (optional)
@@ -366,6 +491,95 @@ export default function RlEvaluationsPage() {
                 <option value="enabled">Enabled</option>
                 <option value="disabled">Disabled</option>
               </select>
+            </label>
+            <label>
+              Leverage (optional)
+              <input type="number" min={0.01} step="0.01" value={leverage} onChange={(event) => setLeverage(event.target.value)} />
+            </label>
+            <label>
+              Taker Fee Bps (optional)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={takerFeeBps}
+                onChange={(event) => setTakerFeeBps(event.target.value)}
+              />
+            </label>
+            <label>
+              Slippage Bps (optional)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={slippageBps}
+                onChange={(event) => setSlippageBps(event.target.value)}
+              />
+            </label>
+            <label>
+              Funding Weight (optional)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={fundingWeight}
+                onChange={(event) => setFundingWeight(event.target.value)}
+              />
+            </label>
+            <label>
+              Drawdown Penalty (optional)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={drawdownPenalty}
+                onChange={(event) => setDrawdownPenalty(event.target.value)}
+              />
+            </label>
+            <label>
+              WF Folds
+              <input
+                type="number"
+                min={1}
+                max={24}
+                value={walkForwardFolds}
+                onChange={(event) => setWalkForwardFolds(event.target.value)}
+              />
+            </label>
+            <label>
+              WF Purge Bars
+              <input
+                type="number"
+                min={0}
+                value={walkForwardPurgeBars}
+                onChange={(event) => setWalkForwardPurgeBars(event.target.value)}
+              />
+            </label>
+            <label>
+              WF Embargo Bars
+              <input
+                type="number"
+                min={0}
+                value={walkForwardEmbargoBars}
+                onChange={(event) => setWalkForwardEmbargoBars(event.target.value)}
+              />
+            </label>
+            <label>
+              WF Min Train Bars (optional)
+              <input
+                type="number"
+                min={1}
+                value={walkForwardMinTrainBars}
+                onChange={(event) => setWalkForwardMinTrainBars(event.target.value)}
+              />
+            </label>
+            <label className="toggle-row">
+              <span>WF Strict Mode</span>
+              <input
+                type="checkbox"
+                checked={walkForwardStrict}
+                onChange={(event) => setWalkForwardStrict(event.target.checked)}
+              />
             </label>
           </div>
           <div className="action-row">
@@ -430,12 +644,34 @@ export default function RlEvaluationsPage() {
 
       <section className="table-card">
         <h3>Selected Run Metadata</h3>
-        <p>Parameters, data fields, and backtest metadata for the selected history entry.</p>
+        <p>Requested vs resolved ticker, Nautilus settings, data fields, and backtest metadata for this run.</p>
         {!selectedReport ? (
           <div className="empty">Select an evaluation run from history.</div>
         ) : (
           <>
             <div className="detail-grid">
+              <div>
+                <span>Requested Pair</span>
+                <strong>{selectedReport.pair}</strong>
+              </div>
+              <div>
+                <span>Resolved Ticker</span>
+                <strong>
+                  {(typeof selectedParameters?.resolvedPair === "string" && selectedParameters.resolvedPair) ||
+                    selectedReport.pair}
+                </strong>
+              </div>
+              <div>
+                <span>Resolved BingX Symbol</span>
+                <strong>
+                  {(typeof selectedParameters?.resolvedBingxSymbol === "string" && selectedParameters.resolvedBingxSymbol) ||
+                    "—"}
+                </strong>
+              </div>
+              <div>
+                <span>Interval Used</span>
+                <strong>{(typeof selectedParameters?.interval === "string" && selectedParameters.interval) || "1m"}</strong>
+              </div>
               <div>
                 <span>Backtest Window</span>
                 <strong>
@@ -465,6 +701,20 @@ export default function RlEvaluationsPage() {
               <div className="detail-grid-span">
                 <span>Data Fields Used</span>
                 <strong>{selectedDataFields.length > 0 ? selectedDataFields.join(", ") : "No data fields recorded in metadata."}</strong>
+              </div>
+              <div className="detail-grid-span">
+                <span>Data Sources Used</span>
+                <strong>
+                  {selectedDataSources.length > 0
+                    ? selectedDataSources
+                        .map((source) =>
+                          source.pairs.length > 0
+                            ? `${source.source} [${source.pairs.join(", ")}] (${source.rows} rows)`
+                            : `${source.source} (${source.rows} rows)`,
+                        )
+                        .join(", ")
+                    : "No source table metadata recorded."}
+                </strong>
               </div>
             </div>
             <div style={{ marginTop: 16 }}>

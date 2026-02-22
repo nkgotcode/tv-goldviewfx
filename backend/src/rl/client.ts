@@ -65,6 +65,7 @@ export class RlServiceClient {
       pair: payload.pair,
       period_start: payload.periodStart,
       period_end: payload.periodEnd,
+      interval: payload.interval ?? "1m",
       agent_version_id: payload.agentVersionId ?? null,
       dataset_version_id: payload.datasetVersionId ?? null,
       feature_set_version_id: payload.featureSetVersionId ?? null,

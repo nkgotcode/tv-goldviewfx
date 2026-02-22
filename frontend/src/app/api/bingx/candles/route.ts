@@ -21,6 +21,25 @@ type BingxCandle = {
   volume: number;
 };
 
+function intervalToMs(interval: string) {
+  const match = interval.match(/^(\d+)([mhdwM])$/);
+  if (!match) return 60_000;
+  const value = Number(match[1]);
+  const unit = match[2];
+  if (unit === "m") return value * 60_000;
+  if (unit === "h") return value * 3_600_000;
+  if (unit === "d") return value * 86_400_000;
+  if (unit === "w") return value * 604_800_000;
+  if (unit === "M") return value * 2_592_000_000;
+  return 60_000;
+}
+
+function toUnixMs(value?: string | null) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizePairToken(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -46,11 +65,12 @@ function mapKlineToCandle(pair: string, interval: string, kline: BingxKline): Bi
   const volume = Number(kline.volume);
   const openTimeMs = Number(kline.time);
 
+  const intervalMs = intervalToMs(interval);
   return {
     pair,
     interval,
     open_time: new Date(openTimeMs).toISOString(),
-    close_time: new Date(openTimeMs).toISOString(),
+    close_time: new Date(openTimeMs + intervalMs).toISOString(),
     open: Number.isFinite(open) ? open : 0,
     high: Number.isFinite(high) ? high : 0,
     low: Number.isFinite(low) ? low : 0,
@@ -62,15 +82,21 @@ function mapKlineToCandle(pair: string, interval: string, kline: BingxKline): Bi
 export async function GET(request: NextRequest) {
   const pair = request.nextUrl.searchParams.get("pair")?.trim() ?? "BTC-USDT";
   const interval = request.nextUrl.searchParams.get("interval")?.trim() ?? "1m";
+  const start = request.nextUrl.searchParams.get("start");
+  const end = request.nextUrl.searchParams.get("end");
   const limitRaw = request.nextUrl.searchParams.get("limit")?.trim() ?? "500";
   const parsedLimit = Number(limitRaw);
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 1000) : 500;
+  const startMs = toUnixMs(start);
+  const endMs = toUnixMs(end);
 
   const query = new URLSearchParams({
     symbol: toBingxSymbol(pair),
     interval,
     limit: String(limit),
   });
+  if (startMs !== null) query.set("startTime", String(startMs));
+  if (endMs !== null) query.set("endTime", String(endMs));
 
   const response = await fetch(`https://open-api.bingx.com/openApi/swap/v3/quote/klines?${query.toString()}`, {
     cache: "no-store",

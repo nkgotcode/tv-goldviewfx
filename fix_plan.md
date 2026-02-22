@@ -7,6 +7,7 @@
 ## Discovered
 
 - [ ] Integration/E2E suites requiring DB-backed env remain gated behind `DB_TEST_ENABLED` / `E2E_RUN`.
+- [ ] Frontend `next build` currently fails on an unrelated type issue in `frontend/src/app/library/page.tsx` (`CrudFilter` operator typing), so full production build verification is blocked.
 
 ## Completed
 
@@ -21,3 +22,8 @@
 - [x] Added champion/challenger online learning gates with persisted reasons and metric deltas.
 - [x] Added feature-quality gate and forced-hold integration in decision pipeline + observability metrics.
 - [x] Surfaced challenger/champion and delta-gate telemetry in mission-control online learning panel.
+- [x] Added evaluation-level Nautilus controls (interval + leverage/fee/slippage/funding/drawdown + walk-forward params) across backend schema, RL-service contract, and dashboard form.
+- [x] Added dataset provenance metadata for evaluations (requested vs resolved ticker/symbol, source tables, row counts, and feature fields) and surfaced it in `/rl-evaluations`.
+- [x] De-duplicated “All pairs” evaluation runs by resolved BingX symbol to avoid alias duplicates (`Gold-USDT` vs `XAUTUSDT`).
+- [x] Fixed chart history proxy to honor `start/end` range when fetching BingX candles, enabling deep historical pagination in KLine chart loaders.
+- [x] Expanded market chart viewport and default history preload so dashboards open with substantially more candles and taller chart real estate.
