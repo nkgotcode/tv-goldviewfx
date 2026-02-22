@@ -3,10 +3,10 @@ import { insertAgentRun, getAgentRun } from "../../src/db/repositories/agent_run
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 import { runDataSourceMonitor } from "../../src/jobs/data_source_monitor";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("data source monitor requires Convex configuration", () => {});
+  test.skip("data source monitor requires database configuration", () => {});
 } else {
   test("data source monitor pauses runs when sources are stale", async () => {
     const run = await insertAgentRun({

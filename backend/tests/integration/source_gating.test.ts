@@ -9,7 +9,7 @@ import { updateAgentConfig } from "../../src/db/repositories/agent_config";
 import { insertTrade } from "../../src/db/repositories/trades";
 import { executeTrade } from "../../src/services/trade_execution";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("source gating tests require Convex configuration", () => {});

@@ -1,10 +1,9 @@
 import { listIngestionRuns } from "../db/repositories/ingestion_runs";
 import { insertDataQualityMetric, listDataQualityMetrics } from "../db/repositories/data_quality_metrics";
 import { listDataSourceConfigs } from "../db/repositories/data_source_configs";
+import { getSupportedPairs } from "../config/market_catalog";
 import { BINGX_SOURCE_TYPES, listDataSourceStatusWithConfig } from "./data_source_status_service";
 import type { TradingPair } from "../types/rl";
-
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 
 const INGESTION_SOURCE_MAP: Record<string, string> = {
   tradingview: "ideas",
@@ -68,7 +67,7 @@ async function latestIngestionQuality(sourceType: string) {
 }
 
 export async function refreshDataQualityMetrics(pair?: TradingPair) {
-  const pairs = pair ? [pair] : SUPPORTED_PAIRS;
+  const pairs = pair ? [pair] : getSupportedPairs();
   const now = new Date().toISOString();
 
   const ingestionQualities = await Promise.all(

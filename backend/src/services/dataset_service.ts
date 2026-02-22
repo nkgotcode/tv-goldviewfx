@@ -4,23 +4,19 @@ import { insertDatasetLineage } from "../db/repositories/dataset_lineage";
 import { listFeatureSetVersions } from "../db/repositories/feature_set_versions";
 import { listIngestionRuns } from "../db/repositories/ingestion_runs";
 import { listBingxCandles } from "../db/repositories/bingx_market_data/candles";
+import { listBingxFundingRates } from "../db/repositories/bingx_market_data/funding_rates";
+import { listBingxMarkIndexPrices } from "../db/repositories/bingx_market_data/mark_index_prices";
+import { listBingxOpenInterest } from "../db/repositories/bingx_market_data/open_interest";
+import { listBingxTickers } from "../db/repositories/bingx_market_data/tickers";
 import { loadEnv } from "../config/env";
+import { toBingxSymbol } from "../config/market_catalog";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { rlServiceClient } from "../rl/client";
 import type { DatasetPreviewRequest, DatasetPreviewResponse } from "../types/rl";
 import type { TradingPair } from "../types/rl";
-import { resolveFeatureSetVersion } from "./feature_set_service";
+import { getFeatureSchemaFingerprint, getFeatureSetConfigById, resolveFeatureSetVersion } from "./feature_set_service";
+import { ensureFeatureSnapshots } from "./feature_snapshot_service";
 import { logWarn } from "./logger";
-
-const BINGX_SYMBOL_MAP: Record<TradingPair, string> = {
-  "Gold-USDT": "GOLD-USDT",
-  XAUTUSDT: "XAUT-USDT",
-  PAXGUSDT: "PAXG-USDT",
-};
-
-function toBingxSymbol(pair: TradingPair) {
-  return BINGX_SYMBOL_MAP[pair] ?? pair.toUpperCase();
-}
 
 function parseIntervalMs(interval: string) {
   const match = interval.match(/^(\d+)([mhdwM])$/);
@@ -66,6 +62,29 @@ type CandleRow = {
   volume: number;
 };
 
+type FundingRateRow = {
+  funding_time: string;
+  funding_rate: number;
+};
+
+type OpenInterestRow = {
+  captured_at: string;
+  open_interest: number;
+};
+
+type MarkIndexRow = {
+  captured_at: string;
+  mark_price: number;
+  index_price: number;
+};
+
+type TickerRow = {
+  captured_at: string;
+  last_price: number;
+  volume_24h?: number | null;
+  price_change_24h?: number | null;
+};
+
 function mergeCandles(...groups: CandleRow[][]) {
   const merged = new Map<string, CandleRow>();
   for (const group of groups) {
@@ -77,6 +96,18 @@ function mergeCandles(...groups: CandleRow[][]) {
   return Array.from(merged.values()).sort(
     (a, b) => new Date(a.open_time).getTime() - new Date(b.open_time).getTime(),
   );
+}
+
+function normalizeTimeSeries<T extends Record<string, unknown>>(rows: T[], timeField: keyof T) {
+  return [...rows]
+    .map((row) => ({ row, ts: new Date(String(row[timeField] ?? "")).getTime() }))
+    .filter((item) => Number.isFinite(item.ts))
+    .sort((a, b) => a.ts - b.ts);
+}
+
+function percentDelta(current: number, previous: number) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return 0;
+  return (current - previous) / Math.abs(previous);
 }
 
 function normalizeList(payload: unknown): any[] {
@@ -103,7 +134,7 @@ async function fetchBingxCandlesDirect(input: DatasetPreviewRequest) {
   }
   const symbols =
     input.pair === "Gold-USDT"
-      ? ["GOLD-USDT", "XAUT-USDT", "PAXG-USDT"]
+      ? ["XAUT-USDT", "PAXG-USDT", "GOLD-USDT"]
       : [toBingxSymbol(input.pair)];
 
   let lastError: Error | null = null;
@@ -168,6 +199,7 @@ type DatasetPreviewVersion = {
   window_size?: number | null;
   stride?: number | null;
   feature_set_version_id?: string | null;
+  feature_schema_fingerprint?: string | null;
 };
 
 function buildMockPreview(input: DatasetPreviewRequest, featureSetVersionId?: string | null): DatasetPreviewResponse {
@@ -177,6 +209,7 @@ function buildMockPreview(input: DatasetPreviewRequest, featureSetVersionId?: st
     start_at: input.startAt,
     end_at: input.endAt,
     feature_set_version_id: featureSetVersionId ?? null,
+    feature_schema_fingerprint: input.featureSchemaFingerprint ?? null,
     window_size: input.windowSize ?? 30,
     stride: input.stride ?? 1,
   };
@@ -192,6 +225,7 @@ function buildMockPreview(input: DatasetPreviewRequest, featureSetVersionId?: st
       checksum,
       datasetHash,
       featureSetVersionId: featureSetVersionId ?? null,
+      featureSchemaFingerprint: input.featureSchemaFingerprint ?? null,
       windowSize: input.windowSize ?? 30,
       stride: input.stride ?? 1,
       createdAt: new Date().toISOString(),
@@ -213,6 +247,9 @@ function normalizePreviewVersion(payload: DatasetPreviewResponse["version"] & Re
     window_size: payload.window_size ? Number(payload.window_size) : payload.windowSize ? Number(payload.windowSize) : null,
     stride: payload.stride ? Number(payload.stride) : null,
     feature_set_version_id: (payload.feature_set_version_id ?? payload.featureSetVersionId ?? null) as string | null,
+    feature_schema_fingerprint: (payload.feature_schema_fingerprint ?? payload.featureSchemaFingerprint ?? null) as
+      | string
+      | null,
   };
 }
 
@@ -233,19 +270,6 @@ async function latestSourceRunIds() {
     }
   }
   return ids;
-}
-
-function parseIntervalMs(interval: string) {
-  if (interval.endsWith("m")) {
-    return Number(interval.replace("m", "")) * 60 * 1000;
-  }
-  if (interval.endsWith("h")) {
-    return Number(interval.replace("h", "")) * 60 * 60 * 1000;
-  }
-  if (interval.endsWith("d")) {
-    return Number(interval.replace("d", "")) * 24 * 60 * 60 * 1000;
-  }
-  return 60 * 1000;
 }
 
 function buildSyntheticFeatures(input: DatasetPreviewRequest) {
@@ -358,6 +382,140 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
       return buildSyntheticFeatures(input);
     }
   }
+  if (candles.length === 0) {
+    return [];
+  }
+
+  const [fundingRates, openInterest, markIndexPrices, tickers] = await Promise.all([
+    listBingxFundingRates({
+      pair: input.pair,
+      start: input.startAt,
+      end: input.endAt,
+    }).catch((error) => {
+      logWarn("BingX funding-rate query failed; continuing without funding features", {
+        pair: input.pair,
+        error: String(error),
+      });
+      return [] as FundingRateRow[];
+    }),
+    listBingxOpenInterest({
+      pair: input.pair,
+      start: input.startAt,
+      end: input.endAt,
+    }).catch((error) => {
+      logWarn("BingX open-interest query failed; continuing without OI features", {
+        pair: input.pair,
+        error: String(error),
+      });
+      return [] as OpenInterestRow[];
+    }),
+    listBingxMarkIndexPrices({
+      pair: input.pair,
+      start: input.startAt,
+      end: input.endAt,
+    }).catch((error) => {
+      logWarn("BingX mark/index query failed; continuing without mark/index features", {
+        pair: input.pair,
+        error: String(error),
+      });
+      return [] as MarkIndexRow[];
+    }),
+    listBingxTickers({
+      pair: input.pair,
+      start: input.startAt,
+      end: input.endAt,
+    }).catch((error) => {
+      logWarn("BingX ticker query failed; continuing without ticker features", {
+        pair: input.pair,
+        error: String(error),
+      });
+      return [] as TickerRow[];
+    }),
+  ]);
+  const normalizedFunding = normalizeTimeSeries(fundingRates as FundingRateRow[], "funding_time");
+  const normalizedOpenInterest = normalizeTimeSeries(openInterest as OpenInterestRow[], "captured_at");
+  const normalizedMarkIndex = normalizeTimeSeries(markIndexPrices as MarkIndexRow[], "captured_at");
+  const normalizedTickers = normalizeTimeSeries(tickers as TickerRow[], "captured_at");
+
+  let fundingIdx = -1;
+  let oiIdx = -1;
+  let markIdx = -1;
+  let tickerIdx = -1;
+  let previousOpenInterest = 0;
+  const enrichedByTime = new Map<
+    string,
+    {
+      funding_rate: number;
+      funding_rate_annualized: number;
+      open_interest: number;
+      open_interest_delta_pct: number;
+      mark_price: number;
+      index_price: number;
+      mark_index_basis_bps: number;
+      ticker_last_price: number;
+      ticker_price_change_24h: number;
+      ticker_volume_24h: number;
+    }
+  >();
+
+  for (const candle of candles) {
+    const candleTime = new Date(candle.open_time).getTime();
+    while (fundingIdx + 1 < normalizedFunding.length && normalizedFunding[fundingIdx + 1].ts <= candleTime) {
+      fundingIdx += 1;
+    }
+    while (oiIdx + 1 < normalizedOpenInterest.length && normalizedOpenInterest[oiIdx + 1].ts <= candleTime) {
+      oiIdx += 1;
+    }
+    while (markIdx + 1 < normalizedMarkIndex.length && normalizedMarkIndex[markIdx + 1].ts <= candleTime) {
+      markIdx += 1;
+    }
+    while (tickerIdx + 1 < normalizedTickers.length && normalizedTickers[tickerIdx + 1].ts <= candleTime) {
+      tickerIdx += 1;
+    }
+
+    const fundingRow = fundingIdx >= 0 ? normalizedFunding[fundingIdx].row : null;
+    const openInterestRow = oiIdx >= 0 ? normalizedOpenInterest[oiIdx].row : null;
+    const markIndexRow = markIdx >= 0 ? normalizedMarkIndex[markIdx].row : null;
+    const tickerRow = tickerIdx >= 0 ? normalizedTickers[tickerIdx].row : null;
+
+    const fundingRate = parseNumber(fundingRow?.funding_rate ?? 0);
+    const openInterestValue = parseNumber(openInterestRow?.open_interest ?? previousOpenInterest);
+    const openInterestDeltaPct = percentDelta(openInterestValue, previousOpenInterest);
+    previousOpenInterest = openInterestValue;
+
+    const markPrice = parseNumber(markIndexRow?.mark_price ?? candle.close);
+    const indexPrice = parseNumber(markIndexRow?.index_price ?? candle.close);
+    const markIndexBasisBps = indexPrice !== 0 ? ((markPrice - indexPrice) / indexPrice) * 10_000 : 0;
+
+    enrichedByTime.set(candle.open_time, {
+      funding_rate: fundingRate,
+      funding_rate_annualized: fundingRate * 3 * 365,
+      open_interest: openInterestValue,
+      open_interest_delta_pct: openInterestDeltaPct,
+      mark_price: markPrice,
+      index_price: indexPrice,
+      mark_index_basis_bps: markIndexBasisBps,
+      ticker_last_price: parseNumber(tickerRow?.last_price ?? candle.close),
+      ticker_price_change_24h: parseNumber(tickerRow?.price_change_24h ?? 0),
+      ticker_volume_24h: parseNumber(tickerRow?.volume_24h ?? 0),
+    });
+  }
+
+  const featureSnapshots =
+    input.featureSetVersionId && input.featureSchemaFingerprint
+      ? await ensureFeatureSnapshots({
+          pair: input.pair,
+          interval: input.interval,
+          startAt: input.startAt,
+          endAt: input.endAt,
+          featureSetVersionId: input.featureSetVersionId,
+        })
+      : [];
+  const featureByTime = new Map(
+    featureSnapshots
+      .filter((snapshot) => snapshot.schema_fingerprint === (input.featureSchemaFingerprint ?? snapshot.schema_fingerprint))
+      .map((snapshot) => [snapshot.captured_at, snapshot.features as Record<string, number>]),
+  );
   return candles
     .map((candle) => ({
       timestamp: candle.open_time,
@@ -366,6 +524,8 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
       low: candle.low,
       close: candle.close,
       volume: candle.volume,
+      ...(enrichedByTime.get(candle.open_time) ?? {}),
+      ...(featureByTime.get(candle.open_time) ?? {}),
     }))
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }
@@ -380,6 +540,8 @@ export async function createDatasetVersion(input: {
   stride?: number;
 }) {
   const featureSet = input.featureSetVersionId ?? (await ensureFeatureSetVersion()).id;
+  const featureConfig = await getFeatureSetConfigById(featureSet);
+  const featureSchemaFingerprint = getFeatureSchemaFingerprint(featureConfig);
   const windowSize = input.windowSize ?? 30;
   const stride = input.stride ?? 1;
   const features = await buildDatasetFeatures({
@@ -390,6 +552,7 @@ export async function createDatasetVersion(input: {
     windowSize,
     stride,
     featureSetVersionId: featureSet,
+    featureSchemaFingerprint,
   });
   const config = loadRlServiceConfig();
   const previewRequest: DatasetPreviewRequest = {
@@ -400,6 +563,7 @@ export async function createDatasetVersion(input: {
     windowSize,
     stride,
     featureSetVersionId: featureSet,
+    featureSchemaFingerprint,
     features,
   };
 
@@ -418,6 +582,7 @@ export async function createDatasetVersion(input: {
     window_size: version.window_size ?? null,
     stride: version.stride ?? null,
     feature_set_version_id: featureSet,
+    feature_schema_fingerprint: featureSchemaFingerprint,
   });
 
   await insertDatasetLineage({

@@ -1,4 +1,5 @@
 import { loadEnv } from "../config/env";
+import { getSupportedPairs } from "../config/market_catalog";
 import { fetchNewsFeed } from "../integrations/news/client";
 import { hashContent } from "./dedup";
 import { insertSignal } from "../db/repositories/signals";
@@ -9,8 +10,6 @@ import { getDefaultThreshold, recordDataSourceStatus } from "./data_source_statu
 import type { TradingPair } from "../types/rl";
 import { logInfo, logWarn } from "./logger";
 import { shouldRunIngestion } from "./ingestion_control";
-
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 
 export async function runNewsIngest(trigger: "manual" | "schedule" = "schedule") {
   const env = loadEnv();
@@ -118,7 +117,7 @@ export async function runNewsIngest(trigger: "manual" | "schedule" = "schedule")
 
   const now = new Date().toISOString();
   await Promise.all(
-    SUPPORTED_PAIRS.map((pair) =>
+    getSupportedPairs().map((pair) =>
       recordDataSourceStatus({
         pair,
         sourceType: "news",

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { runNewsIngest } from "../../src/services/news_ingest";
 import { convex } from "../../src/db/client";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("news ingestion tests require Convex configuration", () => {});

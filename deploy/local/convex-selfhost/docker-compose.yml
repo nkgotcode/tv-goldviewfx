@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-convex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-convex-local-password}
+      POSTGRES_DB: ${POSTGRES_DB:-convex_self_hosted}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-convex} -d ${POSTGRES_DB:-convex_self_hosted}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    restart: unless-stopped
+    command: server /data --address :9000 --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-convexminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-convexminio-secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-01-17T23-25-50Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-convexminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-convexminio-secret}
+      CONVEX_EXPORTS_BUCKET: ${CONVEX_EXPORTS_BUCKET:-convex-exports}
+      CONVEX_FILES_BUCKET: ${CONVEX_FILES_BUCKET:-convex-files}
+      CONVEX_MODULES_BUCKET: ${CONVEX_MODULES_BUCKET:-convex-modules}
+      CONVEX_SEARCH_BUCKET: ${CONVEX_SEARCH_BUCKET:-convex-search}
+      CONVEX_SNAPSHOT_IMPORTS_BUCKET: ${CONVEX_SNAPSHOT_IMPORTS_BUCKET:-convex-snapshot-imports}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && \
+        mc mb --ignore-existing "local/$CONVEX_EXPORTS_BUCKET" && \
+        mc mb --ignore-existing "local/$CONVEX_FILES_BUCKET" && \
+        mc mb --ignore-existing "local/$CONVEX_MODULES_BUCKET" && \
+        mc mb --ignore-existing "local/$CONVEX_SEARCH_BUCKET" && \
+        mc mb --ignore-existing "local/$CONVEX_SNAPSHOT_IMPORTS_BUCKET"
+
+  convex-backend:
+    image: ghcr.io/get-convex/convex-backend:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "${CONVEX_PORT:-3210}:3210"
+      - "${CONVEX_SITE_PROXY_PORT:-3211}:3211"
+    environment:
+      INSTANCE_NAME: ${INSTANCE_NAME:-convex-self-hosted}
+      INSTANCE_SECRET: ${INSTANCE_SECRET:-replace-with-long-random-secret}
+      CONVEX_CLOUD_ORIGIN: ${CONVEX_CLOUD_ORIGIN:-http://127.0.0.1:${CONVEX_PORT:-3210}}
+      CONVEX_SITE_ORIGIN: ${CONVEX_SITE_ORIGIN:-http://127.0.0.1:${CONVEX_SITE_PROXY_PORT:-3211}}
+      RUST_LOG: ${RUST_LOG:-info}
+      DISABLE_BEACON: "true"
+      DO_NOT_REQUIRE_SSL: "1"
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://${POSTGRES_USER:-convex}:${POSTGRES_PASSWORD:-convex-local-password}@postgres:5432}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-convexminio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-convexminio-secret}
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      AWS_S3_DISABLE_CHECKSUMS: "true"
+      AWS_S3_DISABLE_SSE: ${AWS_S3_DISABLE_SSE:-true}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_STORAGE_EXPORTS_BUCKET: ${CONVEX_EXPORTS_BUCKET:-convex-exports}
+      S3_STORAGE_FILES_BUCKET: ${CONVEX_FILES_BUCKET:-convex-files}
+      S3_STORAGE_MODULES_BUCKET: ${CONVEX_MODULES_BUCKET:-convex-modules}
+      S3_STORAGE_SEARCH_BUCKET: ${CONVEX_SEARCH_BUCKET:-convex-search}
+      S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET: ${CONVEX_SNAPSHOT_IMPORTS_BUCKET:-convex-snapshot-imports}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3210/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  convex-dashboard:
+    image: ghcr.io/get-convex/convex-dashboard:latest
+    restart: unless-stopped
+    depends_on:
+      convex-backend:
+        condition: service_healthy
+    ports:
+      - "${CONVEX_DASHBOARD_PORT:-6791}:6791"
+    environment:
+      NEXT_PUBLIC_DEPLOYMENT_URL: ${NEXT_PUBLIC_DEPLOYMENT_URL:-http://127.0.0.1:${CONVEX_PORT:-3210}}
+
+volumes:
+  postgres_data:
+  minio_data:

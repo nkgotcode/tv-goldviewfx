@@ -1,4 +1,3 @@
-import { convex } from "../db/client";
 import {
   getActiveAccountRiskPolicy,
   insertAccountRiskPolicy,
@@ -9,7 +8,7 @@ import {
   insertAccountRiskState,
   updateAccountRiskState,
 } from "../db/repositories/account_risk_state";
-import { listTradesByStatuses } from "../db/repositories/trades";
+import { listTrades, listTradesByStatuses } from "../db/repositories/trades";
 import { updateAgentConfig, getAgentConfig } from "../db/repositories/agent_config";
 import { recordOpsAudit } from "./ops_audit";
 
@@ -104,7 +103,7 @@ async function computeSnapshot(input: AccountRiskInput): Promise<AccountRiskSnap
   }
 
   const start = startOfUtcDay();
-  const todaysTrades = await convex.from("trades").select("*").gte("created_at", start);
+  const todaysTrades = await listTrades({ start, page: 1, pageSize: 10000 });
   let dailyLoss = 0;
   for (const trade of todaysTrades.data ?? []) {
     const rawPnl = Number(trade.pnl ?? 0);

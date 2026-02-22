@@ -6,7 +6,7 @@ import { insertIdeaMedia } from "../../src/db/repositories/idea_media";
 import { hashContent } from "../../src/services/dedup";
 import { runOcrBatch } from "../../src/services/ocr";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("ocr tests require Convex configuration", () => {});

@@ -4,10 +4,10 @@ import { insertTrade } from "../../src/db/repositories/trades";
 import { enforceAccountRisk, evaluateAccountRisk } from "../../src/services/account_risk_service";
 import { updateAgentConfig, getAgentConfig } from "../../src/db/repositories/agent_config";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("account risk guardrails require Convex configuration", () => {});
+  test.skip("account risk guardrails require database configuration", () => {});
 } else {
   test("account risk blocks exposure breaches", async () => {
     await insertAccountRiskPolicy({

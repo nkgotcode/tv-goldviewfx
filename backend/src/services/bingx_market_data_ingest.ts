@@ -1,4 +1,5 @@
 import { loadEnv } from "../config/env";
+import { getSupportedPairs, toBingxSymbol } from "../config/market_catalog";
 import {
   getLatestCandleTime,
   getEarliestCandleTime,
@@ -16,7 +17,7 @@ import {
   upsertBingxTickers,
   getLatestTickerTime,
 } from "../db/repositories/bingx_market_data";
-import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
+import { completeIngestionRun, startIngestionRunIfIdle } from "../db/repositories/ingestion_runs";
 import { logInfo, logWarn } from "./logger";
 import { markSourceUnavailable, recordDataSourceStatus, listDataSourceStatusWithConfig } from "./data_source_status_service";
 import type { TradingPair } from "../types/rl";
@@ -25,8 +26,8 @@ import { completeSyncRun, createSyncRun } from "../db/repositories/sync_runs";
 import { shouldRunIngestion } from "./ingestion_control";
 
 const DEFAULT_BASE_URL = "https://open-api.bingx.com";
-const DEFAULT_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 const DEFAULT_INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "3d", "1w", "1M"];
+const BINGX_REST_SOURCE = "bingx_rest";
 
 const DEFAULT_THRESHOLDS = {
   candles: 120,
@@ -46,16 +47,8 @@ const DEFAULT_LIMITS = {
 
 const FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1000;
 const MAX_TRADES_BATCHES_PER_RUN = 3;
-
-const BINGX_SYMBOL_MAP: Record<TradingPair, string> = {
-  "Gold-USDT": "GOLD-USDT",
-  XAUTUSDT: "XAUT-USDT",
-  PAXGUSDT: "PAXG-USDT",
-};
-
-function toBingxSymbol(pair: TradingPair) {
-  return BINGX_SYMBOL_MAP[pair] ?? pair.toUpperCase();
-}
+const BINGX_GLOBAL_LOCK_FEED = "__bingx_cycle_lock__";
+let activeBingxRunToken: symbol | null = null;
 
 function isTruthy(value: string | undefined) {
   if (!value) return false;
@@ -83,60 +76,69 @@ export type BingxIngestSummary = {
 };
 
 export async function runBingxMarketDataIngest(options: BingxIngestOptions = {}) {
-  const env = loadEnv();
-  const baseUrl = env.BINGX_BASE_URL ?? DEFAULT_BASE_URL;
-  const fetcher = options.fetcher ?? fetch;
-  const usesDefaultFetcher = !options.fetcher || options.fetcher === fetch;
-  const pairs = options.pairs ?? DEFAULT_PAIRS;
-  const intervals = options.intervals ?? parseIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? DEFAULT_INTERVALS;
-  const backfill = options.backfill ?? env.BINGX_MARKET_DATA_BACKFILL;
-  let maxBatches =
-    typeof options.maxBatches === "number" && options.maxBatches > 0
-      ? options.maxBatches
-      : backfill
-        ? Number.POSITIVE_INFINITY
-        : 1;
-  const now = options.now ?? new Date();
-  const trigger = options.trigger ?? "schedule";
-  const rawMockFlag = process.env.BINGX_MARKET_DATA_MOCK;
-  const mockOverride = rawMockFlag === undefined ? null : isTruthy(rawMockFlag);
-  const mockEnabled = mockOverride ?? (env.BINGX_MARKET_DATA_MOCK || isTruthy(process.env.E2E_RUN));
-  if (backfill && trigger === "schedule" && !Number.isFinite(maxBatches)) {
-    maxBatches = Math.max(1, env.DATA_GAP_HEAL_MAX_BATCHES);
+  if (activeBingxRunToken) {
+    logInfo("BingX ingestion skipped: local run already in-flight");
+    return [];
   }
-  let wsSkipMap: Map<string, "ok" | "stale" | "unavailable"> | null = null;
-  if (env.BINGX_WS_ENABLED && env.BINGX_WS_PAUSE_REST && !backfill && trigger === "schedule" && usesDefaultFetcher) {
-    try {
-      wsSkipMap = await buildWsSkipMap();
-    } catch (error) {
-      logWarn("Failed to load WS ingestion status", { error: String(error) });
-    }
-  }
-
-  const summaries: BingxIngestSummary[] = [];
-  const feedKeys = ["candles", "orderbook", "trades", "funding", "open_interest", "mark_index", "ticker"] as const;
-  const feedRuns: Record<(typeof feedKeys)[number], { id: string } | null> = {
-    candles: null,
-    orderbook: null,
-    trades: null,
-    funding: null,
-    open_interest: null,
-    mark_index: null,
-    ticker: null,
-  };
-  const feedTotals: Record<(typeof feedKeys)[number], { newCount: number; updatedCount: number; errorCount: number }> = {
-    candles: { newCount: 0, updatedCount: 0, errorCount: 0 },
-    orderbook: { newCount: 0, updatedCount: 0, errorCount: 0 },
-    trades: { newCount: 0, updatedCount: 0, errorCount: 0 },
-    funding: { newCount: 0, updatedCount: 0, errorCount: 0 },
-    open_interest: { newCount: 0, updatedCount: 0, errorCount: 0 },
-    mark_index: { newCount: 0, updatedCount: 0, errorCount: 0 },
-    ticker: { newCount: 0, updatedCount: 0, errorCount: 0 },
-  };
-
-  let runError: Error | null = null;
-
+  const runToken = Symbol("bingx-market-data-run");
+  activeBingxRunToken = runToken;
   try {
+    const env = loadEnv();
+    const baseUrl = env.BINGX_BASE_URL ?? DEFAULT_BASE_URL;
+    const fetcher = options.fetcher ?? fetch;
+    const usesDefaultFetcher = !options.fetcher || options.fetcher === fetch;
+    const pairs = options.pairs ?? getSupportedPairs();
+    const intervals = options.intervals ?? parseIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? DEFAULT_INTERVALS;
+    const backfill = options.backfill ?? env.BINGX_MARKET_DATA_BACKFILL;
+    let maxBatches =
+      typeof options.maxBatches === "number" && options.maxBatches > 0
+        ? options.maxBatches
+        : backfill
+          ? Number.POSITIVE_INFINITY
+          : 1;
+    const now = options.now ?? new Date();
+    const nowIso = now.toISOString();
+    const trigger = options.trigger ?? "schedule";
+    const rawMockFlag = process.env.BINGX_MARKET_DATA_MOCK;
+    const mockOverride = rawMockFlag === undefined ? null : isTruthy(rawMockFlag);
+    const mockEnabled = mockOverride ?? (env.BINGX_MARKET_DATA_MOCK || isTruthy(process.env.E2E_RUN));
+    if (backfill && trigger === "schedule" && !Number.isFinite(maxBatches)) {
+      maxBatches = Math.max(1, env.DATA_GAP_HEAL_MAX_BATCHES);
+    }
+    let wsSkipMap: Map<string, "ok" | "stale" | "unavailable"> | null = null;
+    if (env.BINGX_WS_ENABLED && env.BINGX_WS_PAUSE_REST && !backfill && trigger === "schedule" && usesDefaultFetcher) {
+      try {
+        wsSkipMap = await buildWsSkipMap();
+      } catch (error) {
+        logWarn("Failed to load WS ingestion status", { error: String(error) });
+      }
+    }
+
+    const summaries: BingxIngestSummary[] = [];
+    const feedKeys = ["candles", "orderbook", "trades", "funding", "open_interest", "mark_index", "ticker"] as const;
+    const feedRuns: Record<(typeof feedKeys)[number], { id: string } | null> = {
+      candles: null,
+      orderbook: null,
+      trades: null,
+      funding: null,
+      open_interest: null,
+      mark_index: null,
+      ticker: null,
+    };
+    const feedTotals: Record<(typeof feedKeys)[number], { newCount: number; updatedCount: number; errorCount: number }> = {
+      candles: { newCount: 0, updatedCount: 0, errorCount: 0 },
+      orderbook: { newCount: 0, updatedCount: 0, errorCount: 0 },
+      trades: { newCount: 0, updatedCount: 0, errorCount: 0 },
+      funding: { newCount: 0, updatedCount: 0, errorCount: 0 },
+      open_interest: { newCount: 0, updatedCount: 0, errorCount: 0 },
+      mark_index: { newCount: 0, updatedCount: 0, errorCount: 0 },
+      ticker: { newCount: 0, updatedCount: 0, errorCount: 0 },
+    };
+    let globalRun: { id: string } | null = null;
+
+    let runError: Error | null = null;
+
+    try {
     if (mockEnabled) {
       const seenAt = now.toISOString();
       for (const pair of pairs) {
@@ -224,21 +226,53 @@ export async function runBingxMarketDataIngest(options: BingxIngestOptions = {})
       return summaries;
     }
 
+    const globalRunResult = await startIngestionRunIfIdle({
+      sourceType: "bingx",
+      sourceId: null,
+      feed: BINGX_GLOBAL_LOCK_FEED,
+      trigger,
+      timeoutMinutes: env.INGESTION_RUN_TIMEOUT_MIN,
+      startedAt: nowIso,
+    });
+    if (!globalRunResult.created || !globalRunResult.run?.id) {
+      logInfo("BingX ingestion skipped", {
+        feed: BINGX_GLOBAL_LOCK_FEED,
+        reason: globalRunResult.reason,
+        timedOutRunId: globalRunResult.timed_out_run_id,
+      });
+      return [];
+    }
+    globalRun = { id: globalRunResult.run.id };
+
     const feedDecisions = await Promise.all(
       feedKeys.map((feed) => shouldRunIngestion({ sourceType: "bingx", sourceId: null, feed, trigger })),
     );
     for (const [index, feed] of feedKeys.entries()) {
       if (feedDecisions[index]?.allowed) {
-        feedRuns[feed] = await createIngestionRun({
-          source_type: "bingx",
-          source_id: null,
+        const runResult = await startIngestionRunIfIdle({
+          sourceType: "bingx",
+          sourceId: null,
           feed,
           trigger,
-          status: "running",
+          timeoutMinutes: env.INGESTION_RUN_TIMEOUT_MIN,
+          startedAt: nowIso,
         });
+        if (runResult.created && runResult.run?.id) {
+          feedRuns[feed] = { id: runResult.run.id };
+        } else {
+          logInfo("BingX ingestion skipped", {
+            feed,
+            reason: runResult.reason,
+            timedOutRunId: runResult.timed_out_run_id,
+          });
+        }
       } else {
         logInfo("BingX ingestion skipped", { feed, reason: feedDecisions[index]?.reason });
       }
+    }
+    if (feedKeys.every((feed) => !feedRuns[feed])) {
+      logInfo("BingX ingestion skipped: no feeds eligible to run");
+      return [];
     }
 
     for (const pair of pairs) {
@@ -413,15 +447,39 @@ export async function runBingxMarketDataIngest(options: BingxIngestOptions = {})
         newCount: totals.newCount,
         updatedCount: totals.updatedCount,
         errorCount: totals.errorCount,
+        errorSummary: totals.errorCount > 0 ? runError?.message ?? "ingest_failed" : null,
       });
     }
-  }
+    if (globalRun) {
+      const aggregate = feedKeys.reduce(
+        (acc, feed) => {
+          acc.newCount += feedTotals[feed].newCount;
+          acc.updatedCount += feedTotals[feed].updatedCount;
+          acc.errorCount += feedTotals[feed].errorCount;
+          return acc;
+        },
+        { newCount: 0, updatedCount: 0, errorCount: 0 },
+      );
+      await completeIngestionRun(globalRun.id, {
+        status: runError || aggregate.errorCount > 0 ? "failed" : "succeeded",
+        newCount: aggregate.newCount,
+        updatedCount: aggregate.updatedCount,
+        errorCount: runError ? Math.max(1, aggregate.errorCount) : aggregate.errorCount,
+        errorSummary: runError?.message ?? null,
+      });
+    }
+    }
 
-  if (runError) {
-    throw runError;
-  }
+    if (runError) {
+      throw runError;
+    }
 
-  return summaries;
+    return summaries;
+  } finally {
+    if (activeBingxRunToken === runToken) {
+      activeBingxRunToken = null;
+    }
+  }
 }
 
 async function ingestCandles(params: {
@@ -614,6 +672,7 @@ async function ingestOrderBook(params: { pair: TradingPair; baseUrl: string; fet
       depth_level: Math.max(bids.length, asks.length) || 0,
       bids,
       asks,
+      source: BINGX_REST_SOURCE,
     });
     return capturedAt;
   } catch (error) {
@@ -870,6 +929,7 @@ function parseCandleRows(rows: any[], pair: TradingPair, interval: string) {
     close: number;
     volume: number;
     quote_volume?: number | null;
+    source: string;
   }> = [];
 
   const intervalMs = parseIntervalMs(interval);
@@ -897,6 +957,7 @@ function parseCandleRows(rows: any[], pair: TradingPair, interval: string) {
       close,
       volume,
       quote_volume: quoteVolume,
+      source: BINGX_REST_SOURCE,
     });
   }
 
@@ -911,6 +972,7 @@ function parseTradeRows(rows: any[], pair: TradingPair) {
     quantity: number;
     side: "buy" | "sell";
     executed_at: string;
+    source: string;
   }> = [];
 
   for (const row of rows) {
@@ -928,7 +990,7 @@ function parseTradeRows(rows: any[], pair: TradingPair) {
       side = "buy";
     }
     const executedAt = toIso(row?.time ?? row?.ts ?? row?.executed_at ?? row?.[4]) ?? new Date().toISOString();
-    parsed.push({ pair, trade_id: tradeId, price, quantity, side, executed_at: executedAt });
+    parsed.push({ pair, trade_id: tradeId, price, quantity, side, executed_at: executedAt, source: BINGX_REST_SOURCE });
   }
 
   return parsed;
@@ -944,9 +1006,10 @@ function parseFundingRows(rows: any[], pair: TradingPair) {
         pair,
         funding_rate: fundingRate,
         funding_time: fundingTime,
+        source: BINGX_REST_SOURCE,
       };
     })
-    .filter(Boolean) as Array<{ pair: TradingPair; funding_rate: number; funding_time: string }>;
+    .filter(Boolean) as Array<{ pair: TradingPair; funding_rate: number; funding_time: string; source: string }>;
 }
 
 function parseOpenInterestRows(rows: any[], pair: TradingPair) {
@@ -959,9 +1022,10 @@ function parseOpenInterestRows(rows: any[], pair: TradingPair) {
         pair,
         open_interest: openInterest,
         captured_at: capturedAt,
+        source: BINGX_REST_SOURCE,
       };
     })
-    .filter(Boolean) as Array<{ pair: TradingPair; open_interest: number; captured_at: string }>;
+    .filter(Boolean) as Array<{ pair: TradingPair; open_interest: number; captured_at: string; source: string }>;
 }
 
 function parseMarkIndexRows(rows: any[], pair: TradingPair) {
@@ -976,9 +1040,10 @@ function parseMarkIndexRows(rows: any[], pair: TradingPair) {
         mark_price: markPrice,
         index_price: indexPrice,
         captured_at: capturedAt,
+        source: BINGX_REST_SOURCE,
       };
     })
-    .filter(Boolean) as Array<{ pair: TradingPair; mark_price: number; index_price: number; captured_at: string }>;
+    .filter(Boolean) as Array<{ pair: TradingPair; mark_price: number; index_price: number; captured_at: string; source: string }>;
 }
 
 function parseTickerRows(rows: any[], pair: TradingPair) {
@@ -995,6 +1060,7 @@ function parseTickerRows(rows: any[], pair: TradingPair) {
         volume_24h: volume24h,
         price_change_24h: change24h,
         captured_at: capturedAt,
+        source: BINGX_REST_SOURCE,
       };
     })
     .filter(Boolean) as Array<{
@@ -1003,6 +1069,7 @@ function parseTickerRows(rows: any[], pair: TradingPair) {
     volume_24h?: number | null;
     price_change_24h?: number | null;
     captured_at: string;
+    source: string;
   }>;
 }
 

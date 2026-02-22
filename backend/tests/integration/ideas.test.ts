@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("ideas endpoint requires Convex configuration", () => {});

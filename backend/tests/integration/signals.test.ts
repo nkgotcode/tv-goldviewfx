@@ -6,7 +6,7 @@ import { convex } from "../../src/db/client";
 import { hashContent, normalizeContent } from "../../src/services/dedup";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 async function cleanup(identifier: string) {
   const sources = await convex.from("sources").select("id").eq("identifier", identifier);

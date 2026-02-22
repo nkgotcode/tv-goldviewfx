@@ -1,6 +1,7 @@
 import { fetchIdeaContent, fetchProfileHtml, mapWithConcurrency } from "../integrations/tradingview/client";
 import { extractIdeasFromProfile } from "../integrations/tradingview/parser";
 import { loadEnv } from "../config/env";
+import { getSupportedPairs } from "../config/market_catalog";
 import { getOrCreateSource } from "../db/repositories/sources";
 import { createRevision } from "../db/repositories/idea_revisions";
 import { createSyncRun, completeSyncRun } from "../db/repositories/sync_runs";
@@ -17,7 +18,6 @@ import { shouldRunIngestion } from "./ingestion_control";
 
 export type SyncTrigger = "manual" | "schedule";
 
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
 
 function getRecencyCutoffDays(recentDays: number): Date | null {
@@ -283,7 +283,7 @@ export async function runTradingViewSync(options: {
 
     const now = new Date().toISOString();
     await Promise.all(
-      SUPPORTED_PAIRS.map((pair) =>
+      getSupportedPairs().map((pair) =>
         recordDataSourceStatus({
           pair,
           sourceType: "ideas",

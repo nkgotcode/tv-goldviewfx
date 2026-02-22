@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { convex } from "../client";
 import { assertNoError } from "./base";
+import { getRlOpsRowById, listRlOpsRows, rlOpsUsesTimescale, upsertRlOpsRow, updateRlOpsRowById } from "../timescale/rl_ops";
 
 export type TradeExecutionInsert = {
   trade_id: string;
@@ -24,11 +26,27 @@ export type TradeExecutionInsert = {
 };
 
 export async function insertTradeExecution(payload: TradeExecutionInsert) {
+  if (rlOpsUsesTimescale()) {
+    const now = new Date().toISOString();
+    return insertOrUpdateTradeExecution({
+      id: randomUUID(),
+      executed_at: now,
+      created_at: now,
+      updated_at: now,
+      ...payload,
+    });
+  }
   const result = await convex.from("trade_executions").insert(payload).select("*").single();
   return assertNoError(result, "insert trade execution");
 }
 
 export async function updateTradeExecution(id: string, payload: Partial<TradeExecutionInsert>) {
+  if (rlOpsUsesTimescale()) {
+    return updateRlOpsRowById("trade_executions", id, {
+      ...payload,
+      updated_at: new Date().toISOString(),
+    });
+  }
   const result = await convex
     .from("trade_executions")
     .update({ ...payload, updated_at: new Date().toISOString() })
@@ -39,11 +57,25 @@ export async function updateTradeExecution(id: string, payload: Partial<TradeExe
 }
 
 export async function getTradeExecutionById(id: string) {
+  if (rlOpsUsesTimescale()) {
+    const row = await getRlOpsRowById("trade_executions", id);
+    if (!row) {
+      throw new Error("get trade execution: missing data");
+    }
+    return row;
+  }
   const result = await convex.from("trade_executions").select("*").eq("id", id).single();
   return assertNoError(result, "get trade execution");
 }
 
 export async function findTradeExecutionByIdempotencyKey(key: string) {
+  if (rlOpsUsesTimescale()) {
+    const rows = await listRlOpsRows("trade_executions", {
+      filters: [{ field: "idempotency_key", value: key }],
+      limit: 1,
+    });
+    return rows[0] ?? null;
+  }
   const result = await convex.from("trade_executions").select("*").eq("idempotency_key", key).maybeSingle();
   if (result.error) {
     throw new Error(`find trade execution by idempotency key: ${result.error.message}`);
@@ -52,6 +84,13 @@ export async function findTradeExecutionByIdempotencyKey(key: string) {
 }
 
 export async function listTradeExecutions(tradeId: string) {
+  if (rlOpsUsesTimescale()) {
+    return listRlOpsRows("trade_executions", {
+      filters: [{ field: "trade_id", value: tradeId }],
+      orderBy: "executed_at",
+      direction: "desc",
+    });
+  }
   const result = await convex
     .from("trade_executions")
     .select("*")
@@ -62,6 +101,13 @@ export async function listTradeExecutions(tradeId: string) {
 }
 
 export async function listTradeExecutionsByDecision(tradeDecisionId: string) {
+  if (rlOpsUsesTimescale()) {
+    return listRlOpsRows("trade_executions", {
+      filters: [{ field: "trade_decision_id", value: tradeDecisionId }],
+      orderBy: "executed_at",
+      direction: "desc",
+    });
+  }
   const result = await convex
     .from("trade_executions")
     .select("*")
@@ -72,6 +118,14 @@ export async function listTradeExecutionsByDecision(tradeDecisionId: string) {
 }
 
 export async function listPendingTradeExecutions(options?: { limit?: number }) {
+  if (rlOpsUsesTimescale()) {
+    return listRlOpsRows("trade_executions", {
+      filters: [{ field: "status", op: "in", value: ["submitted", "partial"] }],
+      orderBy: "executed_at",
+      direction: "desc",
+      limit: options?.limit,
+    });
+  }
   const query = convex
     .from("trade_executions")
     .select("*")
@@ -83,4 +137,11 @@ export async function listPendingTradeExecutions(options?: { limit?: number }) {
 
   const result = await query;
   return assertNoError(result, "list pending trade executions");
+}
+
+async function insertOrUpdateTradeExecution(payload: Record<string, unknown>) {
+  if (payload.idempotency_key) {
+    return upsertRlOpsRow("trade_executions", payload, ["idempotency_key"]);
+  }
+  return upsertRlOpsRow("trade_executions", payload, ["id"]);
 }

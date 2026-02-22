@@ -1,14 +1,17 @@
 import { test, expect } from "bun:test";
 import { insertRiskLimitSet } from "../../src/db/repositories/risk_limit_sets";
 import { insertAgentVersion } from "../../src/db/repositories/agent_versions";
+import { updateAgentConfig } from "../../src/db/repositories/agent_config";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("rl agent runs require Convex configuration", () => {});
+  test.skip("rl agent runs require database configuration", () => {});
 } else {
   test("agent run lifecycle", async () => {
+    await updateAgentConfig({ allowed_instruments: ["GOLD-USDT", "XAUTUSDT", "PAXGUSDT"], kill_switch: false });
+
     const riskLimit = await insertRiskLimitSet({
       name: `Run Limits ${Date.now()}`,
       max_position_size: 1.2,

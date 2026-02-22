@@ -52,6 +52,7 @@ def build_dataset(
             "checksum": dataset_hash,
             "dataset_hash": dataset_hash,
             "feature_set_version_id": metadata.get("feature_set_version_id"),
+            "feature_schema_fingerprint": metadata.get("feature_schema_fingerprint"),
             "window_size": window_size,
             "stride": stride,
             "created_at": datetime.now(timezone.utc),

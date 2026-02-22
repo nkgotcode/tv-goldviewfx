@@ -29,7 +29,18 @@ def _build_features(request: DatasetRequest) -> list[dict]:
     if count <= 0:
         return []
     features: list[dict] = []
-    base_price = 2300.0 if request.pair == "Gold-USDT" else 2100.0
+    base_price_map = {
+        "Gold-USDT": 2300.0,
+        "XAUTUSDT": 2300.0,
+        "PAXGUSDT": 2300.0,
+        "ALGO-USDT": 0.2,
+        "BTC-USDT": 60000.0,
+        "ETH-USDT": 3000.0,
+        "SOL-USDT": 120.0,
+        "XRP-USDT": 0.7,
+        "BNB-USDT": 500.0,
+    }
+    base_price = base_price_map.get(str(request.pair), 1000.0)
     for idx in range(count):
         timestamp = request.start_at + timedelta(seconds=idx * step_seconds)
         price = base_price + idx * 0.2
@@ -66,6 +77,7 @@ def build_dataset_preview(payload: DatasetRequest) -> DatasetPreviewResponse:
             "start_at": payload.start_at,
             "end_at": payload.end_at,
             "feature_set_version_id": payload.feature_set_version_id,
+            "feature_schema_fingerprint": payload.feature_schema_fingerprint,
         },
     )
 

@@ -1,6 +1,7 @@
 import { gunzipSync } from "zlib";
 import { randomUUID } from "crypto";
 import { loadEnv } from "../config/env";
+import { fromBingxSymbol, getSupportedPairs, toBingxSymbol } from "../config/market_catalog";
 import {
   upsertBingxCandles,
   upsertBingxTrades,
@@ -16,16 +17,6 @@ import type { DataSourceType, TradingPair } from "../types/rl";
 const DEFAULT_WS_URL = "wss://open-api-swap.bingx.com/swap-market";
 const DEFAULT_INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "3d", "1w", "1M"];
 const DEFAULT_DEPTH_LEVEL = 5;
-
-const BINGX_SYMBOL_MAP: Record<TradingPair, string> = {
-  "Gold-USDT": "GOLD-USDT",
-  XAUTUSDT: "XAUT-USDT",
-  PAXGUSDT: "PAXG-USDT",
-};
-
-const BINGX_SYMBOL_INVERSE = new Map<string, TradingPair>(
-  Object.entries(BINGX_SYMBOL_MAP).map(([pair, symbol]) => [symbol, pair as TradingPair]),
-);
 
 type BingxWsTopicOptions = {
   pairs: TradingPair[];
@@ -137,14 +128,6 @@ function parseIntervalMs(interval: string) {
 function isTruthy(value: string | undefined) {
   if (!value) return false;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-}
-
-function toBingxSymbol(pair: TradingPair) {
-  return BINGX_SYMBOL_MAP[pair] ?? pair.toUpperCase();
-}
-
-function fromBingxSymbol(symbol: string): TradingPair | null {
-  return BINGX_SYMBOL_INVERSE.get(symbol.toUpperCase()) ?? null;
 }
 
 function toNumber(value: unknown) {
@@ -422,7 +405,7 @@ export function startBingxMarketDataWs(): BingxWsController | null {
     return null;
   }
 
-  const pairs: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
+  const pairs: TradingPair[] = getSupportedPairs();
   const intervals = parseIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? DEFAULT_INTERVALS;
   const topics = buildBingxWsTopics({
     pairs,

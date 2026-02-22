@@ -4,7 +4,7 @@ import { validateJson } from "../middleware/validate";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { getAgentConfig, updateAgentConfig } from "../../db/repositories/agent_config";
 import { disableTradingAgent, enableTradingAgent } from "../../agents/trading_agent";
-import { agentConfigPatchSchema, agentStartRequestSchema } from "../../rl/schemas";
+import { agentConfigPatchSchema, agentStartRequestSchema, tradingPairSchema } from "../../rl/schemas";
 import {
   startAgentRun,
   pauseAgentRun,
@@ -153,7 +153,7 @@ const decisionRequestSchema = z.object({
 
 const learningUpdateSchema = z.object({
   agentVersionId: z.string().uuid(),
-  pair: z.enum(["Gold-USDT", "XAUTUSDT", "PAXGUSDT"]),
+  pair: tradingPairSchema,
   windowStart: z.string().datetime(),
   windowEnd: z.string().datetime(),
   metrics: z.object({

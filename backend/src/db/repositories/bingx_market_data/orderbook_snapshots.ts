@@ -1,8 +1,13 @@
 import { convexClient } from "../../client";
 import { anyApi } from "convex/server";
+import {
+  getTimescaleLatestOrderbookTime,
+  insertTimescaleOrderbookSnapshot,
+  marketDataUsesTimescale,
+} from "../../timescale/market_data";
 
 export type BingxOrderBookSnapshotInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   captured_at: string;
   depth_level: number;
   bids: unknown;
@@ -11,6 +16,9 @@ export type BingxOrderBookSnapshotInsert = {
 };
 
 export async function insertOrderBookSnapshot(payload: BingxOrderBookSnapshotInsert) {
+  if (marketDataUsesTimescale()) {
+    return insertTimescaleOrderbookSnapshot(payload);
+  }
   try {
     return await convexClient.mutation(anyApi.bingx_orderbook_snapshots.insertOne, { row: payload });
   } catch (error) {
@@ -20,6 +28,9 @@ export async function insertOrderBookSnapshot(payload: BingxOrderBookSnapshotIns
 }
 
 export async function getLatestOrderBookTime(pair: BingxOrderBookSnapshotInsert["pair"]) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleLatestOrderbookTime(pair);
+  }
   try {
     return await convexClient.query(anyApi.bingx_orderbook_snapshots.latestTime, { pair });
   } catch (error) {

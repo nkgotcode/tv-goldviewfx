@@ -3,7 +3,7 @@ import { fileURLToPath } from "url";
 import { runTradingViewSync } from "../../src/services/tradingview_sync";
 import { convex } from "../../src/db/client";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 const htmlPath = fileURLToPath(new URL("../../../tradingview.html", import.meta.url));
 
 async function cleanup(identifier: string) {

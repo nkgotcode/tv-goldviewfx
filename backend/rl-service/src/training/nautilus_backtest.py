@@ -15,20 +15,43 @@ from nautilus_trader.model.objects import Currency, Price, Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
+def _base_currency_for_pair(pair: str) -> str:
+    normalized = pair.replace("-", "").upper()
+    if normalized.startswith("GOLD") or normalized.startswith("XAUT") or normalized.startswith("PAXG"):
+        return "XAU"
+    if normalized.endswith("USDT") and len(normalized) > 4:
+        return normalized[:-4]
+    return "XAU"
+
+
+def _pair_precision(pair: str) -> tuple[int, int, str, str]:
+    normalized = pair.replace("-", "").upper()
+    if normalized.startswith("BTC"):
+        return 2, 4, "0.01", "0.0001"
+    if normalized.startswith("ETH"):
+        return 2, 3, "0.01", "0.001"
+    if normalized.startswith("BNB"):
+        return 2, 2, "0.01", "0.01"
+    if normalized.startswith("SOL") or normalized.startswith("ALGO") or normalized.startswith("XRP"):
+        return 4, 1, "0.0001", "0.1"
+    return 2, 3, "0.01", "0.001"
+
+
 def _build_instrument(pair: str, venue: str = "BINGX") -> CryptoPerpetual:
     symbol = pair.replace("-", "")
     instrument_id = InstrumentId(Symbol(symbol), Venue(venue))
+    price_precision, size_precision, price_increment, size_increment = _pair_precision(pair)
     return CryptoPerpetual(
         instrument_id=instrument_id,
         raw_symbol=Symbol(symbol),
-        base_currency=Currency.from_str("XAU") if pair == "Gold-USDT" else Currency.from_str("XAU"),
+        base_currency=Currency.from_str(_base_currency_for_pair(pair)),
         quote_currency=Currency.from_str("USDT"),
         settlement_currency=Currency.from_str("USDT"),
         is_inverse=False,
-        price_precision=2,
-        size_precision=3,
-        price_increment=Price.from_str("0.01"),
-        size_increment=Quantity.from_str("0.001"),
+        price_precision=price_precision,
+        size_precision=size_precision,
+        price_increment=Price.from_str(price_increment),
+        size_increment=Quantity.from_str(size_increment),
         ts_event=0,
         ts_init=0,
     )
@@ -41,18 +64,16 @@ def _to_ts_nanos(timestamp: str) -> int:
     return int(parsed.timestamp() * 1_000_000_000)
 
 
-def _format_price(value: float) -> str:
-    return f"{value:.2f}"
-
-
-def _format_qty(value: float) -> str:
-    return f"{value:.3f}"
+def _format_decimal(value: float, precision: int) -> str:
+    return f"{value:.{precision}f}"
 
 
 def _build_bars(
     instrument_id: InstrumentId,
     bar_type: BarType,
     features: Iterable[dict],
+    price_precision: int,
+    size_precision: int,
 ) -> list[Bar]:
     bars: list[Bar] = []
     for item in features:
@@ -60,11 +81,11 @@ def _build_bars(
         bars.append(
             Bar(
                 bar_type=bar_type,
-                open=Price.from_str(_format_price(float(item.get("open", 0.0)))),
-                high=Price.from_str(_format_price(float(item.get("high", 0.0)))),
-                low=Price.from_str(_format_price(float(item.get("low", 0.0)))),
-                close=Price.from_str(_format_price(float(item.get("close", 0.0)))),
-                volume=Quantity.from_str(_format_qty(float(item.get("volume", 0.0)))),
+                open=Price.from_str(_format_decimal(float(item.get("open", 0.0)), price_precision)),
+                high=Price.from_str(_format_decimal(float(item.get("high", 0.0)), price_precision)),
+                low=Price.from_str(_format_decimal(float(item.get("low", 0.0)), price_precision)),
+                close=Price.from_str(_format_decimal(float(item.get("close", 0.0)), price_precision)),
+                volume=Quantity.from_str(_format_decimal(float(item.get("volume", 0.0)), size_precision)),
                 ts_event=ts_event,
                 ts_init=ts_event,
             )
@@ -81,6 +102,7 @@ def run_backtest(
     decision_threshold: float,
 ):
     instrument = _build_instrument(pair)
+    price_precision, size_precision, _, _ = _pair_precision(pair)
     bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
     if interval.endswith("m"):
         bar_spec = BarSpecification(int(interval[:-1]), BarAggregation.MINUTE, PriceType.LAST)
@@ -91,7 +113,13 @@ def run_backtest(
     with tempfile.TemporaryDirectory() as tmpdir:
         catalog = ParquetDataCatalog(tmpdir)
         catalog.write_data([instrument])
-        bars = _build_bars(instrument.id, bar_type, features)
+        bars = _build_bars(
+            instrument.id,
+            bar_type,
+            features,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
         catalog.write_data(bars)
 
         strategy_config = ImportableStrategyConfig(
@@ -100,7 +128,7 @@ def run_backtest(
             config={
                 "instrument_id": instrument.id,
                 "bar_type": str(bar_type),
-                "trade_size": _format_qty(1.0),
+                "trade_size": _format_decimal(1.0, size_precision),
                 "model_path": model_path,
                 "decision_threshold": decision_threshold,
                 "window_size": window_size,

@@ -3,7 +3,7 @@ import { rlApiRequest } from "../fixtures/rl_api";
 import { startAgentRun } from "../../src/services/rl_agent_service";
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("data quality routes require Convex configuration", () => {});

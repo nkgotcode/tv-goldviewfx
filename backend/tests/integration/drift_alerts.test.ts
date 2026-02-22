@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { insertDriftAlert } from "../../src/db/repositories/drift_alerts";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("drift alerts require Convex configuration", () => {});

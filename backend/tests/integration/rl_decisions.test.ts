@@ -6,7 +6,7 @@ import { listTradeExecutionsByDecision } from "../../src/db/repositories/trade_e
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 import { BINGX_SOURCE_TYPES } from "../../src/services/data_source_status_service";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 function buildCandles() {
   const now = Date.now();
@@ -23,7 +23,7 @@ function buildCandles() {
 }
 
 if (!hasEnv) {
-  test.skip("rl decision pipeline requires Convex configuration", () => {});
+  test.skip("rl decision pipeline requires database configuration", () => {});
 } else {
   test("decision pipeline links executions", async () => {
     const riskLimit = await insertRiskLimitSet({

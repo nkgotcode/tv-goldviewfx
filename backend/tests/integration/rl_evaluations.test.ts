@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { insertAgentVersion } from "../../src/db/repositories/agent_versions";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("rl evaluations require Convex configuration", () => {});
+  test.skip("rl evaluations require database configuration", () => {});
 } else {
   test("evaluation workflow persists reports", async () => {
     const version = await insertAgentVersion({

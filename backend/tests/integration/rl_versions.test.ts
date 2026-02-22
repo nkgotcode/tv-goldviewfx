@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { insertAgentVersion, getAgentVersion } from "../../src/db/repositories/agent_versions";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("rl version routes require Convex configuration", () => {});
+  test.skip("rl version routes require database configuration", () => {});
 } else {
   test("promote and rollback agent versions", async () => {
     const baseVersion = await insertAgentVersion({

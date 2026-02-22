@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { convex } from "../client";
 import { assertNoError } from "./base";
+import { insertRlOpsRow, listRlOpsRows, rlOpsUsesTimescale } from "../timescale/rl_ops";
 
 export type MarketInputSnapshotInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   captured_at?: string;
   dataset_version_id?: string | null;
   dataset_hash?: string | null;
@@ -18,6 +20,18 @@ export type MarketInputSnapshotInsert = {
 };
 
 export async function insertMarketInputSnapshot(payload: MarketInputSnapshotInsert) {
+  if (rlOpsUsesTimescale()) {
+    const now = new Date().toISOString();
+    return insertRlOpsRow("market_input_snapshots", {
+      id: randomUUID(),
+      captured_at: now,
+      metadata: payload.metadata ?? {},
+      created_at: now,
+      updated_at: now,
+      ...payload,
+      captured_at: payload.captured_at ?? now,
+    });
+  }
   const result = await convex
     .from("market_input_snapshots")
     .insert({
@@ -30,6 +44,13 @@ export async function insertMarketInputSnapshot(payload: MarketInputSnapshotInse
 }
 
 export async function listMarketInputSnapshots(pair: MarketInputSnapshotInsert["pair"]) {
+  if (rlOpsUsesTimescale()) {
+    return listRlOpsRows("market_input_snapshots", {
+      filters: [{ field: "pair", value: pair }],
+      orderBy: "captured_at",
+      direction: "desc",
+    });
+  }
   const result = await convex
     .from("market_input_snapshots")
     .select("*")

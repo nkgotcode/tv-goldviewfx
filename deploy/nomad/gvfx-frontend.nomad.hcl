@@ -15,7 +15,7 @@ variable "datacenters" {
 
 variable "count" {
   type    = number
-  default = 2
+  default = 1
 }
 
 variable "frontend_port" {
@@ -45,12 +45,27 @@ variable "next_public_api_base_url" {
 
 variable "next_public_market_gold_pairs" {
   type    = string
-  default = "Gold-USDT,XAUTUSDT,PAXGUSDT"
+  default = "XAUTUSDT,PAXGUSDT,Gold-USDT"
 }
 
 variable "next_public_market_crypto_pairs" {
   type    = string
   default = "ALGO-USDT,BTC-USDT,ETH-USDT,SOL-USDT,XRP-USDT,BNB-USDT"
+}
+
+variable "frontend_required_rl_tier" {
+  type    = string
+  default = "primary"
+}
+
+variable "api_service_name" {
+  type    = string
+  default = "gvfx-api"
+}
+
+variable "api_service_port" {
+  type    = number
+  default = 8787
 }
 
 job "gvfx-frontend" {
@@ -66,6 +81,12 @@ job "gvfx-frontend" {
       attribute = "${meta.role}"
       operator  = "!="
       value     = "witness"
+    }
+
+    constraint {
+      attribute = "${meta.rl_tier}"
+      operator  = "="
+      value     = var.frontend_required_rl_tier
     }
 
     constraint {
@@ -86,9 +107,9 @@ job "gvfx-frontend" {
       min_healthy_time  = "15s"
       healthy_deadline  = "5m"
       progress_deadline = "10m"
-      canary            = 1
+      canary            = 0
       auto_revert       = true
-      auto_promote      = true
+      auto_promote      = false
     }
 
     restart {
@@ -119,9 +140,25 @@ job "gvfx-frontend" {
 
       env {
         PORT                            = "${var.frontend_port}"
-        NEXT_PUBLIC_API_BASE_URL        = var.next_public_api_base_url
         NEXT_PUBLIC_MARKET_GOLD_PAIRS   = var.next_public_market_gold_pairs
         NEXT_PUBLIC_MARKET_CRYPTO_PAIRS = var.next_public_market_crypto_pairs
+      }
+
+      template {
+        destination = "secrets/frontend.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<-EOT
+{{ $apiHost := "${var.api_service_name}.service.nomad" -}}
+{{ $apiPort := "${var.api_service_port}" -}}
+{{ with nomadService "${var.api_service_name}" -}}
+{{ with index . 0 -}}
+{{ $apiHost = .Address -}}
+{{ $apiPort = printf "%d" .Port -}}
+{{ end -}}
+{{ end -}}
+NEXT_PUBLIC_API_BASE_URL={{ printf "%q" (printf "http://%s:%s" $apiHost $apiPort) }}
+EOT
       }
 
       resources {

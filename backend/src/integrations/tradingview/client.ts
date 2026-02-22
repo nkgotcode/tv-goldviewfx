@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { chromium } from "playwright";
+import { access, readFile } from "node:fs/promises";
+import { chromium, type Browser } from "playwright";
 import { loadEnv, type Env } from "../../config/env";
 import { buildContent, extractFallbackDescription, extractIdeaImages, parseIdeaTimeline } from "./parser";
 
@@ -88,13 +88,45 @@ async function loadCookiesFile(path: string): Promise<{
   throw new Error("Invalid TradingView cookies file. Expected storageState or cookies array.");
 }
 
+async function resolveBrowserExecutablePath() {
+  const configured = process.env.TRADINGVIEW_PLAYWRIGHT_EXECUTABLE_PATH?.trim();
+  if (configured) {
+    return configured;
+  }
+  const candidates = ["/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome"];
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 async function fetchProfileHtmlWithBrowser(env: Env): Promise<string> {
   if (!env.TRADINGVIEW_PROFILE_URL) {
     throw new Error("TRADINGVIEW_PROFILE_URL is required for browser-based sync");
   }
 
   const { storageState, cookies } = await loadCookiesFile(env.TRADINGVIEW_COOKIES_PATH ?? "");
-  const browser = await chromium.launch({ headless: true });
+  let browser: Browser;
+  try {
+    const executablePath = await resolveBrowserExecutablePath();
+    browser = await chromium.launch({
+      headless: true,
+      ...(executablePath ? { executablePath } : {}),
+    });
+  } catch {
+    const response = await fetchWithTimeout(env.TRADINGVIEW_PROFILE_URL, env.TRADINGVIEW_HTTP_TIMEOUT_MS, {
+      headers: DEFAULT_HEADERS,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch profile: ${response.status} ${response.statusText}`);
+    }
+    return response.text();
+  }
   try {
     const context = await browser.newContext({
       userAgent: DEFAULT_HEADERS["User-Agent"],

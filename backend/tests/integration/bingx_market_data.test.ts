@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
 import { runBingxMarketDataIngest } from "../../src/services/bingx_market_data_ingest";
-import { convex } from "../../src/db/client";
+import { listDataSourceStatus } from "../../src/db/repositories/data_source_status";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 function mockFetchFactory(baseTime: number) {
   return async (input: RequestInfo | URL) => {
@@ -45,7 +45,7 @@ function mockFetchFactory(baseTime: number) {
 }
 
 if (!hasEnv) {
-  test.skip("bingx market data ingest requires Convex configuration", () => {});
+  test.skip("bingx market data ingest requires database configuration", () => {});
 } else {
   test("ingests BingX market data and updates status", async () => {
     const baseTime = Date.parse("2026-01-12T00:00:00Z");
@@ -65,13 +65,9 @@ if (!hasEnv) {
       expect(summaries[0]?.candlesInserted ?? 0).toBe(0);
       expect(summaries[0]?.tradesInserted ?? 0).toBe(0);
 
-      const status = await convex
-        .from("data_source_status")
-        .select("status")
-        .eq("pair", "Gold-USDT")
-        .eq("source_type", "bingx_candles")
-        .single();
-      expect(status.data?.status).toBe("ok");
+      const statuses = await listDataSourceStatus("Gold-USDT");
+      const candleStatus = statuses.find((row) => row.source_type === "bingx_candles");
+      expect(candleStatus?.status).toBe("ok");
     } finally {
       if (previousMock === undefined) {
         delete process.env.BINGX_MARKET_DATA_MOCK;

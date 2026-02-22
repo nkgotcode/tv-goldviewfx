@@ -56,6 +56,7 @@ export class RlServiceClient {
       artifact_checksum: payload.artifactChecksum ?? null,
       artifact_download_url: payload.artifactDownloadUrl ?? null,
       artifact_base64: payload.artifactBase64 ?? null,
+      feature_schema_fingerprint: payload.featureSchemaFingerprint ?? null,
     });
   }
 
@@ -75,6 +76,21 @@ export class RlServiceClient {
       decision_threshold: payload.decisionThreshold ?? null,
       window_size: payload.windowSize ?? null,
       stride: payload.stride ?? null,
+      leverage: payload.leverage ?? null,
+      taker_fee_bps: payload.takerFeeBps ?? null,
+      slippage_bps: payload.slippageBps ?? null,
+      funding_weight: payload.fundingWeight ?? null,
+      drawdown_penalty: payload.drawdownPenalty ?? null,
+      walk_forward: payload.walkForward
+        ? {
+            folds: payload.walkForward.folds,
+            purge_bars: payload.walkForward.purgeBars ?? 0,
+            embargo_bars: payload.walkForward.embargoBars ?? 0,
+            min_train_bars: payload.walkForward.minTrainBars ?? null,
+            strict: payload.walkForward.strict ?? true,
+          }
+        : null,
+      feature_schema_fingerprint: payload.featureSchemaFingerprint ?? null,
       dataset_features: payload.datasetFeatures ?? null,
     });
   }
@@ -88,6 +104,7 @@ export class RlServiceClient {
       window_size: payload.windowSize,
       stride: payload.stride,
       feature_set_version_id: payload.featureSetVersionId,
+      feature_schema_fingerprint: payload.featureSchemaFingerprint ?? null,
       features: payload.features,
     });
   }
@@ -110,10 +127,19 @@ export class RlServiceClient {
       dataset_version_id: payload.datasetVersionId ?? null,
       feature_set_version_id: payload.featureSetVersionId ?? null,
       dataset_hash: payload.datasetHash ?? null,
+      feature_schema_fingerprint: payload.featureSchemaFingerprint ?? null,
       timesteps: payload.timesteps,
       seed: payload.seed ?? null,
       window_size: payload.windowSize,
       stride: payload.stride,
+      leverage: payload.leverage ?? null,
+      taker_fee_bps: payload.takerFeeBps ?? null,
+      slippage_bps: payload.slippageBps ?? null,
+      funding_weight: payload.fundingWeight ?? null,
+      drawdown_penalty: payload.drawdownPenalty ?? null,
+      feedback_rounds: payload.feedbackRounds ?? null,
+      feedback_timesteps: payload.feedbackTimesteps ?? null,
+      feedback_hard_ratio: payload.feedbackHardRatio ?? null,
       dataset_features: payload.datasetFeatures ?? null,
     });
   }

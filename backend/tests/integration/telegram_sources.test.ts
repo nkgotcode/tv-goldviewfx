@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("telegram sources endpoints require Convex configuration", () => {});

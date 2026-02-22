@@ -1,4 +1,5 @@
 import { loadEnv } from "../config/env";
+import { getSupportedPairs } from "../config/market_catalog";
 import { listBingxCandleTimes } from "../db/repositories/bingx_market_data";
 import {
   listOpenDataGapEvents,
@@ -13,11 +14,11 @@ import { runTelegramIngest } from "./telegram_ingest";
 import { runNewsIngest } from "./news_ingest";
 import { runOcrBatch } from "./ocr";
 import { backfillBingxCandleWindow, runBingxMarketDataIngest } from "./bingx_market_data_ingest";
+import { runBingxFullBackfillIfNeeded } from "./bingx_full_backfill_service";
 import { recordOpsAudit } from "./ops_audit";
 import { logInfo, logWarn } from "./logger";
 import type { TradingPair } from "../types/rl";
 
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 const BINGX_SOURCE_TYPES = [
   "bingx_candles",
   "bingx_orderbook",
@@ -210,12 +211,13 @@ export async function runDataGapMonitor() {
   const healMaxGaps = env.DATA_GAP_HEAL_MAX_GAPS_PER_RUN;
   const healMaxBatches = env.DATA_GAP_HEAL_MAX_BATCHES;
   const healMaxAttempts = env.DATA_GAP_HEAL_MAX_ATTEMPTS;
+  const supportedPairs = getSupportedPairs();
 
   const detectedKeys = new Set<string>();
   const healQueue: Array<{ id: string; pair: TradingPair; interval: string; gapStart: string; gapEnd: string }> = [];
   const windowStartByInterval = new Map<string, string>();
 
-  for (const pair of SUPPORTED_PAIRS) {
+  for (const pair of supportedPairs) {
     for (const interval of intervals) {
       const intervalMs = parseIntervalMs(interval);
       const maxWindowMs = intervalMs * maxPoints;
@@ -377,6 +379,16 @@ export async function runDataGapMonitor() {
     await healStaleSources(statusViews);
   } catch (error) {
     logWarn("Failed to heal stale sources", { error: String(error) });
+  }
+
+  try {
+    await runBingxFullBackfillIfNeeded({
+      source: "data_gap_monitor",
+      openGapCountHint: healQueue.length,
+      statusesHint: statusViews,
+    });
+  } catch (error) {
+    logWarn("Failed to run BingX full backfill check", { error: String(error) });
   }
 
   logInfo("Data gap monitor completed", { gaps: detectedKeys.size, heal_queue: healQueue.length });

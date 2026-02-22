@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { getSupportedPairs, resolveSupportedPair } from "../../config/market_catalog";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { validateJson } from "../middleware/validate";
 import { dataSourceConfigSchema, tradingPairSchema } from "../../rl/schemas";
@@ -49,7 +50,7 @@ dataSourcesRoutes.patch("/config", requireOperatorRole, validateJson(dataSourceC
 
   for (const source of sources) {
     const threshold = source.freshnessThresholdSeconds ?? getDefaultThreshold(source.sourceType);
-    for (const pair of tradingPairSchema.options) {
+    for (const pair of getSupportedPairs()) {
       const updated = await upsertDataSourceConfigRecord({
         pair,
         sourceType: source.sourceType,
@@ -76,7 +77,8 @@ dataSourcesRoutes.patch("/config", requireOperatorRole, validateJson(dataSourceC
 
 dataSourcesRoutes.get("/runs", async (c) => {
   const sourceType = c.req.query("sourceType") ?? undefined;
-  const pair = (c.req.query("pair") as z.infer<typeof tradingPairSchema> | undefined) ?? "Gold-USDT";
+  const defaultPair = getSupportedPairs()[0] ?? "XAUTUSDT";
+  const pair = (c.req.query("pair") as z.infer<typeof tradingPairSchema> | undefined) ?? defaultPair;
   const runs = await listSyncRuns();
 
   const enriched = await Promise.all(
@@ -86,7 +88,7 @@ dataSourcesRoutes.get("/runs", async (c) => {
         source.type === "tradingview" ? "ideas" : source.type === "telegram" ? "signals" : source.type;
       const mappedPair =
         source.type === "bingx" && source.identifier.startsWith("bingx-")
-          ? (source.identifier.replace("bingx-", "") as z.infer<typeof tradingPairSchema>)
+          ? (resolveSupportedPair(source.identifier.replace("bingx-", "")) ?? source.identifier.replace("bingx-", ""))
           : pair;
       return {
         id: run.id,

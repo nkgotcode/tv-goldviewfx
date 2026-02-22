@@ -42,8 +42,23 @@ export type DbResponse<T> = {
 };
 
 const env = loadEnv();
-const client = new ConvexHttpClient(env.CONVEX_URL);
-export const convexClient = client;
+let client: ConvexHttpClient<typeof anyApi> | null = null;
+
+function getConvexClient() {
+  if (!env.CONVEX_URL) {
+    throw new Error("CONVEX_URL is required for Convex-backed operations.");
+  }
+  if (!client) {
+    client = new ConvexHttpClient(env.CONVEX_URL);
+  }
+  return client;
+}
+
+export const convexClient = {
+  query: (...args: Parameters<ConvexHttpClient<typeof anyApi>["query"]>) => getConvexClient().query(...args),
+  mutation: (...args: Parameters<ConvexHttpClient<typeof anyApi>["mutation"]>) => getConvexClient().mutation(...args),
+  action: (...args: Parameters<ConvexHttpClient<typeof anyApi>["action"]>) => getConvexClient().action(...args),
+};
 
 function parseSelect(select?: string) {
   if (!select || select.trim() === "*" || select.trim() === "") {
@@ -183,7 +198,7 @@ class SelectBuilder<T> implements PromiseLike<DbResponse<T[]>> {
       request.orFilters = this.orFilters;
     }
     try {
-      const response = await client.query(anyApi.data.query, request);
+      const response = await getConvexClient().query(anyApi.data.query, request);
       return { data: response.data ?? null, error: null, count: response.count ?? null };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Query failed";
@@ -280,7 +295,7 @@ class WriteBuilder<T> implements PromiseLike<DbResponse<T[]>> {
       select: this.selectFields,
     };
     try {
-      const response = await client.mutation(anyApi.data.write, request);
+      const response = await getConvexClient().mutation(anyApi.data.write, request);
       return { data: response.data ?? null, error: null, count: response.count ?? null };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Write failed";

@@ -1,8 +1,15 @@
 import { convexClient } from "../../client";
 import { anyApi } from "convex/server";
+import {
+  getTimescaleLatestMarkIndexSnapshot,
+  getTimescaleLatestMarkIndexTime,
+  listTimescaleMarkIndexPrices,
+  marketDataUsesTimescale,
+  upsertTimescaleMarkIndexPrices,
+} from "../../timescale/market_data";
 
 export type BingxMarkIndexPriceInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   mark_price: number;
   index_price: number;
   captured_at: string;
@@ -21,6 +28,9 @@ async function upsertBingxMarkIndexBatch(rows: BingxMarkIndexPriceInsert[]) {
 }
 
 export async function upsertBingxMarkIndexPrices(rows: BingxMarkIndexPriceInsert[]) {
+  if (marketDataUsesTimescale()) {
+    return upsertTimescaleMarkIndexPrices(rows);
+  }
   if (rows.length === 0) return [];
   if (rows.length <= MAX_MARK_INDEX_UPSERT_BATCH) {
     return upsertBingxMarkIndexBatch(rows);
@@ -43,6 +53,9 @@ export async function upsertBingxMarkIndexPrices(rows: BingxMarkIndexPriceInsert
 }
 
 export async function getLatestMarkIndexTime(pair: BingxMarkIndexPriceInsert["pair"]) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleLatestMarkIndexTime(pair);
+  }
   try {
     return await convexClient.query(anyApi.bingx_mark_index_prices.latestTime, { pair });
   } catch (error) {
@@ -52,10 +65,68 @@ export async function getLatestMarkIndexTime(pair: BingxMarkIndexPriceInsert["pa
 }
 
 export async function getLatestMarkIndexSnapshot(pair: BingxMarkIndexPriceInsert["pair"]) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleLatestMarkIndexSnapshot(pair);
+  }
   try {
     return await convexClient.query(anyApi.bingx_mark_index_prices.latestSnapshot, { pair });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Query failed";
     throw new Error(`get latest mark/index snapshot: ${message}`);
+  }
+}
+
+export async function listBingxMarkIndexPrices(filters: {
+  pair: BingxMarkIndexPriceInsert["pair"];
+  start?: string;
+  end?: string;
+  limit?: number;
+}) {
+  if (marketDataUsesTimescale()) {
+    return listTimescaleMarkIndexPrices(filters);
+  }
+  try {
+    if (filters.limit !== undefined) {
+      return await convexClient.query(anyApi.bingx_mark_index_prices.listByRange, {
+        pair: filters.pair,
+        start: filters.start,
+        end: filters.end,
+        limit: filters.limit,
+        order: "asc",
+      });
+    }
+
+    const results: Array<Record<string, unknown>> = [];
+    const pageLimit = 2000;
+    let nextStart = filters.start;
+    let lastCapturedAt: string | null = null;
+
+    while (true) {
+      const rows = await convexClient.query(anyApi.bingx_mark_index_prices.listByRange, {
+        pair: filters.pair,
+        start: nextStart,
+        end: filters.end,
+        limit: pageLimit,
+        order: "asc",
+      });
+      results.push(...rows);
+      if (rows.length < pageLimit) {
+        break;
+      }
+      const last = rows[rows.length - 1] as { captured_at?: string };
+      if (!last?.captured_at || last.captured_at === lastCapturedAt) {
+        break;
+      }
+      lastCapturedAt = last.captured_at;
+      const nextMs = new Date(last.captured_at).getTime() + 1;
+      if (!Number.isFinite(nextMs)) {
+        break;
+      }
+      nextStart = new Date(nextMs).toISOString();
+    }
+    return results;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`list bingx mark/index prices: ${message}`);
   }
 }

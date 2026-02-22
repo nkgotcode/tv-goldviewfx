@@ -9,10 +9,10 @@ import { executeTrade } from "../../src/services/trade_execution";
 import { transitionTradeStatus } from "../../src/services/trade_state_machine";
 import { reconcileTradeExecutions } from "../../src/services/trade_reconciliation";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("trade execution integrity requires Convex configuration", () => {});
+  test.skip("trade execution integrity requires database configuration", () => {});
 } else {
   test("executeTrade enforces idempotency keys", async () => {
     await updateAgentConfig({ enabled: true, kill_switch: false, mode: "paper" });

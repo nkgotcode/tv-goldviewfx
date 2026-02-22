@@ -4,11 +4,11 @@ import { listDataSourceStatus } from "../db/repositories/data_source_status";
 import { getIngestionConfig, listIngestionConfigs } from "../db/repositories/ingestion_configs";
 import { getLatestIngestionRun } from "../db/repositories/ingestion_runs";
 import { loadEnv } from "../config/env";
+import { getSupportedPairs } from "../config/market_catalog";
 import { BINGX_SOURCE_TYPES } from "./data_source_status_service";
 import { logWarn } from "./logger";
 import type { DataSourceType, TradingPair } from "../types/rl";
 
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 const BINGX_FEEDS = [
   "candles",
   "orderbook",
@@ -195,9 +195,10 @@ async function buildSourceStatuses(type: "tradingview" | "telegram") {
 }
 
 export async function getIngestionStatus(): Promise<IngestionStatusResponse> {
+  const supportedPairs = getSupportedPairs();
   if (E2E_RUN_ENABLED) {
     const now = new Date().toISOString();
-    const pairs = SUPPORTED_PAIRS.map((pair) => ({
+    const pairs = supportedPairs.map((pair) => ({
       pair,
       overall_status: "ok" as const,
       last_updated_at: now,
@@ -233,7 +234,7 @@ export async function getIngestionStatus(): Promise<IngestionStatusResponse> {
   );
 
   const bingxByPair = new Map<TradingPair, Map<DataSourceType, BingxFeedStatus>>();
-  for (const pair of SUPPORTED_PAIRS) {
+  for (const pair of supportedPairs) {
     bingxByPair.set(pair, new Map());
   }
   for (const record of bingxRecords) {
@@ -247,7 +248,7 @@ export async function getIngestionStatus(): Promise<IngestionStatusResponse> {
   }
 
   const pairs: BingxPairStatus[] = [];
-  for (const pair of SUPPORTED_PAIRS) {
+  for (const pair of supportedPairs) {
     const feeds = BINGX_SOURCE_TYPES.map((feed) => {
       const record = bingxByPair.get(pair)?.get(feed);
       if (record) {

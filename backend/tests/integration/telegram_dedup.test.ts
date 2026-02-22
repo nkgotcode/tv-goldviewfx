@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import app from "../../src/api/routes/index";
 import { normalizeListPayload } from "../helpers/api_list";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 const baseFixture = fileURLToPath(new URL("../fixtures/telegram_messages.json", import.meta.url));
 const editFixture = fileURLToPath(new URL("../fixtures/telegram_messages_edit.json", import.meta.url));
 

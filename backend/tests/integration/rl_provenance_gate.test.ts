@@ -7,7 +7,7 @@ import { rlApiRequest } from "../fixtures/rl_api";
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 import { BINGX_SOURCE_TYPES } from "../../src/services/data_source_status_service";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 function buildCandles() {
   const now = Date.now();
@@ -24,7 +24,7 @@ function buildCandles() {
 }
 
 if (!hasEnv) {
-  test.skip("provenance gate requires Convex configuration", () => {});
+  test.skip("provenance gate requires database configuration", () => {});
 } else {
   test("decision pipeline blocks without artifact provenance", async () => {
     const original = process.env.RL_ENFORCE_PROVENANCE;

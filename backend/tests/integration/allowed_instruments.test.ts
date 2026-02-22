@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { getAgentConfig, updateAgentConfig } from "../../src/db/repositories/agent_config";
 import { startAgentRun } from "../../src/services/rl_agent_service";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("allowed instrument tests require Convex configuration", () => {});
+  test.skip("allowed instrument tests require database configuration", () => {});
 } else {
   test("agent run blocks disallowed instruments", async () => {
     const previous = await getAgentConfig();

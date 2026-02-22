@@ -20,6 +20,7 @@ dependencies = [
 ml = [
   "stable-baselines3>=2.7.1",
   "nautilus-trader>=1.222.0",
+  "TA-Lib>=0.4.32",
 ]
 
 test = [

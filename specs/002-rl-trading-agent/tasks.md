@@ -450,6 +450,77 @@ T119–T121 (frontend)
 
 ---
 
+## Phase 13: TA-Lib Feature Store + Champion/Challenger Online Learning (US7)
+
+**Purpose**: Implement TA-Lib-powered feature enrichment with a canonical feature pipeline, snapshot caching, walk-forward evaluation, and safer online learning promotion gates.
+
+**Commit-size rule**: Each task below should be deliverable in one focused commit touching only the listed files (or a tightly related new file in the same folder).
+
+### Tests for User Story 7 (Unit + Integration + E2E)
+
+- [x] T970 [P] [US7] Add RL service unit tests for TA-Lib feature determinism and warmup handling in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/unit/test_talib_pipeline.py`
+- [x] T971 [P] [US7] Add RL service unit tests for cross-path feature parity (train/infer/backtest vectors) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/unit/test_feature_parity.py`
+- [x] T972 [P] [US7] Add backend integration tests for feature snapshot repository read/write and idempotency in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/integration/rl_feature_snapshots.test.ts`
+- [x] T973 [P] [US7] Add backend integration tests for dataset hash reproducibility with cached feature snapshots in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/integration/datasets_feature_cache.test.ts`
+- [x] T974 [P] [US7] Add RL service integration tests for walk-forward evaluation folds in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/tests/integration/test_walk_forward_evaluations_api.py`
+- [x] T975 [P] [US7] Add backend integration tests for challenger-vs-champion promotion decisions in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/tests/integration/online_learning_challenger.test.ts`
+- [x] T976 [P] [US7] Add E2E test for TA-Lib-backed train → evaluate → promote cycle in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/tests/e2e/rl-talib-promotion.spec.ts`
+- [x] T977 [P] [US7] Add E2E test for forced hold on OOD/missing critical features in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/tests/e2e/rl-ood-safety.spec.ts`
+
+### Milestone M13.1: Feature Set v2 Contract + Snapshot Storage
+
+- [x] T978 [US7] Add feature-set `v2` TA parameter contract and parsing helpers in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/feature_set_service.ts`
+- [x] T979 [US7] Add `rl_feature_snapshots` Timescale schema + indexes in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/timescale/market_data.ts`
+- [x] T980 [US7] Implement feature snapshot repository (upsert/list/missing-range) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/rl_feature_snapshots.ts`
+- [x] T981 [US7] Extend RL domain types for feature snapshot payloads and fold config fields in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/types/rl.ts`
+
+### Milestone M13.2: TA-Lib Pipeline in RL Service
+
+- [x] T982 [US7] Add TA-Lib runtime dependency and extras wiring in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/pyproject.toml`
+- [x] T983 [US7] Implement TA-Lib canonical feature builder module in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/features/technical_pipeline.py`
+- [x] T984 [US7] Update feature registry to carry TA config and schema fingerprinting in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/features/feature_registry.py`
+- [x] T985 [US7] Update RL service schemas to accept enriched dataset feature payloads and fold configs in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/schemas.py`
+
+### Milestone M13.3: Canonical Pipeline Reuse (Train/Infer/Backtest)
+
+- [x] T986 [US7] Refactor feature extraction entrypoints to source vectors from technical pipeline in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/features/extractors.py`
+- [x] T987 [US7] Refactor environment observation generation to consume canonical vectors in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/envs/market_env.py`
+- [x] T988 [US7] Refactor strategy inference to use canonical TA-Lib vectors in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/training/rl_strategy.py`
+- [x] T989 [US7] Refactor evaluation pipeline to reuse canonical vectors before Nautilus backtest execution in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/training/evaluation.py`
+
+### Milestone M13.4: Dataset Snapshot Cache Integration
+
+- [x] T990 [US7] Add feature snapshot read-through cache service in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/feature_snapshot_service.ts`
+- [x] T991 [US7] Integrate dataset builder to use snapshot-first retrieval with write-back on misses in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/dataset_service.ts`
+- [x] T992 [US7] Include feature-set schema fingerprint in dataset hashing and version metadata in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/data/dataset_builder.py`
+
+### Milestone M13.5: Walk-Forward Evaluation Contracts + Persistence
+
+- [x] T993 [US7] Extend backend evaluation request schema/types for walk-forward fold config in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/rl/schemas.ts` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/types/rl.ts`
+- [x] T994 [US7] Extend RL service evaluations API contract for fold parameters in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/api/evaluations.py` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/schemas.py`
+- [x] T995 [US7] Implement walk-forward split utility with purge/embargo support in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/src/training/walk_forward.py`
+- [x] T996 [US7] Persist fold-level metrics and aggregate stats into evaluation report metadata in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/evaluation_service.ts`
+
+### Milestone M13.6: Champion/Challenger Online Learning Gates
+
+- [x] T997 [US7] Implement champion snapshot resolution and challenger comparison flow in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/online_learning_service.ts`
+- [x] T998 [US7] Add delta-based promotion/rejection gates (PnL, drawdown, trade count, win-rate) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/jobs/learning_updates.ts`
+- [x] T999 [US7] Persist promotion decision reasons and metric deltas in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/learning_updates.ts`
+
+### Milestone M13.7: Safety + Observability for Enriched Features
+
+- [x] T1000 [US7] Implement feature quality gate (missing critical fields, OOD checks) in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/feature_quality_gate.ts`
+- [x] T1001 [US7] Enforce forced-hold behavior from feature quality gate in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/rl_decision_pipeline.ts`
+- [x] T1002 [US7] Emit feature freshness/missing/OOD metrics in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/rl_metrics.ts` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/observability_service.ts`
+
+### Milestone M13.8: Documentation and Operations
+
+- [x] T1003 [US7] Add TA-Lib installation and troubleshooting runbook in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/rl-service/README.md`
+- [x] T1004 [US7] Document rollout/rollback and online-learning toggles for TA-Lib phase in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-trading-agent.md`
+- [x] T1005 [US7] Align design + execution references in `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-ta-lib-feature-architecture.md` and `/Users/itsnk/Desktop/Coding/tv-goldviewfx/docs/rl-ta-lib-execution-plan.md` with implemented contracts
+
+---
+
 ## Implementation Strategy
 
 ### MVP First (User Story 1 Only)

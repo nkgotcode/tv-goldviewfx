@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { rlApiRequest } from "../fixtures/rl_api";
 import { listDataSourceConfigs } from "../../src/db/repositories/data_source_configs";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("data source config requires Convex configuration", () => {});
+  test.skip("data source config requires database configuration", () => {});
 } else {
   test("data source config updates all pairs", async () => {
     const response = await rlApiRequest("/data-sources/config", {

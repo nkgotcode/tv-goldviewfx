@@ -1,8 +1,16 @@
 import { convexClient } from "../../client";
 import { anyApi } from "convex/server";
+import {
+  getTimescaleEarliestCandleTime,
+  getTimescaleLatestCandleTime,
+  listTimescaleCandleOpenTimes,
+  listTimescaleCandles,
+  marketDataUsesTimescale,
+  upsertTimescaleCandles,
+} from "../../timescale/market_data";
 
 export type BingxCandleInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   interval: string;
   open_time: string;
   close_time: string;
@@ -27,6 +35,9 @@ async function upsertBingxCandleBatch(rows: BingxCandleInsert[]) {
 }
 
 export async function upsertBingxCandles(rows: BingxCandleInsert[]) {
+  if (marketDataUsesTimescale()) {
+    return upsertTimescaleCandles(rows);
+  }
   if (rows.length === 0) return [];
   if (rows.length <= MAX_CANDLE_UPSERT_BATCH) {
     return upsertBingxCandleBatch(rows);
@@ -49,6 +60,9 @@ export async function upsertBingxCandles(rows: BingxCandleInsert[]) {
 }
 
 export async function getLatestCandleTime(pair: BingxCandleInsert["pair"], interval: string) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleLatestCandleTime(pair, interval);
+  }
   try {
     const rows = await convexClient.query(anyApi.bingx_candles.listByRange, {
       pair,
@@ -64,6 +78,9 @@ export async function getLatestCandleTime(pair: BingxCandleInsert["pair"], inter
 }
 
 export async function getEarliestCandleTime(pair: BingxCandleInsert["pair"], interval: string) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleEarliestCandleTime(pair, interval);
+  }
   try {
     const rows = await convexClient.query(anyApi.bingx_candles.listByRange, {
       pair,
@@ -85,6 +102,9 @@ export async function listBingxCandles(filters: {
   end?: string;
   limit?: number;
 }) {
+  if (marketDataUsesTimescale()) {
+    return listTimescaleCandles(filters);
+  }
   try {
     if (filters.limit !== undefined) {
       return await convexClient.query(anyApi.bingx_candles.listByRange, {
@@ -141,6 +161,12 @@ export async function listBingxCandleTimes(filters: {
   end?: string;
   limit?: number;
 }) {
+  if (marketDataUsesTimescale()) {
+    return listTimescaleCandleOpenTimes({
+      ...filters,
+      limit: filters.limit ? Math.min(filters.limit, 5000) : undefined,
+    });
+  }
   try {
     const limit = filters.limit ? Math.min(filters.limit, 5000) : undefined;
     return await convexClient.query(anyApi.bingx_candles.listOpenTimesByRange, {

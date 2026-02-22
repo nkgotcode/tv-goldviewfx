@@ -3,7 +3,7 @@ import { assertNoError } from "./base";
 
 export type DataQualityMetricInsert = {
   source_type: string;
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   coverage_pct: number;
   missing_fields_count: number;
   parse_confidence: number;

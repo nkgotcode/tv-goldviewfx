@@ -43,6 +43,16 @@ variable "convex_url" {
   default = "http://gvfx-convex.service.nomad:3210"
 }
 
+variable "convex_service_name" {
+  type    = string
+  default = "gvfx-convex"
+}
+
+variable "convex_port" {
+  type    = number
+  default = 3210
+}
+
 variable "secrets_var_path" {
   type    = string
   default = "nomad/jobs/gvfx/secrets"
@@ -79,6 +89,12 @@ job "gvfx-rl-service" {
       value     = var.rl_required_flag
     }
 
+    constraint {
+      attribute = "${attr.cpu.arch}"
+      operator  = "="
+      value     = "amd64"
+    }
+
     affinity {
       attribute = "${meta.rl_tier}"
       operator  = "="
@@ -99,9 +115,9 @@ job "gvfx-rl-service" {
       min_healthy_time  = "15s"
       healthy_deadline  = "5m"
       progress_deadline = "10m"
-      canary            = 1
+      canary            = 0
       auto_revert       = true
-      auto_promote      = true
+      auto_promote      = false
     }
 
     restart {
@@ -124,15 +140,17 @@ job "gvfx-rl-service" {
 
       config {
         image    = var.rl_service_image
-        command  = "/app/backend/rl-service/.venv/bin/uvicorn"
-        args     = ["server:app", "--host", "0.0.0.0", "--port", "${var.rl_service_port}"]
+        command  = "sh"
+        args = [
+          "-ec",
+          "if [ -n \"$CONVEX_SERVICE_ADDRESS\" ]; then tmp_hosts=\"/tmp/hosts.$$\"; awk '!/^[0-9a-fA-F:.]+[[:space:]]+gvfx-convex\\.service\\.nomad([[:space:]]|$)/' /etc/hosts > \"$tmp_hosts\" 2>/dev/null || cp /etc/hosts \"$tmp_hosts\"; echo \"$CONVEX_SERVICE_ADDRESS gvfx-convex.service.nomad\" >> \"$tmp_hosts\"; cat \"$tmp_hosts\" > /etc/hosts; rm -f \"$tmp_hosts\"; fi; exec /app/backend/rl-service/.venv/bin/uvicorn server:app --host 0.0.0.0 --port ${var.rl_service_port}",
+        ]
         work_dir = var.rl_service_work_dir
         ports    = ["http"]
       }
 
       env {
         RL_SERVICE_PORT = "${var.rl_service_port}"
-        CONVEX_URL      = var.convex_url
       }
 
       template {
@@ -146,7 +164,31 @@ OPENAI_BASE_URL={{ printf "%q" .OPENAI_BASE_URL }}
 OPENAI_MODEL={{ printf "%q" .OPENAI_MODEL }}
 OPENROUTER_REFERER={{ printf "%q" .OPENROUTER_REFERER }}
 OPENROUTER_TITLE={{ printf "%q" .OPENROUTER_TITLE }}
+{{ $convexHost := "${var.convex_service_name}.service.nomad" -}}
+{{ $convexPort := "${var.convex_port}" -}}
+{{ with nomadService "${var.convex_service_name}" -}}
+{{ with index . 0 -}}
+{{ $convexHost = .Address -}}
+{{ $convexPort = printf "%d" .Port -}}
+{{ end -}}
+{{ end -}}
+CONVEX_URL={{ printf "%q" (printf "http://%s:%s" $convexHost $convexPort) }}
 {{- end }}
+EOT
+      }
+
+      template {
+        destination = "secrets/convex_host.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<-EOT
+{{ $convexHost := "" -}}
+{{ with nomadService "${var.convex_service_name}" -}}
+{{ with index . 0 -}}
+{{ $convexHost = .Address -}}
+{{ end -}}
+{{ end -}}
+CONVEX_SERVICE_ADDRESS={{ printf "%q" $convexHost }}
 EOT
       }
 
@@ -158,6 +200,7 @@ EOT
       service {
         name = var.consul_service_name
         provider = "nomad"
+        address_mode = "host"
         port = "http"
 
         check {

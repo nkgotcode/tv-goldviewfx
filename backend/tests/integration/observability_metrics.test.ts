@@ -9,7 +9,7 @@ import { listOpsAlerts } from "../../src/db/repositories/ops_alerts";
 import { listObservabilityMetrics } from "../../src/db/repositories/observability_metrics";
 import { insertTradeDecision } from "../../src/db/repositories/trade_decisions";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("observability metrics require Convex configuration", () => {});

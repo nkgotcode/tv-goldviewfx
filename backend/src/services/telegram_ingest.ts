@@ -1,6 +1,7 @@
 import { fetchTelegramMessages } from "../integrations/telegram/client";
 import { normalizeTelegramContent, summarizeTelegramContent } from "../integrations/telegram/parser";
 import { loadEnv } from "../config/env";
+import { getSupportedPairs } from "../config/market_catalog";
 import { getSourceById } from "../db/repositories/sources";
 import { createSyncRun, completeSyncRun } from "../db/repositories/sync_runs";
 import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
@@ -19,8 +20,6 @@ import { aggregateQuality, computeIdeaQuality } from "./ingestion_quality";
 import { shouldRunIngestion } from "./ingestion_control";
 
 export type TelegramTrigger = "manual" | "schedule";
-
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 
 export async function runTelegramIngest(options: { sourceId: string; trigger: TelegramTrigger }) {
   const env = loadEnv();
@@ -139,7 +138,7 @@ export async function runTelegramIngest(options: { sourceId: string; trigger: Te
 
     const now = new Date().toISOString();
     await Promise.all(
-      SUPPORTED_PAIRS.map((pair) =>
+      getSupportedPairs().map((pair) =>
         recordDataSourceStatus({
           pair,
           sourceType: "signals",

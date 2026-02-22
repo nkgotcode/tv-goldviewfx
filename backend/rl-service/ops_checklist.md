@@ -2,8 +2,8 @@
 
 - [ ] Confirm Python 3.12+ and `uv` are installed on the host.
 - [ ] Verify `RL_SERVICE_PORT` is reachable from the backend runtime.
-- [ ] Ensure model artifacts are available in Convex file storage (if required).
-- [ ] Validate `CONVEX_URL` for artifact and market data reads.
+- [ ] Ensure model artifacts are reachable for the referenced scheme (`convex://storage`, `file://`, or `https://`).
+- [ ] Validate `CONVEX_URL` only when Convex-backed data/artifact reads are enabled.
 - [ ] Run `uv run pytest` after dependency updates.
 - [ ] Confirm `/health` returns `ok` before enabling live trading.
 - [ ] Run an evaluation window and verify metrics populate in the dashboard.

@@ -110,3 +110,35 @@ export const latestSnapshot = query({
     };
   },
 });
+
+export const listByRange = query({
+  args: {
+    pair: v.string(),
+    start: v.optional(v.string()),
+    end: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    order: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async ({ db }, args) => {
+    const queryBuilder = db
+      .query("bingx_mark_index_prices")
+      .withIndex("by_pair_captured_at", (q) => {
+        if (args.start && args.end) {
+          return q.eq("pair", args.pair).gte("captured_at", args.start).lte("captured_at", args.end);
+        }
+        if (args.start) {
+          return q.eq("pair", args.pair).gte("captured_at", args.start);
+        }
+        if (args.end) {
+          return q.eq("pair", args.pair).lte("captured_at", args.end);
+        }
+        return q.eq("pair", args.pair);
+      })
+      .order(args.order === "desc" ? "desc" : "asc");
+
+    if (args.limit !== undefined) {
+      return queryBuilder.take(args.limit);
+    }
+    return queryBuilder.collect();
+  },
+});

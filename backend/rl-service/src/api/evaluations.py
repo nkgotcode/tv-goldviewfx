@@ -23,6 +23,15 @@ def run_evaluation_endpoint(payload: EvaluationRequest) -> EvaluationReport:
             decision_threshold=payload.decision_threshold or 0.2,
             window_size=payload.window_size,
             stride=payload.stride,
+            leverage=payload.leverage,
+            taker_fee_bps=payload.taker_fee_bps,
+            slippage_bps=payload.slippage_bps,
+            funding_weight=payload.funding_weight,
+            drawdown_penalty=payload.drawdown_penalty,
+            walk_forward=payload.walk_forward,
+            feature_schema_fingerprint=payload.feature_schema_fingerprint,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

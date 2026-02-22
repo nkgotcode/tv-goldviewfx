@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { evaluateDataIntegrityGate } from "../../src/services/data_integrity_service";
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 function buildCandles(timestamps: string[]) {
   return timestamps.map((timestamp, idx) => ({
@@ -16,7 +16,7 @@ function buildCandles(timestamps: string[]) {
 }
 
 if (!hasEnv) {
-  test.skip("data integrity gate requires Convex configuration", () => {});
+  test.skip("data integrity gate requires database configuration", () => {});
 } else {
   test("data integrity blocks missing candles", async () => {
     const result = await evaluateDataIntegrityGate({ pair: "Gold-USDT", candles: [] });

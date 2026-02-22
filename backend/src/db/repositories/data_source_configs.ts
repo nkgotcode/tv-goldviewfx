@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { convex } from "../client";
 import { assertNoError } from "./base";
+import { listRlOpsRows, rlOpsUsesTimescale, upsertRlOpsRow } from "../timescale/rl_ops";
 
 export type DataSourceConfigInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   source_type:
     | "bingx_candles"
     | "bingx_orderbook"
@@ -22,6 +24,22 @@ export type DataSourceConfigInsert = {
 };
 
 export async function upsertDataSourceConfig(payload: DataSourceConfigInsert) {
+  if (rlOpsUsesTimescale()) {
+    const now = new Date().toISOString();
+    return upsertRlOpsRow(
+      "data_source_configs",
+      {
+        id: randomUUID(),
+        pair: payload.pair,
+        source_type: payload.source_type,
+        enabled: payload.enabled,
+        freshness_threshold_seconds: payload.freshness_threshold_seconds,
+        updated_at: payload.updated_at ?? now,
+        created_at: now,
+      },
+      ["pair", "source_type"],
+    );
+  }
   const result = await convex
     .from("data_source_configs")
     .upsert(payload, { onConflict: "pair,source_type" })
@@ -31,6 +49,14 @@ export async function upsertDataSourceConfig(payload: DataSourceConfigInsert) {
 }
 
 export async function listDataSourceConfigs(pair?: DataSourceConfigInsert["pair"]) {
+  if (rlOpsUsesTimescale()) {
+    const filters = pair ? [{ field: "pair", value: pair }] : [];
+    return listRlOpsRows("data_source_configs", {
+      filters,
+      orderBy: "source_type",
+      direction: "asc",
+    });
+  }
   const query = convex.from("data_source_configs").select("*").order("source_type", { ascending: true });
   if (pair) {
     query.eq("pair", pair);
@@ -40,6 +66,16 @@ export async function listDataSourceConfigs(pair?: DataSourceConfigInsert["pair"
 }
 
 export async function getDataSourceConfig(pair: DataSourceConfigInsert["pair"], sourceType: DataSourceConfigInsert["source_type"]) {
+  if (rlOpsUsesTimescale()) {
+    const rows = await listRlOpsRows("data_source_configs", {
+      filters: [
+        { field: "pair", value: pair },
+        { field: "source_type", value: sourceType },
+      ],
+      limit: 1,
+    });
+    return rows[0] ?? null;
+  }
   const result = await convex
     .from("data_source_configs")
     .select("*")

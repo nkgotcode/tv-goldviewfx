@@ -1,4 +1,5 @@
 import { loadEnv } from "../config/env";
+import { fromBingxSymbol, resolveSupportedPair } from "../config/market_catalog";
 import {
   findTradeExecutionByIdempotencyKey,
   insertTradeExecution,
@@ -39,17 +40,7 @@ type ExecutionStatus = "submitted" | "partial" | "filled" | "failed" | "cancelle
 const MAX_ORDER_ID_RECOVERY_ATTEMPTS = 3;
 
 function normalizePair(instrument: string): TradingPair | null {
-  const normalized = instrument.trim().toUpperCase();
-  if (normalized === "GOLD-USDT" || normalized === "GOLDUSDT" || normalized === "GOLD") {
-    return "Gold-USDT";
-  }
-  if (normalized === "XAUT-USDT" || normalized === "XAUTUSDT") {
-    return "XAUTUSDT";
-  }
-  if (normalized === "PAXG-USDT" || normalized === "PAXGUSDT") {
-    return "PAXGUSDT";
-  }
-  return null;
+  return resolveSupportedPair(instrument) ?? fromBingxSymbol(instrument) ?? null;
 }
 
 function buildClientOrderId(prefix: string) {

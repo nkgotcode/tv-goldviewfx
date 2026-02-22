@@ -1,8 +1,9 @@
 import { convexClient } from "../../client";
 import { anyApi } from "convex/server";
+import { getTimescaleLatestTradeTime, marketDataUsesTimescale, upsertTimescaleTrades } from "../../timescale/market_data";
 
 export type BingxTradeInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   trade_id: string;
   price: number;
   quantity: number;
@@ -23,6 +24,9 @@ async function upsertBingxTradeBatch(rows: BingxTradeInsert[]) {
 }
 
 export async function upsertBingxTrades(rows: BingxTradeInsert[]) {
+  if (marketDataUsesTimescale()) {
+    return upsertTimescaleTrades(rows);
+  }
   if (rows.length === 0) return [];
   if (rows.length <= MAX_TRADE_UPSERT_BATCH) {
     return upsertBingxTradeBatch(rows);
@@ -45,6 +49,9 @@ export async function upsertBingxTrades(rows: BingxTradeInsert[]) {
 }
 
 export async function getLatestTradeTime(pair: BingxTradeInsert["pair"]) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleLatestTradeTime(pair);
+  }
   try {
     return await convexClient.query(anyApi.bingx_trades.latestTime, { pair });
   } catch (error) {

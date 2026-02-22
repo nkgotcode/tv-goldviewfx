@@ -17,6 +17,12 @@ async function collectRuns(
   },
   takeCount: number,
 ) {
+  const requestedCount = Math.max(1, takeCount);
+  const scanCount =
+    args.feed !== undefined
+      ? Math.min(1000, Math.max(requestedCount * 25, 100))
+      : requestedCount;
+
   let queryBuilder;
   if (args.source_type && args.source_id !== undefined) {
     queryBuilder = db
@@ -32,11 +38,11 @@ async function collectRuns(
     queryBuilder = db.query("ingestion_runs").withIndex("by_started_at", (q: any) => q);
   }
 
-  let docs = (await queryBuilder.order("desc").take(takeCount)) as Array<Record<string, unknown>>;
+  let docs = (await queryBuilder.order("desc").take(scanCount)) as Array<Record<string, unknown>>;
   if (args.feed !== undefined) {
     docs = docs.filter((doc) => (args.feed === null ? doc.feed == null : doc.feed === args.feed));
   }
-  return docs;
+  return docs.slice(0, requestedCount);
 }
 
 export const create = mutation({
@@ -79,6 +85,99 @@ export const create = mutation({
     };
     await db.insert("ingestion_runs", row);
     return row;
+  },
+});
+
+export const startIfIdle = mutation({
+  args: {
+    source_type: v.string(),
+    source_id: nullableString,
+    feed: nullableString,
+    trigger: v.string(),
+    timeout_minutes: v.optional(v.number()),
+    started_at: v.optional(v.string()),
+  },
+  handler: async ({ db }, args) => {
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const timeoutMs = Math.max(0, args.timeout_minutes ?? 0) * 60 * 1000;
+    const docs = await collectRuns(
+      db,
+      {
+        source_type: args.source_type,
+        source_id: args.source_id ?? null,
+        feed: args.feed ?? null,
+      },
+      100,
+    );
+
+    const runningDocs = docs.filter((doc) => doc.status === "running");
+    const staleRuns = runningDocs.filter((doc) => {
+      if (timeoutMs <= 0) return false;
+      const startedAtRaw = typeof doc.started_at === "string" ? doc.started_at : null;
+      const startedAtMs = startedAtRaw ? new Date(startedAtRaw).getTime() : Number.NaN;
+      return Number.isFinite(startedAtMs) && nowMs - startedAtMs > timeoutMs;
+    });
+    const staleRunIds: string[] = [];
+
+    for (const stale of staleRuns) {
+      await db.patch((stale as { _id: any })._id, {
+        status: "failed",
+        finished_at: nowIso,
+        error_count: ((stale.error_count as number | undefined) ?? 0) + 1,
+        error_summary: "timeout",
+        updated_at: nowIso,
+      });
+      if (typeof stale.id === "string") {
+        staleRunIds.push(stale.id);
+      }
+    }
+
+    const activeRun = runningDocs.find((doc) => {
+      if (timeoutMs <= 0) return true;
+      const startedAtRaw = typeof doc.started_at === "string" ? doc.started_at : null;
+      const startedAtMs = startedAtRaw ? new Date(startedAtRaw).getTime() : Number.NaN;
+      if (!Number.isFinite(startedAtMs)) {
+        return true;
+      }
+      return nowMs - startedAtMs <= timeoutMs;
+    });
+
+    if (activeRun) {
+        return {
+          created: false,
+          reason: "running",
+          run: stripMetadata(activeRun),
+          timed_out_run_id: staleRunIds.length > 0 ? staleRunIds[0] : null,
+        };
+    }
+
+    const row = {
+      id: crypto.randomUUID(),
+      source_type: args.source_type,
+      source_id: args.source_id ?? null,
+      feed: args.feed ?? null,
+      trigger: args.trigger,
+      status: "running",
+      started_at: args.started_at ?? nowIso,
+      finished_at: null,
+      new_count: 0,
+      updated_count: 0,
+      error_count: 0,
+      error_summary: null,
+      coverage_pct: null,
+      missing_fields_count: null,
+      parse_confidence: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+    await db.insert("ingestion_runs", row);
+    return {
+      created: true,
+      reason: staleRunIds.length > 0 ? "timeout_reclaimed" : "started",
+      run: row,
+      timed_out_run_id: staleRunIds.length > 0 ? staleRunIds[0] : null,
+    };
   },
 });
 

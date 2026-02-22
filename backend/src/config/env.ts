@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSupportedPair, resolveSupportedPair } from "./market_catalog";
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === "boolean") return value;
@@ -11,7 +12,7 @@ const booleanFromEnv = z.preprocess((value) => {
 }, z.boolean());
 
 const envSchema = z.object({
-  CONVEX_URL: z.string().url(),
+  CONVEX_URL: z.string().url().optional(),
   TRADINGVIEW_PROFILE_URL: z.string().url().optional(),
   TRADINGVIEW_HTML_PATH: z.string().optional(),
   TRADINGVIEW_USE_HTML: booleanFromEnv.default(false),
@@ -59,10 +60,23 @@ const envSchema = z.object({
   BINGX_SECRET_KEY: z.string().optional(),
   BINGX_BASE_URL: z.string().url().optional(),
   BINGX_RECV_WINDOW: z.coerce.number().int().positive().default(5000),
+  TIMESCALE_MARKET_DATA_ENABLED: booleanFromEnv.default(false),
+  TIMESCALE_RL_OPS_ENABLED: booleanFromEnv.default(false),
+  TIMESCALE_URL: z.string().optional(),
+  TIMESCALE_SCHEMA: z.string().default("public"),
   BINGX_MARKET_DATA_MOCK: booleanFromEnv.default(false),
+  MARKET_GOLD_PAIRS: z.string().optional(),
+  MARKET_CRYPTO_PAIRS: z.string().optional(),
+  BINGX_MARKET_DATA_PAIRS: z.string().optional(),
   BINGX_MARKET_DATA_INTERVALS: z.string().optional(),
   BINGX_MARKET_DATA_INTERVAL_MIN: z.coerce.number().int().positive().default(1),
   BINGX_MARKET_DATA_BACKFILL: booleanFromEnv.default(true),
+  BINGX_FULL_BACKFILL_ENABLED: booleanFromEnv.default(false),
+  BINGX_FULL_BACKFILL_FORCE: booleanFromEnv.default(false),
+  BINGX_FULL_BACKFILL_MAX_BATCHES: z.coerce.number().int().positive().default(10000),
+  BINGX_FULL_BACKFILL_OPEN_GAP_THRESHOLD: z.coerce.number().int().nonnegative().default(1),
+  BINGX_FULL_BACKFILL_NON_OK_SOURCE_THRESHOLD: z.coerce.number().int().nonnegative().default(1),
+  BINGX_FULL_BACKFILL_ALERT_ENABLED: booleanFromEnv.default(true),
   BINGX_WS_ENABLED: booleanFromEnv.default(true),
   BINGX_WS_URL: z.string().url().optional(),
   BINGX_WS_DEPTH_LEVEL: z.coerce.number().int().positive().default(5),
@@ -96,7 +110,11 @@ const envSchema = z.object({
   RL_ENFORCE_PROVENANCE: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_ENABLED: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
-  RL_ONLINE_LEARNING_PAIR: z.enum(["Gold-USDT", "XAUTUSDT", "PAXGUSDT"]).default("Gold-USDT"),
+  RL_ONLINE_LEARNING_PAIR: z
+    .string()
+    .default("XAUTUSDT")
+    .transform((value) => resolveSupportedPair(value) ?? value)
+    .refine((value) => isSupportedPair(value), "Unsupported RL_ONLINE_LEARNING_PAIR"),
   RL_ONLINE_LEARNING_TRAIN_WINDOW_MIN: z.coerce.number().int().positive().default(360),
   RL_ONLINE_LEARNING_EVAL_WINDOW_MIN: z.coerce.number().int().positive().default(120),
   RL_ONLINE_LEARNING_EVAL_LAG_MIN: z.coerce.number().int().nonnegative().default(1),
@@ -105,6 +123,21 @@ const envSchema = z.object({
   RL_ONLINE_LEARNING_TIMESTEPS: z.coerce.number().int().positive().default(500),
   RL_ONLINE_LEARNING_DECISION_THRESHOLD: z.coerce.number().positive().default(0.2),
   RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD: booleanFromEnv.default(true),
+  RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA: z.coerce.number().default(0),
+  RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA: z.coerce.number().default(0),
+  RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA: z.coerce.number().nonnegative().default(0.05),
+  RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA: z.coerce.number().int().default(-5),
+  RL_PPO_LEVERAGE_DEFAULT: z.coerce.number().positive().default(3),
+  RL_PPO_TAKER_FEE_BPS: z.coerce.number().nonnegative().default(4),
+  RL_PPO_SLIPPAGE_BPS: z.coerce.number().nonnegative().default(1),
+  RL_PPO_FUNDING_WEIGHT: z.coerce.number().nonnegative().default(1),
+  RL_PPO_DRAWDOWN_PENALTY: z.coerce.number().nonnegative().default(0),
+  RL_PPO_FEEDBACK_ROUNDS: z.coerce.number().int().nonnegative().default(1),
+  RL_PPO_FEEDBACK_TIMESTEPS: z.coerce.number().int().positive().default(256),
+  RL_PPO_FEEDBACK_HARD_RATIO: z.coerce.number().min(0).max(1).default(0.3),
+  RL_FEATURE_OOD_ZSCORE_LIMIT: z.coerce.number().positive().default(6),
+  RL_FEATURE_MAX_MISSING_CRITICAL: z.coerce.number().int().nonnegative().default(0),
+  RL_FEATURE_MAX_FRESHNESS_SEC: z.coerce.number().int().positive().default(180),
 });
 
 export type Env = z.infer<typeof envSchema>;

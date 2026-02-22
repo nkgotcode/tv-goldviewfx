@@ -44,10 +44,26 @@ def test_train_policy_requires_sb3(monkeypatch):
 def test_train_policy_artifact_roundtrip():
     pytest.importorskip("stable_baselines3")
 
-    result = train_policy(_windows(), TrainingConfig(timesteps=5, seed=7))
+    result = train_policy(
+        _windows(),
+        TrainingConfig(
+            timesteps=5,
+            seed=7,
+            leverage=3.0,
+            taker_fee_bps=4.0,
+            slippage_bps=1.0,
+            funding_weight=1.0,
+            drawdown_penalty=0.1,
+            feedback_rounds=1,
+            feedback_timesteps=4,
+            feedback_hard_ratio=0.5,
+        ),
+    )
     payload = base64.b64decode(result.artifact_base64)
 
     assert result.algorithm_label == "PPO"
+    assert "feedback_rounds=1" in result.hyperparameter_summary
+    assert "leverage=3.0" in result.hyperparameter_summary
     assert result.artifact_size_bytes == len(payload)
     assert sha256(payload).hexdigest() == result.artifact_checksum
 

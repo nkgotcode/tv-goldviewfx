@@ -2,10 +2,10 @@ import { test, expect } from "bun:test";
 import { enqueueRetry, processRetryQueue } from "../../src/services/retry_queue_service";
 import { listDueRetryQueueItems } from "../../src/db/repositories/retry_queue";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("retry queue tests require Convex configuration", () => {});
+  test.skip("retry queue tests require database configuration", () => {});
 } else {
   test("retry queue dedupes by key", async () => {
     const first = await enqueueRetry({

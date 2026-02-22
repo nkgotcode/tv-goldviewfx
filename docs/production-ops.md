@@ -1,4 +1,4 @@
-# Production Operations (Convex CLI)
+# Production Operations (Convex + Timescale)
 
 ## Deploy Convex functions
 
@@ -31,6 +31,19 @@ npx convex export --path <directoryPath>
 
 See the Convex data import/export docs for supported formats and limits.
 
+## Configure Timescale/Postgres backends
+
+Set these environment variables for Timescale-backed backend paths:
+
+- `TIMESCALE_URL` — Postgres/Timescale connection string.
+- `TIMESCALE_RL_OPS_ENABLED=true` — RL/ops state repositories use Postgres.
+- `TIMESCALE_MARKET_DATA_ENABLED=true` — BingX market-data repositories use Postgres.
+
+Notes:
+
+- Backend bootstrap no longer hard-requires `CONVEX_URL` when Timescale paths are enabled.
+- `CONVEX_URL` is still required for Convex-backed routes and E2E fixtures.
+
 ## Daemonize API + worker
 
 ```bash
@@ -50,6 +63,8 @@ See the Convex data import/export docs for supported formats and limits.
 - Account risk summary is available at `GET /ops/trading/risk` (exposure, daily loss, circuit breaker state).
 - Decision snapshots log data integrity gate outcomes for provenance auditing.
 - Enable strict decision provenance with `RL_ENFORCE_PROVENANCE=true` once artifacts + datasets are fully backfilled.
+- RL/ops state can run on Postgres via `TIMESCALE_RL_OPS_ENABLED=true` and `TIMESCALE_URL`.
+- Market-data repositories can run on Postgres via `TIMESCALE_MARKET_DATA_ENABLED=true`.
 - Observability metrics are stored in `observability_metrics`, with alerts surfaced at `GET /ops/alerts`.
 - Retry queue visibility: `GET /ops/retry-queue` for pending retries.
 - Disaster recovery runbook: `docs/disaster-recovery.md`.
@@ -66,10 +81,12 @@ The following production blockers have been addressed and are tracked in `specs/
 - **Search/query scalability**: text search no longer uses `ilike`/`or` in Convex queries; searches require source/time bounds with capped windows to avoid full scans.
 - **Exit/cancel flow**: manual close/cancel endpoints are available with reduce-only order support.
 - **Allowed instrument enforcement**: `allowed_instruments` is enforced on run start and trade execution paths.
+- **Artifact persistence fallback**: model artifacts persist to `convex://storage/...` when Convex storage is configured, otherwise `file://...` fallback is used.
 
 ## Data hygiene
 
-- Use the Convex dashboard data view to inspect or remove test records.
+- Use the Convex dashboard data view to inspect/remove Convex-backed test records.
+- Use SQL (`psql`, Supabase SQL editor, or equivalent) to inspect/remove Timescale-backed RL/ops and market-data records.
 - For full table resets, import an empty JSONL file with `--replace`:
 
 ```bash

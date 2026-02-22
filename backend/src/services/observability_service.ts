@@ -169,3 +169,55 @@ export async function recordDecisionConfidenceMetric(params: {
     });
   }
 }
+
+export async function recordFeatureQualityMetrics(params: {
+  runId: string;
+  pair: string;
+  missingCount: number;
+  oodScore: number;
+  freshnessSeconds?: number | null;
+  traceId?: string | null;
+}) {
+  const env = loadEnv();
+  await insertObservabilityMetric({
+    name: "feature_missing_count",
+    value: params.missingCount,
+    unit: "count",
+    tags: { run_id: params.runId, pair: params.pair, trace_id: params.traceId ?? "" },
+  });
+  await insertObservabilityMetric({
+    name: "feature_ood_score",
+    value: params.oodScore,
+    unit: "score",
+    tags: { run_id: params.runId, pair: params.pair, trace_id: params.traceId ?? "" },
+  });
+  if (params.freshnessSeconds !== null && params.freshnessSeconds !== undefined) {
+    await insertObservabilityMetric({
+      name: "feature_freshness_seconds",
+      value: params.freshnessSeconds,
+      unit: "seconds",
+      tags: { run_id: params.runId, pair: params.pair, trace_id: params.traceId ?? "" },
+    });
+  }
+
+  if (params.missingCount > env.RL_FEATURE_MAX_MISSING_CRITICAL) {
+    await insertOpsAlert({
+      category: "feature_quality",
+      severity: "high",
+      metric: "feature_missing_count",
+      value: params.missingCount,
+      threshold: env.RL_FEATURE_MAX_MISSING_CRITICAL,
+      metadata: { run_id: params.runId, pair: params.pair, trace_id: params.traceId ?? null },
+    });
+  }
+  if (params.oodScore > env.RL_FEATURE_OOD_ZSCORE_LIMIT) {
+    await insertOpsAlert({
+      category: "feature_quality",
+      severity: "high",
+      metric: "feature_ood_score",
+      value: params.oodScore,
+      threshold: env.RL_FEATURE_OOD_ZSCORE_LIMIT,
+      metadata: { run_id: params.runId, pair: params.pair, trace_id: params.traceId ?? null },
+    });
+  }
+}

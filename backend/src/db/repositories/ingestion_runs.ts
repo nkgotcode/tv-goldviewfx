@@ -16,6 +16,42 @@ export type IngestionRunInsert = {
   parse_confidence?: number | null;
 };
 
+export type StartIngestionRunIfIdleResult = {
+  created: boolean;
+  reason: string;
+  run: {
+    id: string;
+    source_type: string;
+    source_id: string | null;
+    feed: string | null;
+    trigger: string;
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+  } | null;
+  timed_out_run_id: string | null;
+};
+
+function normalizeRunRecord(value: unknown): StartIngestionRunIfIdleResult["run"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string") {
+    return null;
+  }
+  return {
+    id: row.id,
+    source_type: typeof row.source_type === "string" ? row.source_type : "",
+    source_id: typeof row.source_id === "string" ? row.source_id : null,
+    feed: typeof row.feed === "string" ? row.feed : null,
+    trigger: typeof row.trigger === "string" ? row.trigger : "",
+    status: typeof row.status === "string" ? row.status : "",
+    started_at: typeof row.started_at === "string" ? row.started_at : "",
+    finished_at: typeof row.finished_at === "string" ? row.finished_at : null,
+  };
+}
+
 export async function createIngestionRun(payload: IngestionRunInsert) {
   try {
     return await convexClient.mutation(anyApi.ingestion_runs.create, {
@@ -35,6 +71,39 @@ export async function createIngestionRun(payload: IngestionRunInsert) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Mutation failed";
     throw new Error(`create ingestion run: ${message}`);
+  }
+}
+
+export async function startIngestionRunIfIdle(payload: {
+  sourceType: string;
+  sourceId?: string | null;
+  feed?: string | null;
+  trigger: string;
+  timeoutMinutes?: number;
+  startedAt?: string;
+}): Promise<StartIngestionRunIfIdleResult> {
+  try {
+    const result = await convexClient.mutation(anyApi.ingestion_runs.startIfIdle, {
+      source_type: payload.sourceType,
+      source_id: payload.sourceId ?? null,
+      feed: payload.feed ?? null,
+      trigger: payload.trigger,
+      timeout_minutes: payload.timeoutMinutes ?? 0,
+      started_at: payload.startedAt,
+    });
+    if (!result) {
+      throw new Error("missing data");
+    }
+    const record = result as Record<string, unknown>;
+    return {
+      created: Boolean(record.created),
+      reason: String(record.reason ?? "unknown"),
+      run: normalizeRunRecord(record.run),
+      timed_out_run_id: typeof record.timed_out_run_id === "string" ? record.timed_out_run_id : null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Mutation failed";
+    throw new Error(`start ingestion run if idle: ${message}`);
   }
 }
 

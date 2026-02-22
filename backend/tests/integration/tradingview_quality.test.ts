@@ -3,7 +3,7 @@ import { convex } from "../../src/db/client";
 import { getOrCreateSource } from "../../src/db/repositories/sources";
 import { createSyncRun, completeSyncRun } from "../../src/db/repositories/sync_runs";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("quality metrics require Convex configuration", () => {});

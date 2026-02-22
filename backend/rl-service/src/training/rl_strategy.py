@@ -23,6 +23,7 @@ class RLSb3StrategyConfig(StrategyConfig, frozen=True):
     model_path: str
     decision_threshold: float = 0.2
     window_size: int = 30
+    technical_config: dict | None = None
 
 
 class RLSb3Strategy(Strategy):
@@ -54,7 +55,7 @@ class RLSb3Strategy(Strategy):
             candles=[self._bar_to_candle(item) for item in self._bars],
             last_price=float(bar.close),
         )
-        features = extract_features(snapshot, [], [], [], [])
+        features = extract_features(snapshot, [], [], [], [], technical_config=self.config.technical_config)
         observation = np.array(vectorize_features(features), dtype=float)
         action, _ = self._model.predict(observation, deterministic=True)
         try:
@@ -94,9 +95,14 @@ class RLSb3Strategy(Strategy):
         return datetime.fromtimestamp(seconds, tz=timezone.utc)
 
     def _resolve_pair(self):
-        value = str(self._instrument_id)
-        if value.startswith("GOLDUSDT"):
+        value = str(self._instrument_id).upper()
+        symbol = value.split(".")[0]
+        if symbol.startswith("GOLDUSDT"):
             return "Gold-USDT"
-        if value.startswith("XAUTUSDT"):
+        if symbol.startswith("XAUTUSDT"):
             return "XAUTUSDT"
-        return "PAXGUSDT"
+        if symbol.startswith("PAXGUSDT"):
+            return "PAXGUSDT"
+        if symbol.endswith("USDT") and len(symbol) > 4:
+            return f"{symbol[:-4]}-USDT"
+        return "Gold-USDT"

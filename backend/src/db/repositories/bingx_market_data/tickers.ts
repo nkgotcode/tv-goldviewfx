@@ -1,8 +1,14 @@
 import { convexClient } from "../../client";
 import { anyApi } from "convex/server";
+import {
+  getTimescaleLatestTickerTime,
+  listTimescaleTickers,
+  marketDataUsesTimescale,
+  upsertTimescaleTickers,
+} from "../../timescale/market_data";
 
 export type BingxTickerInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   last_price: number;
   volume_24h?: number | null;
   price_change_24h?: number | null;
@@ -22,6 +28,9 @@ async function upsertBingxTickerBatch(rows: BingxTickerInsert[]) {
 }
 
 export async function upsertBingxTickers(rows: BingxTickerInsert[]) {
+  if (marketDataUsesTimescale()) {
+    return upsertTimescaleTickers(rows);
+  }
   if (rows.length === 0) return [];
   if (rows.length <= MAX_TICKER_UPSERT_BATCH) {
     return upsertBingxTickerBatch(rows);
@@ -44,10 +53,68 @@ export async function upsertBingxTickers(rows: BingxTickerInsert[]) {
 }
 
 export async function getLatestTickerTime(pair: BingxTickerInsert["pair"]) {
+  if (marketDataUsesTimescale()) {
+    return getTimescaleLatestTickerTime(pair);
+  }
   try {
     return await convexClient.query(anyApi.bingx_tickers.latestTime, { pair });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Query failed";
     throw new Error(`get latest ticker time: ${message}`);
+  }
+}
+
+export async function listBingxTickers(filters: {
+  pair: BingxTickerInsert["pair"];
+  start?: string;
+  end?: string;
+  limit?: number;
+}) {
+  if (marketDataUsesTimescale()) {
+    return listTimescaleTickers(filters);
+  }
+  try {
+    if (filters.limit !== undefined) {
+      return await convexClient.query(anyApi.bingx_tickers.listByRange, {
+        pair: filters.pair,
+        start: filters.start,
+        end: filters.end,
+        limit: filters.limit,
+        order: "asc",
+      });
+    }
+
+    const results: Array<Record<string, unknown>> = [];
+    const pageLimit = 2000;
+    let nextStart = filters.start;
+    let lastCapturedAt: string | null = null;
+
+    while (true) {
+      const rows = await convexClient.query(anyApi.bingx_tickers.listByRange, {
+        pair: filters.pair,
+        start: nextStart,
+        end: filters.end,
+        limit: pageLimit,
+        order: "asc",
+      });
+      results.push(...rows);
+      if (rows.length < pageLimit) {
+        break;
+      }
+      const last = rows[rows.length - 1] as { captured_at?: string };
+      if (!last?.captured_at || last.captured_at === lastCapturedAt) {
+        break;
+      }
+      lastCapturedAt = last.captured_at;
+      const nextMs = new Date(last.captured_at).getTime() + 1;
+      if (!Number.isFinite(nextMs)) {
+        break;
+      }
+      nextStart = new Date(nextMs).toISOString();
+    }
+    return results;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Query failed";
+    throw new Error(`list bingx tickers: ${message}`);
   }
 }

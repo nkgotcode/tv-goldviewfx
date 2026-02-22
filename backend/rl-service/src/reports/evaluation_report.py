@@ -15,6 +15,7 @@ def build_evaluation_report(
     dataset_hash: str | None = None,
     artifact_uri: str | None = None,
     backtest_run_id: str | None = None,
+    metadata: dict | None = None,
 ) -> EvaluationReport:
     decision = evaluate_promotion(metrics, criteria or PromotionCriteria())
     status = "pass" if decision.promote else "fail"
@@ -30,5 +31,6 @@ def build_evaluation_report(
         dataset_hash=dataset_hash,
         artifact_uri=artifact_uri,
         backtest_run_id=backtest_run_id,
+        metadata=metadata or {},
         created_at=datetime.now(timezone.utc),
     )

@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { rlApiRequest } from "../fixtures/rl_api";
 import { upsertBingxCandles } from "../../src/db/repositories/bingx_market_data/candles";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 function buildCandles(start: Date, count: number, intervalMs: number) {
   const rows = [];
@@ -28,7 +28,7 @@ function buildCandles(start: Date, count: number, intervalMs: number) {
 }
 
 if (!hasEnv) {
-  test.skip("rl training requires Convex configuration", () => {});
+  test.skip("rl training requires database configuration", () => {});
 } else {
   test("training endpoint persists version and artifact", async () => {
     const end = new Date();

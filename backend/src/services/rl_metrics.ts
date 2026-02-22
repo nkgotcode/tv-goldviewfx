@@ -1,5 +1,5 @@
 import { logInfo } from "./logger";
-import { recordDecisionLatencyMetric } from "./observability_service";
+import { recordDecisionLatencyMetric, recordFeatureQualityMetrics } from "./observability_service";
 
 export function recordDecisionLatency(params: {
   runId: string;
@@ -45,4 +45,30 @@ export function recordLearningWindow(params: {
     duration_minutes: durationMinutes,
     status: params.status,
   });
+}
+
+export function recordFeatureQuality(params: {
+  runId: string;
+  pair: string;
+  missingCount: number;
+  oodScore: number;
+  freshnessSeconds?: number | null;
+  traceId?: string | null;
+}) {
+  logInfo("rl.metrics.feature_quality", {
+    run_id: params.runId,
+    pair: params.pair,
+    missing_count: params.missingCount,
+    ood_score: params.oodScore,
+    freshness_seconds: params.freshnessSeconds ?? null,
+    trace_id: params.traceId ?? null,
+  });
+  recordFeatureQualityMetrics({
+    runId: params.runId,
+    pair: params.pair,
+    missingCount: params.missingCount,
+    oodScore: params.oodScore,
+    freshnessSeconds: params.freshnessSeconds ?? null,
+    traceId: params.traceId ?? null,
+  }).catch(() => {});
 }

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { insertIdea, listIdeas } from "../../src/db/repositories/ideas";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("idea search tests require Convex configuration", () => {});

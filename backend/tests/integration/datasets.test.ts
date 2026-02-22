@@ -4,7 +4,7 @@ import { insertDatasetVersion } from "../../src/db/repositories/dataset_versions
 import { insertDatasetLineage } from "../../src/db/repositories/dataset_lineage";
 import { insertFeatureSetVersion } from "../../src/db/repositories/feature_set_versions";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("dataset routes require Convex configuration", () => {});

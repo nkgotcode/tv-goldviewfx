@@ -71,26 +71,31 @@ cd backend/rl-service
 uv run uvicorn server:app --host 0.0.0.0 --port 9101
 ```
 
-## Convex deployments
+## Data plane deployments
 
-- Start a dev deployment and generate Convex config:
+- Convex (legacy app tables + E2E fixtures):
 
 ```bash
 npx convex dev
 ```
 
-- Deploy functions and schema updates to production:
+- Convex deploy:
 
 ```bash
 npx convex deploy
 ```
 
-- Import/export data as needed:
+- Convex import/export:
 
 ```bash
 npx convex import --table <tableName> <path>
 npx convex export --path <directoryPath>
 ```
+
+- Timescale/Postgres (RL/ops + market data paths):
+  - Set `TIMESCALE_URL`.
+  - Set `TIMESCALE_RL_OPS_ENABLED=true` for RL/ops state repositories.
+  - Set `TIMESCALE_MARKET_DATA_ENABLED=true` for BingX market data repositories.
 
 See `docs/production-ops.md` for deployment and data import/export notes.
 For legacy data migration, see `docs/convex-migration.md`.
@@ -115,9 +120,12 @@ For legacy data migration, see `docs/convex-migration.md`.
 - Scheduling uses `TELEGRAM_INGEST_INTERVAL_MIN` (default 60) unless overridden by ops
   ingestion config for that source.
 
-## Testing (Convex dev deployment)
+## Testing (DB-backed integration + Convex E2E)
 
-- All unit, integration, and E2E tests require `CONVEX_URL` pointing at a Convex dev deployment.
+- Backend unit/integration tests use `backend/tests/setup.ts` and auto-enable DB fixtures when either:
+  - `TIMESCALE_RL_OPS_ENABLED=true` with a reachable `TIMESCALE_URL`, or
+  - `CONVEX_URL` is reachable.
+- E2E tests still require `CONVEX_URL` because E2E fixtures/reset are Convex-backed.
 - Follow the workflow in `docs/rl-test-data.md` before running test suites.
 - For deterministic E2E ingestion runs, start the backend with:
   `TRADINGVIEW_USE_HTML=true TRADINGVIEW_HTML_PATH=../tradingview.html FETCH_FULL=false TELEGRAM_MESSAGES_PATH=../tests/e2e/fixtures/telegram_messages.json`
@@ -152,10 +160,10 @@ For legacy data migration, see `docs/convex-migration.md`.
   beyond the API’s recent-trade window.
 - Open interest and mark/index prices are snapshotted on each ingest run to build
   time-series history from the moment ingestion starts.
-- BingX candles are stored in Convex with an indexed `(pair, interval, open_time)` key
-  for efficient range reads. Dataset builds prefer Convex candles and only top up
-  missing head/tail bars from the live BingX API to stay fresh without overloading
-  the exchange.
+- BingX candles are stored in Timescale/Postgres when `TIMESCALE_MARKET_DATA_ENABLED=true`
+  (fallback to Convex repositories otherwise).
+- Dataset builds prefer persisted candles and only top up missing head/tail bars from
+  the live BingX API to stay fresh without overloading the exchange.
 
 ## BingX WebSocket market data
 

@@ -104,3 +104,35 @@ export const earliestTime = query({
     return row?.funding_time ?? null;
   },
 });
+
+export const listByRange = query({
+  args: {
+    pair: v.string(),
+    start: v.optional(v.string()),
+    end: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    order: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+  },
+  handler: async ({ db }, args) => {
+    const queryBuilder = db
+      .query("bingx_funding_rates")
+      .withIndex("by_pair_funding_time", (q) => {
+        if (args.start && args.end) {
+          return q.eq("pair", args.pair).gte("funding_time", args.start).lte("funding_time", args.end);
+        }
+        if (args.start) {
+          return q.eq("pair", args.pair).gte("funding_time", args.start);
+        }
+        if (args.end) {
+          return q.eq("pair", args.pair).lte("funding_time", args.end);
+        }
+        return q.eq("pair", args.pair);
+      })
+      .order(args.order === "desc" ? "desc" : "asc");
+
+    if (args.limit !== undefined) {
+      return queryBuilder.take(args.limit);
+    }
+    return queryBuilder.collect();
+  },
+});

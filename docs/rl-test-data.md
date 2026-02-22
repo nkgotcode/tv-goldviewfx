@@ -1,14 +1,23 @@
-# RL Test Data and Convex Dev Deployments
+# RL Test Data and DB-Backed Test Environments
 
-This feature requires all unit, integration, and E2E tests to run against a Convex dev deployment with predictable data.
+This feature requires deterministic test data across backend, RL service, and E2E suites.
 
-## Convex Dev Requirement
+## Backend DB Requirement
 
-- All test suites MUST use a Convex dev deployment (no shared or production databases).
-- Tests should fail fast if `CONVEX_URL` is missing.
-- Use `npx convex dev` to create or attach a dev deployment and populate `.env.local`.
-- Convex schema/indexes (including `bingx_candles`) are applied on `npx convex dev`;
-  make sure the schema is loaded before running dataset-heavy tests.
+- Backend unit/integration tests can run against:
+  - Timescale/Postgres (`TIMESCALE_RL_OPS_ENABLED=true` + `TIMESCALE_URL`), or
+  - Convex (`CONVEX_URL`) for legacy paths.
+- `backend/tests/setup.ts` sets:
+  - `TIMESCALE_TEST_ENABLED`
+  - `CONVEX_TEST_ENABLED`
+  - `DB_TEST_ENABLED` (true when either backend is reachable)
+- Do not run tests against shared/production databases.
+
+## Convex Requirement (E2E)
+
+- Current E2E reset/seed fixtures are Convex-backed.
+- E2E runs still require a reachable `CONVEX_URL`.
+- Use `npx convex dev` to create/attach a dev deployment and populate `.env.local`.
 
 ## Seed Data Strategy
 
@@ -19,7 +28,7 @@ This feature requires all unit, integration, and E2E tests to run against a Conv
 
 ## Test Data Loading
 
-- Backend integration tests require `CONVEX_URL` (see `backend/tests/setup.ts`).
+- Backend integration tests require a reachable DB backend (`DB_TEST_ENABLED=true` set by `backend/tests/setup.ts`).
 - E2E tests validate `CONVEX_URL` via `tests/e2e/fixtures/convex.ts`.
 - RL service tests use synthetic fixtures in `backend/rl-service/tests/fixtures/`.
 
@@ -32,7 +41,10 @@ This feature requires all unit, integration, and E2E tests to run against a Conv
 
 ## Environment Variables
 
-- `CONVEX_URL` (Convex deployment URL)
+- `TIMESCALE_RL_OPS_ENABLED` (`true` to use Timescale RL/ops repositories in backend tests)
+- `TIMESCALE_MARKET_DATA_ENABLED` (`true` to use Timescale market-data repositories)
+- `TIMESCALE_URL` (Postgres/Timescale connection URL)
+- `CONVEX_URL` (required for Convex-backed E2E fixtures; optional for Timescale-backed backend tests)
 - `E2E_API_BASE_URL` (backend API base URL)
 - `API_TOKEN` (if auth is required for E2E requests)
 - `TRADINGVIEW_USE_HTML` (set true to use `TRADINGVIEW_HTML_PATH` fixtures)
@@ -44,14 +56,13 @@ This feature requires all unit, integration, and E2E tests to run against a Conv
 
 ## Expected Workflow
 
-1. Run `npx convex dev` (or set `CONVEX_URL` explicitly).
-2. Optionally import seed data via `npx convex import`.
-3. Run backend unit + integration tests.
-4. Run RL service unit + integration tests using `uv` (`uv run pytest`).
-5. Start the RL service (`uv run uvicorn server:app --host 0.0.0.0 --port 9101`).
-6. Start the backend with fixture envs (`TRADINGVIEW_USE_HTML=true`, `FETCH_FULL=false`, `TELEGRAM_MESSAGES_PATH=...`) for E2E determinism.
-7. Run E2E tests.
-8. Or run the scripted flow via `./scripts/e2e-local.sh`.
+1. For backend integration testing, configure Timescale (`TIMESCALE_URL`, `TIMESCALE_RL_OPS_ENABLED=true`) or Convex.
+2. Run backend tests with preload setup: `cd backend && bun test --preload ./tests/setup.ts`.
+3. Run RL service unit + integration tests using `uv` (`uv run pytest`).
+4. For E2E, run `npx convex dev` (or set `CONVEX_URL` explicitly).
+5. Start the backend with fixture envs (`TRADINGVIEW_USE_HTML=true`, `FETCH_FULL=false`, `TELEGRAM_MESSAGES_PATH=...`) for E2E determinism.
+6. Run E2E tests.
+7. Or run the scripted flow via `./scripts/e2e-local.sh`.
 
 ## Guardrails
 

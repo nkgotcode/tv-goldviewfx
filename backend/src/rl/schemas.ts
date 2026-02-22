@@ -1,6 +1,11 @@
 import { z } from "zod";
+import { isSupportedPair, resolveSupportedPair } from "../config/market_catalog";
 
-export const tradingPairSchema = z.enum(["Gold-USDT", "XAUTUSDT", "PAXGUSDT"]);
+export const tradingPairSchema = z
+  .string()
+  .min(1)
+  .transform((value) => resolveSupportedPair(value) ?? value.trim())
+  .refine((value) => isSupportedPair(value), "Unsupported trading pair");
 export const agentModeSchema = z.enum(["paper", "live"]);
 export const agentRunStatusSchema = z.enum(["running", "paused", "stopped"]);
 export const dataSourceTypeSchema = z.enum([
@@ -66,6 +71,16 @@ export const evaluationRequestSchema = z.object({
   decisionThreshold: z.number().nonnegative().optional(),
   windowSize: z.number().int().positive().optional(),
   stride: z.number().int().positive().optional(),
+  walkForward: z
+    .object({
+      folds: z.number().int().min(1).max(24),
+      purgeBars: z.number().int().nonnegative().optional(),
+      embargoBars: z.number().int().nonnegative().optional(),
+      minTrainBars: z.number().int().positive().optional(),
+      strict: z.boolean().optional(),
+    })
+    .optional(),
+  featureSchemaFingerprint: z.string().min(8).optional(),
 });
 
 export const trainingRequestSchema = z.object({
@@ -78,6 +93,7 @@ export const trainingRequestSchema = z.object({
   stride: z.number().int().positive().optional(),
   timesteps: z.number().int().positive().optional(),
   seed: z.number().int().optional(),
+  featureSchemaFingerprint: z.string().min(8).optional(),
 });
 
 export const dataSourceConfigSchema = z.object({

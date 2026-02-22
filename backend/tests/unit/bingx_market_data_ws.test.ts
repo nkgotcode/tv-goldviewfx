@@ -11,12 +11,12 @@ test("builds BingX WS topics for pairs and intervals", () => {
 
   expect(topics).toEqual(
     expect.arrayContaining([
-      "GOLD-USDT@trade",
-      "GOLD-USDT@ticker",
-      "GOLD-USDT@markPrice",
-      "GOLD-USDT@depth5@500ms",
-      "GOLD-USDT@kline_1m",
-      "GOLD-USDT@kline_5m",
+      "XAUT-USDT@trade",
+      "XAUT-USDT@ticker",
+      "XAUT-USDT@markPrice",
+      "XAUT-USDT@depth5@500ms",
+      "XAUT-USDT@kline_1m",
+      "XAUT-USDT@kline_5m",
     ]),
   );
 });

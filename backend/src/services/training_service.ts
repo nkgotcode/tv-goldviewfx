@@ -2,10 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { insertAgentVersion, getAgentVersion } from "../db/repositories/agent_versions";
 import { getDatasetVersion } from "../db/repositories/dataset_versions";
 import { buildDatasetFeatures, createDatasetVersion } from "./dataset_service";
+import { loadEnv } from "../config/env";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { rlServiceClient } from "../rl/client";
 import type { TrainingRequest, TrainingResponse, TradingPair } from "../types/rl";
 import { storeModelArtifact } from "./model_artifact_service";
+import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
 
 export type TrainingRunInput = {
   pair: TradingPair;
@@ -57,6 +59,7 @@ function decodeArtifact(base64Payload: string, expectedChecksum?: string | null)
 }
 
 export async function runTraining(input: TrainingRunInput): Promise<TrainingRunResult> {
+  const env = loadEnv();
   const windowSize = input.windowSize ?? 30;
   const stride = input.stride ?? 1;
   const timesteps = input.timesteps ?? 500;
@@ -72,6 +75,10 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
         windowSize,
         stride,
       });
+  const featureSetVersionId = input.featureSetVersionId ?? dataset.feature_set_version_id ?? null;
+  const featureSchemaFingerprint =
+    (dataset as Record<string, unknown>).feature_schema_fingerprint ??
+    getFeatureSchemaFingerprint(await getFeatureSetConfigById(featureSetVersionId));
 
   const datasetFeatures = await buildDatasetFeatures({
     pair: input.pair,
@@ -80,7 +87,8 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     endAt: dataset.end_at,
     windowSize: dataset.window_size ?? windowSize,
     stride: dataset.stride ?? stride,
-    featureSetVersionId: dataset.feature_set_version_id ?? null,
+    featureSetVersionId,
+    featureSchemaFingerprint: featureSchemaFingerprint as string,
   });
 
   if (datasetFeatures.length === 0) {
@@ -93,12 +101,21 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
     datasetVersionId: dataset.id,
-    featureSetVersionId: input.featureSetVersionId ?? dataset.feature_set_version_id ?? null,
+    featureSetVersionId,
     datasetHash: dataset.dataset_hash ?? dataset.checksum ?? null,
     windowSize: dataset.window_size ?? windowSize,
     stride: dataset.stride ?? stride,
+    leverage: env.RL_PPO_LEVERAGE_DEFAULT,
+    takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+    slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+    fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+    drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+    feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
+    feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
+    feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
     timesteps,
     seed: input.seed ?? null,
+    featureSchemaFingerprint: featureSchemaFingerprint as string,
     datasetFeatures,
   };
 
@@ -114,7 +131,7 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     hyperparameter_summary: trainingResponse.hyperparameterSummary,
     dataset_version_id: dataset.id,
     dataset_hash: dataset.dataset_hash ?? dataset.checksum ?? null,
-    feature_set_version_id: input.featureSetVersionId ?? dataset.feature_set_version_id ?? null,
+    feature_set_version_id: featureSetVersionId,
     status: "evaluating",
   });
 

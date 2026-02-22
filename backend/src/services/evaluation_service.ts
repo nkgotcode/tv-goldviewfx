@@ -1,6 +1,7 @@
 import { listAgentVersions, getAgentVersion } from "../db/repositories/agent_versions";
 import { insertEvaluationReport, listEvaluationReports } from "../db/repositories/evaluation_reports";
 import { getAgentConfig } from "../db/repositories/agent_config";
+import { loadEnv } from "../config/env";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { rlServiceClient } from "../rl/client";
 import type { EvaluationRequest } from "../rl/schemas";
@@ -9,6 +10,7 @@ import { buildDatasetFeatures, createDatasetVersion } from "./dataset_service";
 import { getDatasetVersion } from "../db/repositories/dataset_versions";
 import { evaluateDriftForLatestReport } from "./drift_monitoring_service";
 import { resolveArtifactUrl } from "./model_artifact_service";
+import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
 
 type EvaluationMetrics = {
   win_rate: number;
@@ -20,6 +22,7 @@ type EvaluationMetrics = {
   dataset_hash?: string | null;
   artifact_uri?: string | null;
   backtest_run_id?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type PromotionCriteria = {
@@ -89,6 +92,7 @@ export function normalizeEvaluationReport(
   const datasetHash = (payload.dataset_hash ?? payload.datasetHash ?? null) as string | null;
   const artifactUri = (payload.artifact_uri ?? payload.artifactUri ?? null) as string | null;
   const backtestRunId = (payload.backtest_run_id ?? payload.backtestRunId ?? null) as string | null;
+  const metadata = (payload.metadata ?? null) as Record<string, unknown> | null;
   const status = resolveStatus(
     {
       win_rate: winRate,
@@ -115,6 +119,7 @@ export function normalizeEvaluationReport(
     dataset_hash: datasetHash,
     artifact_uri: artifactUri,
     backtest_run_id: backtestRunId,
+    metadata,
   };
 }
 
@@ -174,6 +179,7 @@ async function resolveAgentVersionId(agentVersionId?: string | null) {
 }
 
 export async function runEvaluation(request: EvaluationRequest) {
+  const env = loadEnv();
   const versionId = await resolveAgentVersionId(request.agentVersionId ?? undefined);
   const version = await getAgentVersion(versionId);
   const agentConfig = await getAgentConfig();
@@ -188,6 +194,12 @@ export async function runEvaluation(request: EvaluationRequest) {
         endAt: request.periodEnd,
         featureSetVersionId: request.featureSetVersionId ?? null,
       });
+  const featureSetVersionId = request.featureSetVersionId ?? dataset.feature_set_version_id ?? null;
+  const featureConfig = await getFeatureSetConfigById(featureSetVersionId);
+  const featureSchemaFingerprint =
+    request.featureSchemaFingerprint ??
+    (dataset as Record<string, unknown>).feature_schema_fingerprint ??
+    getFeatureSchemaFingerprint(featureConfig);
   const datasetFeatures = await buildDatasetFeatures({
     pair: request.pair,
     interval: dataset.interval,
@@ -195,7 +207,8 @@ export async function runEvaluation(request: EvaluationRequest) {
     endAt: dataset.end_at,
     windowSize: dataset.window_size ?? 30,
     stride: dataset.stride ?? 1,
-    featureSetVersionId: dataset.feature_set_version_id ?? null,
+    featureSetVersionId,
+    featureSchemaFingerprint,
   });
   const windowSize = request.windowSize ?? dataset.window_size ?? 30;
   const stride = request.stride ?? dataset.stride ?? 1;
@@ -208,7 +221,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       periodEnd: request.periodEnd,
       agentVersionId: versionId,
       datasetVersionId: dataset.id,
-      featureSetVersionId: request.featureSetVersionId ?? dataset.feature_set_version_id ?? null,
+      featureSetVersionId,
       datasetHash: dataset.dataset_hash ?? dataset.checksum,
       artifactUri: version.artifact_uri ?? null,
       artifactChecksum: version.artifact_checksum ?? null,
@@ -217,6 +230,13 @@ export async function runEvaluation(request: EvaluationRequest) {
       decisionThreshold: request.decisionThreshold ?? null,
       windowSize,
       stride,
+      leverage: env.RL_PPO_LEVERAGE_DEFAULT,
+      takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+      slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+      fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+      drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+      walkForward: request.walkForward ?? null,
+      featureSchemaFingerprint,
       datasetFeatures,
     };
     if (!payload.artifactDownloadUrl && E2E_RUN_ENABLED) {
@@ -230,6 +250,15 @@ export async function runEvaluation(request: EvaluationRequest) {
         windowSize,
         stride,
         timesteps: 200,
+        leverage: env.RL_PPO_LEVERAGE_DEFAULT,
+        takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+        slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+        fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+        drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+        feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
+        feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
+        feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
+        featureSchemaFingerprint,
         datasetFeatures,
       });
       payload.artifactBase64 =
@@ -278,6 +307,7 @@ export async function runEvaluation(request: EvaluationRequest) {
     max_drawdown: report.max_drawdown,
     trade_count: report.trade_count,
     exposure_by_pair: report.exposure_by_pair,
+    metadata: report.metadata ?? null,
     status: report.status,
   });
 

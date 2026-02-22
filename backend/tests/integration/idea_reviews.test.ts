@@ -4,7 +4,7 @@ import { getOrCreateSource } from "../../src/db/repositories/sources";
 import { insertIdea } from "../../src/db/repositories/ideas";
 import { hashContent } from "../../src/services/dedup";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 if (!hasEnv) {
   test.skip("idea review tests require Convex configuration", () => {});

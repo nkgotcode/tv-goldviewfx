@@ -1,4 +1,4 @@
-import { convex } from "../db/client";
+import { listTrades } from "../db/repositories/trades";
 
 export type TradingSummary = {
   generated_at: string;
@@ -28,12 +28,8 @@ function toBucket(date: Date) {
 }
 
 export async function getTradingSummary(): Promise<TradingSummary> {
-  const result = await convex
-    .from("trades")
-    .select("id, instrument, pnl, position_size, quantity, status, created_at")
-    .order("created_at", { ascending: true });
-
-  const trades = result.data ?? [];
+  const { data } = await listTrades({ page: 1, pageSize: 10000 });
+  const trades = [...data].sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
   const filled = trades.filter((trade) => trade.status === "filled");
   const pnlValues = filled.map((trade) => trade.pnl ?? 0);
   const netPnl = pnlValues.reduce((acc, value) => acc + value, 0);
@@ -75,11 +71,8 @@ export async function getTradingSummary(): Promise<TradingSummary> {
 }
 
 export async function getTradingMetrics(): Promise<TradingMetrics> {
-  const result = await convex
-    .from("trades")
-    .select("id, pnl, status, created_at")
-    .order("created_at", { ascending: true });
-  const trades = result.data ?? [];
+  const { data } = await listTrades({ page: 1, pageSize: 10000 });
+  const trades = [...data].sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
   const buckets = new Map<string, { pnl: number; trades: number; wins: number }>();
   for (const trade of trades) {
     if (!trade.created_at) continue;
@@ -107,12 +100,8 @@ export async function getTradingMetrics(): Promise<TradingMetrics> {
 }
 
 export async function getPromotionMetrics(): Promise<PromotionMetrics> {
-  const result = await convex
-    .from("trades")
-    .select("id, pnl, status, created_at")
-    .eq("mode", "paper")
-    .order("created_at", { ascending: true });
-  const trades = result.data ?? [];
+  const { data } = await listTrades({ mode: "paper", page: 1, pageSize: 10000 });
+  const trades = [...data].sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
   const filled = trades.filter((trade) => trade.status === "filled");
   const netPnl = filled.reduce((acc, trade) => acc + (trade.pnl ?? 0), 0);
   const wins = filled.filter((trade) => (trade.pnl ?? 0) > 0).length;

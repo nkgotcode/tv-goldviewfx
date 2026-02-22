@@ -1,7 +1,6 @@
-import { convex } from "../db/client";
 import { insertMarketInputSnapshot } from "../db/repositories/market_input_snapshots";
 import { insertTradeDecision } from "../db/repositories/trade_decisions";
-import { insertTrade, updateTradeMetrics } from "../db/repositories/trades";
+import { insertTrade, listTradesByStatuses, updateTradeMetrics } from "../db/repositories/trades";
 import { insertTradeExecution } from "../db/repositories/trade_executions";
 import { getAgentConfig } from "../db/repositories/agent_config";
 import { getAgentVersion } from "../db/repositories/agent_versions";
@@ -17,13 +16,14 @@ import { executeTrade } from "./trade_execution";
 import { transitionTradeStatus } from "./trade_state_machine";
 import { evaluateDataSourceGate } from "./data_source_status_service";
 import { evaluateDataIntegrityGate } from "./data_integrity_service";
-import { recordDecisionLatency } from "./rl_metrics";
+import { recordDecisionLatency, recordFeatureQuality } from "./rl_metrics";
 import { recordDecisionConfidenceMetric } from "./observability_service";
 import { applySourceGates } from "./source_gating_service";
 import { loadFeatureInputs } from "../rl/data_loader";
-import { getFeatureSetConfigById } from "./feature_set_service";
+import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
 import { resolveArtifactUrl } from "./model_artifact_service";
 import { isInstrumentAllowed } from "./instrument_policy";
+import { evaluateFeatureQualityGate } from "./feature_quality_gate";
 
 const VOLATILITY_SPIKE_THRESHOLD = 0.05;
 const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
@@ -127,22 +127,18 @@ export function mapInferenceToDecision(
 }
 
 async function countOpenPositions(pair: string, runId?: string | null, startedAt?: string | null) {
-  const query = convex
-    .from("trades")
-    .select("id", { count: "exact", head: true })
-    .eq("instrument", pair)
-    .in("status", ["placed", "filled"])
-    .is("closed_at", null);
-  if (runId) {
-    query.eq("agent_run_id", runId);
-  } else if (E2E_RUN_ENABLED && startedAt) {
-    query.gte("created_at", startedAt);
-  }
-  const result = await query;
-  if (result.error) {
-    return 0;
-  }
-  return result.count ?? 0;
+  const trades = await listTradesByStatuses(["placed", "filled"]);
+  return trades.filter((trade) => {
+    if (trade.instrument !== pair) return false;
+    if (trade.closed_at) return false;
+    if (runId) {
+      return trade.agent_run_id === runId;
+    }
+    if (E2E_RUN_ENABLED && startedAt) {
+      return new Date(trade.created_at ?? 0).getTime() >= new Date(startedAt).getTime();
+    }
+    return true;
+  }).length;
 }
 
 export async function runDecisionPipeline(request: DecisionRequest): Promise<DecisionResult> {
@@ -185,6 +181,7 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   ];
 
   const featureConfig = await getFeatureSetConfigById(featureSetVersionId ?? null);
+  const featureSchemaFingerprint = getFeatureSchemaFingerprint(featureConfig);
   const windowStart = request.market.candles?.[0]?.timestamp;
   const windowEnd = request.market.candles?.[request.market.candles.length - 1]?.timestamp;
   const loadedInputs =
@@ -245,6 +242,7 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
     artifactUri: artifactUri ?? undefined,
     artifactChecksum: artifactChecksum ?? undefined,
     artifactDownloadUrl: artifactDownloadUrl ?? undefined,
+    featureSchemaFingerprint,
   };
 
   let forcedHoldReason: string | null = null;
@@ -309,8 +307,52 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   }
 
   const rlConfig = loadRlServiceConfig();
+  if (run.mode === "live" && rlConfig.mock && !E2E_RUN_ENABLED) {
+    warnings.push("rl_service_mock_enabled");
+    setForcedHoldReason("rl_service_mock_enabled");
+    await pauseAgentRun(run.id);
+  }
+
   const rawInference = rlConfig.mock ? mockInference(inferencePayload) : await rlServiceClient.infer(inferencePayload);
   const inference = normalizeInference(rawInference);
+  if (inference.warnings.length > 0) {
+    warnings.push(...inference.warnings);
+  }
+  if (
+    run.mode === "live" &&
+    !E2E_RUN_ENABLED &&
+    inference.warnings.some((warning) => warning === "model_unavailable" || warning.startsWith("model_inference_failed"))
+  ) {
+    setForcedHoldReason("model_inference_unavailable");
+    await pauseAgentRun(run.id);
+  }
+
+  const featureQuality = evaluateFeatureQualityGate({
+    features: inference.features ?? {},
+    candles: request.market.candles ?? [],
+    criticalFields:
+      featureConfig.technical?.enabled && featureConfig.technical.criticalFields
+        ? featureConfig.technical.criticalFields
+        : ["last_price", "price_change"],
+  });
+  recordFeatureQuality({
+    runId: run.id,
+    pair: run.pair,
+    missingCount: featureQuality.missingCount,
+    oodScore: featureQuality.oodScore,
+    freshnessSeconds: featureQuality.freshnessSeconds,
+    traceId,
+  });
+  if (!featureQuality.allowed && run.mode === "live" && !E2E_RUN_ENABLED) {
+    warnings.push(
+      "feature_quality_gate",
+      ...featureQuality.missingFields.map((field) => `feature_missing:${field}`),
+      featureQuality.reason ? `feature_gate_reason:${featureQuality.reason}` : "feature_gate_reason:unknown",
+    );
+    setForcedHoldReason(featureQuality.reason ?? "feature_quality_gate");
+    await pauseAgentRun(run.id);
+  }
+
   recordDecisionConfidenceMetric({
     runId: run.id,
     confidenceScore: inference.decision.confidenceScore,
@@ -374,6 +416,14 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
         blocking_reasons: integrityGate.blockingReasons,
         warnings: integrityGate.warnings,
         provenance: integrityGate.provenance,
+      },
+      feature_quality_gate: {
+        allowed: featureQuality.allowed,
+        reason: featureQuality.reason ?? null,
+        missing_fields: featureQuality.missingFields,
+        missing_count: featureQuality.missingCount,
+        ood_score: featureQuality.oodScore,
+        freshness_seconds: featureQuality.freshnessSeconds,
       },
       provenance: {
         dataset_version_id: datasetVersion?.id ?? null,

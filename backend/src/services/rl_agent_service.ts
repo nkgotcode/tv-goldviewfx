@@ -5,14 +5,14 @@ import { getLatestEvaluationReport } from "../db/repositories/evaluation_reports
 import { fetchRiskLimitSet } from "./risk_limits_service";
 import { evaluateDataQualityGate } from "./data_quality_service";
 import { fallbackToLastPromotedVersion } from "./agent_version_service";
+import { isSupportedPair, resolveSupportedPair } from "../config/market_catalog";
 import { assertInstrumentAllowed } from "./instrument_policy";
 
-const SUPPORTED_PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
 const E2E_RUN_ENABLED = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
 
 export type StartRunInput = {
   mode: "paper" | "live";
-  pair: (typeof SUPPORTED_PAIRS)[number];
+  pair: string;
   riskLimitSetId: string;
   learningEnabled?: boolean;
   learningWindowMinutes?: number | null;
@@ -63,16 +63,17 @@ async function resolvePromotionGateStatus(agentVersionId?: string | null): Promi
 }
 
 export async function startAgentRun(input: StartRunInput) {
-  if (!SUPPORTED_PAIRS.includes(input.pair)) {
+  const pair = resolveSupportedPair(input.pair) ?? input.pair;
+  if (!isSupportedPair(pair)) {
     throw new Error(`Unsupported pair: ${input.pair}`);
   }
 
   const config = await getAgentConfig();
-  assertInstrumentAllowed(input.pair, config.allowed_instruments ?? []);
+  assertInstrumentAllowed(pair, config.allowed_instruments ?? []);
 
   await fetchRiskLimitSet(input.riskLimitSetId);
 
-  const qualityGate = await evaluateDataQualityGate(input.pair);
+  const qualityGate = await evaluateDataQualityGate(pair);
   if (!qualityGate.allowed) {
     throw new Error(`Data quality gate failed: ${qualityGate.blockingSources.join(", ")}`);
   }
@@ -81,13 +82,13 @@ export async function startAgentRun(input: StartRunInput) {
   const allowLiveOverride =
     E2E_RUN_ENABLED || process.env.NODE_ENV === "test" || ["1", "true", "yes", "on"].includes(simulationFlag);
 
-  assertInstrumentAllowed(input.pair, config.allowed_instruments ?? []);
+  assertInstrumentAllowed(pair, config.allowed_instruments ?? []);
 
   if (input.mode === "live" && config.kill_switch && !allowLiveOverride) {
     throw new Error("Kill switch enabled");
   }
 
-  const existing = await listAgentRuns({ pair: input.pair });
+  const existing = await listAgentRuns({ pair });
   const active = existing.find((run) => run.status !== "stopped");
   if (active) {
     const simulationFlag = (process.env.ALLOW_LIVE_SIMULATION ?? "").toLowerCase();
@@ -95,7 +96,7 @@ export async function startAgentRun(input: StartRunInput) {
     if (allowOverride) {
       await updateAgentRun(active.id, { status: "stopped", stopped_at: new Date().toISOString() });
     } else {
-      throw new Error(`Run already active for ${input.pair}`);
+      throw new Error(`Run already active for ${pair}`);
     }
   }
 
@@ -114,7 +115,7 @@ export async function startAgentRun(input: StartRunInput) {
 
   return insertAgentRun({
     mode: input.mode,
-    pair: input.pair,
+    pair,
     status: "running",
     started_at: new Date().toISOString(),
     learning_enabled: input.learningEnabled ?? true,

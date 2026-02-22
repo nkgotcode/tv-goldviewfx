@@ -11,6 +11,12 @@ class TradingPair(str, Enum):
     GOLD_USDT = "Gold-USDT"
     XAUTUSDT = "XAUTUSDT"
     PAXGUSDT = "PAXGUSDT"
+    ALGO_USDT = "ALGO-USDT"
+    BTC_USDT = "BTC-USDT"
+    ETH_USDT = "ETH-USDT"
+    SOL_USDT = "SOL-USDT"
+    XRP_USDT = "XRP-USDT"
+    BNB_USDT = "BNB-USDT"
 
 
 class MarketCandle(BaseModel):
@@ -70,6 +76,7 @@ class InferenceRequest(BaseModel):
     artifact_checksum: str | None = None
     artifact_download_url: str | None = None
     artifact_base64: str | None = None
+    feature_schema_fingerprint: str | None = None
 
 
 class TradeDecision(BaseModel):
@@ -88,6 +95,14 @@ class InferenceResponse(BaseModel):
     model_version: str | None = None
 
 
+class WalkForwardConfig(BaseModel):
+    folds: int = Field(default=4, ge=1, le=24)
+    purge_bars: int = Field(default=0, ge=0)
+    embargo_bars: int = Field(default=0, ge=0)
+    min_train_bars: int | None = Field(default=None, ge=1)
+    strict: bool = True
+
+
 class EvaluationRequest(BaseModel):
     pair: TradingPair
     period_start: datetime
@@ -104,6 +119,13 @@ class EvaluationRequest(BaseModel):
     decision_threshold: float | None = None
     window_size: int = 30
     stride: int = 1
+    leverage: float = 1.0
+    taker_fee_bps: float = 4.0
+    slippage_bps: float = 1.0
+    funding_weight: float = 1.0
+    drawdown_penalty: float = 0.0
+    walk_forward: WalkForwardConfig | None = None
+    feature_schema_fingerprint: str | None = None
 
 
 class EvaluationReport(BaseModel):
@@ -118,12 +140,16 @@ class EvaluationReport(BaseModel):
     dataset_hash: str | None = None
     artifact_uri: str | None = None
     backtest_run_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     environment: str
+    ml_dependencies: dict[str, bool] = Field(default_factory=dict)
+    strict_model_inference: bool = True
+    strict_backtest: bool = True
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -135,6 +161,7 @@ class DatasetRequest(BaseModel):
     window_size: int = 30
     stride: int = 1
     feature_set_version_id: str | None = None
+    feature_schema_fingerprint: str | None = None
     features: list[dict] | None = None
 
 
@@ -149,6 +176,7 @@ class DatasetVersionPayload(BaseModel):
     window_size: int | None = None
     stride: int | None = None
     feature_set_version_id: str | None = None
+    feature_schema_fingerprint: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -181,8 +209,17 @@ class TrainingRequest(BaseModel):
     dataset_features: list[dict] | None = None
     window_size: int = 30
     stride: int = 1
+    leverage: float = 1.0
+    taker_fee_bps: float = 4.0
+    slippage_bps: float = 1.0
+    funding_weight: float = 1.0
+    drawdown_penalty: float = 0.0
+    feedback_rounds: int = 1
+    feedback_timesteps: int = 256
+    feedback_hard_ratio: float = 0.3
     timesteps: int = 5_000
     seed: int | None = None
+    feature_schema_fingerprint: str | None = None
 
 
 class TrainingResponse(BaseModel):

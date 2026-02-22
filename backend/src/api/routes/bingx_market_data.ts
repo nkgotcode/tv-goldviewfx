@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { getSupportedPairs, listMarketInstruments } from "../../config/market_catalog";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { validateJson } from "../middleware/validate";
 import { runBingxMarketDataIngest } from "../../services/bingx_market_data_ingest";
@@ -27,6 +28,16 @@ const bingxCandlesQuerySchema = z.object({
 export const bingxMarketDataRoutes = new Hono();
 
 bingxMarketDataRoutes.use("*", withOpsIdentity);
+
+bingxMarketDataRoutes.get("/pairs", async (c) => {
+  const section = c.req.query("section");
+  const instruments = listMarketInstruments();
+  const filtered =
+    section === "gold" || section === "crypto"
+      ? instruments.filter((instrument) => instrument.section === section)
+      : instruments;
+  return c.json({ data: filtered });
+});
 
 bingxMarketDataRoutes.get("/status", async (c) => {
   const pair = c.req.query("pair") as z.infer<typeof tradingPairSchema> | undefined;
@@ -56,7 +67,7 @@ bingxMarketDataRoutes.get("/candles", async (c) => {
   if (!parsed.success) {
     return c.json({ error: parsed.error.message }, 400);
   }
-  const pair = parsed.data.pair ?? "Gold-USDT";
+  const pair = parsed.data.pair ?? getSupportedPairs()[0] ?? "XAUTUSDT";
   const interval = parsed.data.interval ?? "1m";
   const limit = parsed.data.limit ?? 500;
   const candles = await listBingxCandles({

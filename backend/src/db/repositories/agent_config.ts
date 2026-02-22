@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { convex } from "../client";
 import { assertNoError } from "./base";
+import { insertRlOpsRow, listRlOpsRows, rlOpsUsesTimescale, updateRlOpsRowById } from "../timescale/rl_ops";
 
 export type AgentConfigUpdate = {
   enabled?: boolean;
@@ -36,6 +38,23 @@ const DEFAULT_CONFIG = {
 };
 
 export async function getAgentConfig() {
+  if (rlOpsUsesTimescale()) {
+    const rows = await listRlOpsRows("agent_configurations", {
+      orderBy: "updated_at",
+      direction: "desc",
+      limit: 1,
+    });
+    if (rows[0]) {
+      return rows[0];
+    }
+    const now = new Date().toISOString();
+    return insertRlOpsRow("agent_configurations", {
+      id: randomUUID(),
+      ...DEFAULT_CONFIG,
+      created_at: now,
+      updated_at: now,
+    });
+  }
   const result = await convex
     .from("agent_configurations")
     .select("*")
@@ -58,6 +77,12 @@ export async function getAgentConfig() {
 
 export async function updateAgentConfig(payload: AgentConfigUpdate) {
   const current = await getAgentConfig();
+  if (rlOpsUsesTimescale()) {
+    return updateRlOpsRowById("agent_configurations", current.id, {
+      ...payload,
+      updated_at: new Date().toISOString(),
+    });
+  }
   const updated = await convex
     .from("agent_configurations")
     .update({

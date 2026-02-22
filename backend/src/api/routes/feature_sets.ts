@@ -6,8 +6,24 @@ import { listFeatureSets, resolveFeatureSetVersion } from "../../services/featur
 import { recordOpsAudit } from "../../services/ops_audit";
 
 const featureSetSchema = z.object({
+  version: z.enum(["v1", "v2"]).optional(),
   includeNews: z.boolean().optional(),
   includeOcr: z.boolean().optional(),
+  technical: z
+    .object({
+      enabled: z.boolean().optional(),
+      criticalFields: z.array(z.string().min(1)).optional(),
+      indicators: z
+        .array(
+          z.object({
+            name: z.string().min(1),
+            params: z.record(z.number()).optional(),
+            outputNames: z.array(z.string().min(1)).optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
 });
 
 export const featureSetsRoutes = new Hono();
@@ -20,8 +36,10 @@ featureSetsRoutes.get("/", async (c) => {
 featureSetsRoutes.post("/", requireOperatorRole, validateJson(featureSetSchema), async (c) => {
   const payload = c.get("validatedBody") as z.infer<typeof featureSetSchema>;
   const version = await resolveFeatureSetVersion({
+    version: payload.version,
     includeNews: payload.includeNews ?? false,
     includeOcr: payload.includeOcr ?? false,
+    technical: payload.technical,
   });
   await recordOpsAudit({
     actor: c.get("opsActor") ?? "system",

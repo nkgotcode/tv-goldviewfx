@@ -1,12 +1,11 @@
 import { loadEnv } from "../config/env";
+import { getSupportedPairs } from "../config/market_catalog";
 import { listPendingIdeaMedia, updateIdeaMedia } from "../db/repositories/idea_media";
 import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
 import { getDefaultThreshold, recordDataSourceStatus } from "./data_source_status_service";
 import type { TradingPair } from "../types/rl";
 import { logWarn } from "./logger";
 import { shouldRunIngestion } from "./ingestion_control";
-
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 
 export async function runOcrBatch(limit = 10, trigger: "manual" | "schedule" = "schedule") {
   const env = loadEnv();
@@ -82,7 +81,7 @@ export async function runOcrBatch(limit = 10, trigger: "manual" | "schedule" = "
   const result = { processed, skipped: 0, failed };
   const now = new Date().toISOString();
   await Promise.all(
-    SUPPORTED_PAIRS.map((pair) =>
+    getSupportedPairs().map((pair) =>
       recordDataSourceStatus({
         pair,
         sourceType: "ocr_text",

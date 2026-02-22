@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { convex } from "../client";
 import { assertNoError } from "./base";
+import { insertRlOpsRow, listRlOpsRows, rlOpsUsesTimescale, updateRlOpsRowById } from "../timescale/rl_ops";
 
 export type LearningUpdateInsert = {
   agent_version_id: string;
@@ -9,19 +11,46 @@ export type LearningUpdateInsert = {
   started_at?: string;
   completed_at?: string | null;
   evaluation_report_id?: string | null;
+  champion_evaluation_report_id?: string | null;
+  promoted?: boolean | null;
+  decision_reasons?: string[];
+  metric_deltas?: Record<string, number>;
 };
 
 export async function insertLearningUpdate(payload: LearningUpdateInsert) {
+  if (rlOpsUsesTimescale()) {
+    const now = new Date().toISOString();
+    return insertRlOpsRow("learning_updates", {
+      id: randomUUID(),
+      started_at: now,
+      created_at: now,
+      updated_at: now,
+      ...payload,
+      started_at: payload.started_at ?? now,
+      decision_reasons: payload.decision_reasons ?? [],
+      metric_deltas: payload.metric_deltas ?? {},
+    });
+  }
   const result = await convex.from("learning_updates").insert(payload).select("*").single();
   return assertNoError(result, "insert learning update");
 }
 
 export async function updateLearningUpdate(id: string, payload: Partial<LearningUpdateInsert>) {
+  if (rlOpsUsesTimescale()) {
+    return updateRlOpsRowById("learning_updates", id, payload);
+  }
   const result = await convex.from("learning_updates").update(payload).eq("id", id).select("*").single();
   return assertNoError(result, "update learning update");
 }
 
 export async function listLearningUpdates(agentVersionId: string) {
+  if (rlOpsUsesTimescale()) {
+    return listRlOpsRows("learning_updates", {
+      filters: [{ field: "agent_version_id", value: agentVersionId }],
+      orderBy: "started_at",
+      direction: "desc",
+    });
+  }
   const result = await convex
     .from("learning_updates")
     .select("*")
@@ -31,6 +60,13 @@ export async function listLearningUpdates(agentVersionId: string) {
 }
 
 export async function listRecentLearningUpdates(limit = 5) {
+  if (rlOpsUsesTimescale()) {
+    return listRlOpsRows("learning_updates", {
+      orderBy: "started_at",
+      direction: "desc",
+      limit,
+    });
+  }
   const result = await convex
     .from("learning_updates")
     .select("*")

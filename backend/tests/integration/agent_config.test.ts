@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("agent config requires Convex configuration", () => {});
+  test.skip("agent config requires database configuration", () => {});
 } else {
   test("GET /agent/config returns a config", async () => {
     const response = await app.request("/agent/config");

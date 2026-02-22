@@ -19,6 +19,7 @@ function toNumber(value: unknown, fallback = 0) {
 
 function formatEvaluation(report: any) {
   if (!report) return null;
+  const metadata = (report.metadata ?? {}) as Record<string, unknown>;
   return {
     id: report.id,
     agentVersionId: report.agent_version_id,
@@ -32,6 +33,16 @@ function formatEvaluation(report: any) {
     backtestRunId: report.backtest_run_id ?? null,
     status: report.status,
     createdAt: report.created_at ?? null,
+    metadata: {
+      foldMetrics: (metadata.fold_metrics ?? metadata.foldMetrics ?? []) as unknown[],
+      aggregate: (metadata.aggregate ?? null) as Record<string, unknown> | null,
+      featureSchemaFingerprint: (metadata.feature_schema_fingerprint ??
+        metadata.featureSchemaFingerprint ??
+        null) as string | null,
+      promotionComparison: (metadata.promotion_comparison ??
+        metadata.promotionComparison ??
+        null) as Record<string, unknown> | null,
+    },
   };
 }
 
@@ -45,14 +56,13 @@ opsLearningRoutes.get("/status", async (c) => {
     const updates = await listRecentLearningUpdates(Number.isFinite(limit) ? limit : 5);
     const enriched = await Promise.all(
       updates.map(async (update) => {
-        let report = null;
-        if (update.evaluation_report_id) {
-          try {
-            report = await getEvaluationReport(update.evaluation_report_id);
-          } catch {
-            report = null;
-          }
-        }
+        const reportPromise = update.evaluation_report_id
+          ? getEvaluationReport(update.evaluation_report_id).catch(() => null)
+          : Promise.resolve(null);
+        const championPromise = update.champion_evaluation_report_id
+          ? getEvaluationReport(update.champion_evaluation_report_id).catch(() => null)
+          : Promise.resolve(null);
+        const [report, championReport] = await Promise.all([reportPromise, championPromise]);
         return {
           id: update.id,
           agentVersionId: update.agent_version_id,
@@ -62,7 +72,12 @@ opsLearningRoutes.get("/status", async (c) => {
           startedAt: update.started_at ?? null,
           completedAt: update.completed_at ?? null,
           evaluationReportId: update.evaluation_report_id ?? null,
+          championEvaluationReportId: update.champion_evaluation_report_id ?? null,
+          promoted: update.promoted ?? null,
+          decisionReasons: (update.decision_reasons ?? []) as string[],
+          metricDeltas: (update.metric_deltas ?? {}) as Record<string, number>,
           evaluationReport: formatEvaluation(report),
+          championEvaluationReport: formatEvaluation(championReport),
         };
       }),
     );
@@ -83,6 +98,18 @@ opsLearningRoutes.get("/status", async (c) => {
         timesteps: env.RL_ONLINE_LEARNING_TIMESTEPS,
         decisionThreshold: env.RL_ONLINE_LEARNING_DECISION_THRESHOLD,
         autoRollForward: env.RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD,
+        minWinRateDelta: env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA,
+        minNetPnlDelta: env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
+        maxDrawdownDelta: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
+        minTradeCountDelta: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
+        leverageDefault: env.RL_PPO_LEVERAGE_DEFAULT,
+        takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+        slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+        fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+        drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+        feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
+        feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
+        feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
       },
       rlService: {
         url: rlConfig.url,
@@ -107,6 +134,18 @@ opsLearningRoutes.get("/status", async (c) => {
         timesteps: env.RL_ONLINE_LEARNING_TIMESTEPS,
         decisionThreshold: env.RL_ONLINE_LEARNING_DECISION_THRESHOLD,
         autoRollForward: env.RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD,
+        minWinRateDelta: env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA,
+        minNetPnlDelta: env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
+        maxDrawdownDelta: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
+        minTradeCountDelta: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
+        leverageDefault: env.RL_PPO_LEVERAGE_DEFAULT,
+        takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+        slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+        fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+        drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+        feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
+        feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
+        feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
       },
       rlService: {
         url: rlConfig.url,

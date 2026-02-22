@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
 import { rlApiRequest } from "../fixtures/rl_api";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("rl governance requires Convex configuration", () => {});
+  test.skip("rl governance requires database configuration", () => {});
 } else {
   test("kill switch toggle updates config", async () => {
     const enable = await rlApiRequest("/agents/gold-rl-agent/kill-switch", {

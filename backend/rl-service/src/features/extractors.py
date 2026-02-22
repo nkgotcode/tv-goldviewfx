@@ -1,25 +1,37 @@
 from __future__ import annotations
 
-from statistics import mean, pstdev
 from typing import Iterable
 
+from features.technical_pipeline import (
+    AUX_FEATURE_KEYS,
+    BASE_FEATURE_KEYS,
+    build_feature_snapshot,
+    vectorize,
+)
 from schemas import AuxiliarySignal, MarketSnapshot
 
-FEATURE_KEYS = [
-    "last_price",
-    "price_change",
-    "volatility",
-    "volume_avg",
-    "spread",
-    "ideas_score",
-    "signals_score",
-    "news_score",
-    "ocr_score",
-    "news_confidence_avg",
-    "ocr_confidence_avg",
-    "ocr_text_length_avg",
-    "aux_score",
+DEFAULT_TECHNICAL_KEYS = [
+    "sma_20",
+    "ema_21",
+    "rsi_14",
+    "atr_14",
+    "macd_12_26_9",
+    "macd_signal_12_26_9",
+    "macd_hist_12_26_9",
 ]
+FUTURES_FEATURE_KEYS = [
+    "funding_rate",
+    "funding_rate_annualized",
+    "open_interest",
+    "open_interest_delta_pct",
+    "mark_price",
+    "index_price",
+    "mark_index_basis_bps",
+    "ticker_last_price",
+    "ticker_price_change_24h",
+    "ticker_volume_24h",
+]
+FEATURE_KEYS = [*BASE_FEATURE_KEYS, *DEFAULT_TECHNICAL_KEYS, *FUTURES_FEATURE_KEYS, *AUX_FEATURE_KEYS]
 
 
 def resolve_signal_conflicts(signals: Iterable[AuxiliarySignal], neutral_band: float = 0.1) -> float:
@@ -27,64 +39,16 @@ def resolve_signal_conflicts(signals: Iterable[AuxiliarySignal], neutral_band: f
     for signal in signals:
         confidence = signal.confidence if signal.confidence is not None else 1.0
         weighted.append(signal.score * confidence)
-
     positive = sum(value for value in weighted if value > 0)
     negative = abs(sum(value for value in weighted if value < 0))
     net = positive - negative
-
     if positive > 0 and negative > 0 and abs(net) < neutral_band:
         return 0.0
     return net
 
 
-def extract_market_features(market: MarketSnapshot) -> dict[str, float]:
-    closes = [candle.close for candle in market.candles]
-    volumes = [candle.volume for candle in market.candles]
-    if len(closes) < 2:
-        return {
-            "last_price": market.last_price or (closes[-1] if closes else 0.0),
-            "price_change": 0.0,
-            "volatility": 0.0,
-            "volume_avg": mean(volumes) if volumes else 0.0,
-            "spread": market.spread or 0.0,
-        }
-
-    first_price = closes[0]
-    last_price = market.last_price or closes[-1]
-    price_change = (last_price - first_price) / first_price if first_price else 0.0
-    returns = []
-    for prev, curr in zip(closes, closes[1:]):
-        if prev == 0:
-            returns.append(0.0)
-        else:
-            returns.append((curr - prev) / prev)
-
-    volatility = pstdev(returns) if len(returns) > 1 else 0.0
-    volume_avg = mean(volumes) if volumes else 0.0
-
-    return {
-        "last_price": last_price,
-        "price_change": price_change,
-        "volatility": volatility,
-        "volume_avg": volume_avg,
-        "spread": market.spread or 0.0,
-    }
-
-
-def _avg_confidence(signals: Iterable[AuxiliarySignal]) -> float:
-    values = [signal.confidence for signal in signals if signal.confidence is not None]
-    return mean(values) if values else 0.0
-
-
-def _avg_text_length(signals: Iterable[AuxiliarySignal]) -> float:
-    lengths: list[int] = []
-    for signal in signals:
-        if not signal.metadata:
-            continue
-        text = signal.metadata.get("text")
-        if isinstance(text, str):
-            lengths.append(len(text))
-    return mean(lengths) if lengths else 0.0
+def extract_market_features(market: MarketSnapshot, technical_config: dict | None = None) -> dict[str, float]:
+    return build_feature_snapshot(market, technical_config=technical_config).features
 
 
 def extract_aux_features(
@@ -93,22 +57,46 @@ def extract_aux_features(
     news: Iterable[AuxiliarySignal],
     ocr: Iterable[AuxiliarySignal],
 ) -> dict[str, float]:
-    ideas_score = resolve_signal_conflicts(ideas)
-    signals_score = resolve_signal_conflicts(signals)
-    news_score = resolve_signal_conflicts(news)
-    ocr_score = resolve_signal_conflicts(ocr)
-    combined = ideas_score + signals_score + news_score + ocr_score
+    ideas_list = list(ideas)
+    signals_list = list(signals)
+    news_list = list(news)
+    ocr_list = list(ocr)
+    # Build from a synthetic 2-candle market snapshot to preserve canonical aux fields.
+    if ideas_list:
+        last_ts = ideas_list[-1].timestamp
+    elif signals_list:
+        last_ts = signals_list[-1].timestamp
+    elif news_list:
+        last_ts = news_list[-1].timestamp
+    elif ocr_list:
+        last_ts = ocr_list[-1].timestamp
+    else:
+        from datetime import datetime, timezone
 
-    return {
-        "ideas_score": ideas_score,
-        "signals_score": signals_score,
-        "news_score": news_score,
-        "ocr_score": ocr_score,
-        "news_confidence_avg": _avg_confidence(news),
-        "ocr_confidence_avg": _avg_confidence(ocr),
-        "ocr_text_length_avg": _avg_text_length(ocr),
-        "aux_score": combined,
-    }
+        last_ts = datetime.now(tz=timezone.utc)
+    market = MarketSnapshot(
+        pair="Gold-USDT",
+        candles=[
+            {
+                "timestamp": last_ts,
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "volume": 1.0,
+            },
+            {
+                "timestamp": last_ts,
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "volume": 1.0,
+            },
+        ],
+    )
+    features = build_feature_snapshot(market, ideas=ideas_list, signals=signals_list, news=news_list, ocr=ocr_list).features
+    return {key: features.get(key, 0.0) for key in AUX_FEATURE_KEYS}
 
 
 def extract_features(
@@ -117,11 +105,24 @@ def extract_features(
     signals: Iterable[AuxiliarySignal],
     news: Iterable[AuxiliarySignal],
     ocr: Iterable[AuxiliarySignal],
+    technical_config: dict | None = None,
 ) -> dict[str, float]:
-    features = extract_market_features(market)
-    features.update(extract_aux_features(ideas, signals, news, ocr))
-    return features
+    return build_feature_snapshot(
+        market,
+        ideas=ideas,
+        signals=signals,
+        news=news,
+        ocr=ocr,
+        technical_config=technical_config,
+    ).features
 
 
-def vectorize_features(features: dict[str, float]) -> list[float]:
-    return [float(features.get(key, 0.0)) for key in FEATURE_KEYS]
+def feature_keys_for(features: dict[str, float]) -> list[str]:
+    fixed_keys = BASE_FEATURE_KEYS + FUTURES_FEATURE_KEYS + AUX_FEATURE_KEYS
+    indicator_keys = sorted([key for key in features if key not in fixed_keys])
+    return [*BASE_FEATURE_KEYS, *indicator_keys, *FUTURES_FEATURE_KEYS, *AUX_FEATURE_KEYS]
+
+
+def vectorize_features(features: dict[str, float], feature_keys: list[str] | None = None) -> list[float]:
+    keys = feature_keys or FEATURE_KEYS
+    return vectorize(features, keys)

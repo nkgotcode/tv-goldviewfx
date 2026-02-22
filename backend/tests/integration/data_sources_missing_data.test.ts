@@ -3,10 +3,10 @@ import { insertAgentRun, getAgentRun } from "../../src/db/repositories/agent_run
 import { upsertDataSourceStatus } from "../../src/db/repositories/data_source_status";
 import { runDecisionPipeline } from "../../src/services/rl_decision_pipeline";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.DB_TEST_ENABLED === "true";
 
 if (!hasEnv) {
-  test.skip("data source gating requires Convex configuration", () => {});
+  test.skip("data source gating requires database configuration", () => {});
 } else {
   test("decision pipeline pauses when required market data is unavailable", async () => {
     const run = await insertAgentRun({

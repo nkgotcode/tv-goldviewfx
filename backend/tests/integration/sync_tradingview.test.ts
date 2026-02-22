@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { fileURLToPath } from "url";
 import app from "../../src/api/routes/index";
 
-const hasEnv = Boolean(process.env.CONVEX_URL);
+const hasEnv = process.env.CONVEX_TEST_ENABLED === "true";
 
 const htmlPath = fileURLToPath(new URL("../../../tradingview.html", import.meta.url));
 

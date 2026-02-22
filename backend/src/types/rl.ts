@@ -1,10 +1,37 @@
-export type TradingPair = "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+export type TradingPair = string;
 export type AgentRunMode = "paper" | "live";
 export type AgentRunStatus = "running" | "paused" | "stopped";
 export type AgentVersionStatus = "draft" | "evaluating" | "promoted" | "retired";
 export type RiskCheckResult = "pass" | "fail";
 export type TradeAction = "long" | "short" | "close" | "hold";
 export type TradeExecutionStatus = "submitted" | "partially_filled" | "filled" | "rejected" | "canceled";
+
+export type TaIndicatorConfig = {
+  name: string;
+  params?: Record<string, number>;
+  outputNames?: string[];
+};
+
+export type FeatureSetTechnicalConfig = {
+  enabled: boolean;
+  criticalFields?: string[];
+  indicators?: TaIndicatorConfig[];
+};
+
+export type FeatureSetContract = {
+  version: "v1" | "v2";
+  includeNews: boolean;
+  includeOcr: boolean;
+  technical?: FeatureSetTechnicalConfig;
+};
+
+export type WalkForwardFoldConfig = {
+  folds: number;
+  purgeBars?: number;
+  embargoBars?: number;
+  minTrainBars?: number;
+  strict?: boolean;
+};
 
 export type AgentVersion = {
   id: string;
@@ -117,6 +144,34 @@ export type EvaluationReport = {
   featureSetVersionId?: string | null;
   artifactUri?: string | null;
   backtestRunId?: string | null;
+  metadata?: {
+    foldMetrics?: Array<{
+      fold: number;
+      start: string;
+      end: string;
+      winRate: number;
+      netPnlAfterFees: number;
+      maxDrawdown: number;
+      tradeCount: number;
+      status: "pass" | "fail";
+    }>;
+    aggregate?: {
+      folds: number;
+      passRate: number;
+      winRateAvg: number;
+      netPnlAfterFeesTotal: number;
+      maxDrawdownWorst: number;
+      tradeCountTotal: number;
+    };
+    featureSchemaFingerprint?: string | null;
+    promotionComparison?: {
+      challengerReportId?: string | null;
+      championReportId?: string | null;
+      promoted?: boolean;
+      reasons?: string[];
+      deltas?: Record<string, number>;
+    };
+  } | null;
 };
 
 export type LearningUpdate = {
@@ -128,6 +183,24 @@ export type LearningUpdate = {
   completedAt?: string | null;
   status: "running" | "succeeded" | "failed";
   evaluationReportId?: string | null;
+  championEvaluationReportId?: string | null;
+  promoted?: boolean | null;
+  decisionReasons?: string[];
+  metricDeltas?: Record<string, number> | null;
+};
+
+export type FeatureSnapshot = {
+  id: string;
+  pair: TradingPair;
+  interval: string;
+  featureSetVersionId: string;
+  capturedAt: string;
+  schemaFingerprint: string;
+  warmup: boolean;
+  isComplete: boolean;
+  features: Record<string, number>;
+  sourceWindowStart?: string | null;
+  sourceWindowEnd?: string | null;
 };
 
 export type MarketInputSnapshot = {
@@ -180,6 +253,7 @@ export type InferenceRequest = {
   artifactChecksum?: string | null;
   artifactDownloadUrl?: string | null;
   artifactBase64?: string | null;
+  featureSchemaFingerprint?: string | null;
 };
 
 export type InferenceResponse = {
@@ -211,6 +285,13 @@ export type EvaluationRequest = {
   decisionThreshold?: number | null;
   windowSize?: number | null;
   stride?: number | null;
+  leverage?: number | null;
+  takerFeeBps?: number | null;
+  slippageBps?: number | null;
+  fundingWeight?: number | null;
+  drawdownPenalty?: number | null;
+  walkForward?: WalkForwardFoldConfig | null;
+  featureSchemaFingerprint?: string | null;
   datasetFeatures?: Array<{
     timestamp: string;
     open: number;
@@ -230,8 +311,17 @@ export type TrainingRequest = {
   datasetHash?: string | null;
   windowSize?: number;
   stride?: number;
+  leverage?: number | null;
+  takerFeeBps?: number | null;
+  slippageBps?: number | null;
+  fundingWeight?: number | null;
+  drawdownPenalty?: number | null;
+  feedbackRounds?: number | null;
+  feedbackTimesteps?: number | null;
+  feedbackHardRatio?: number | null;
   timesteps: number;
   seed?: number | null;
+  featureSchemaFingerprint?: string | null;
   datasetFeatures?: Array<{
     timestamp: string;
     open: number;
@@ -276,6 +366,7 @@ export type DatasetPreviewRequest = {
   windowSize?: number;
   stride?: number;
   featureSetVersionId?: string | null;
+  featureSchemaFingerprint?: string | null;
   features?: Array<{
     timestamp: string;
     open: number;
@@ -300,6 +391,8 @@ export type DatasetPreviewResponse = {
     datasetHash?: string;
     feature_set_version_id?: string | null;
     featureSetVersionId?: string | null;
+    feature_schema_fingerprint?: string | null;
+    featureSchemaFingerprint?: string | null;
     window_size?: number;
     windowSize?: number;
     stride?: number;

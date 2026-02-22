@@ -1,5 +1,6 @@
 import { listDataSourceStatus, upsertDataSourceStatus } from "../db/repositories/data_source_status";
 import { listDataSourceConfigs, upsertDataSourceConfig } from "../db/repositories/data_source_configs";
+import { getSupportedPairs } from "../config/market_catalog";
 import type { DataSourceType, TradingPair } from "../types/rl";
 
 export const BINGX_SOURCE_TYPES: DataSourceType[] = [
@@ -16,7 +17,6 @@ export const BINGX_SOURCE_TYPES: DataSourceType[] = [
 export const AUX_SOURCE_TYPES: DataSourceType[] = ["ideas", "signals", "news", "ocr_text", "trades"];
 export const ALL_SOURCE_TYPES: DataSourceType[] = [...BINGX_SOURCE_TYPES, ...AUX_SOURCE_TYPES];
 
-const SUPPORTED_PAIRS: TradingPair[] = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"];
 const BINGX_MOCK_ENABLED = ["1", "true", "yes", "on"].includes(
   (process.env.BINGX_MARKET_DATA_MOCK ?? "").trim().toLowerCase(),
 );
@@ -125,7 +125,7 @@ export async function listDataSourceStatusWithConfig(pair?: TradingPair, now: Da
     });
   }
 
-  const pairs = pair ? [pair] : SUPPORTED_PAIRS;
+  const pairs = pair ? [pair] : getSupportedPairs();
   const views: DataSourceStatusView[] = [];
 
   for (const currentPair of pairs) {

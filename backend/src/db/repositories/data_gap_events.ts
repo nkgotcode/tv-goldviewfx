@@ -4,7 +4,7 @@ import { assertNoError } from "./base";
 export type DataGapEventStatus = "open" | "healing" | "resolved";
 
 export type DataGapEventInsert = {
-  pair: "Gold-USDT" | "XAUTUSDT" | "PAXGUSDT";
+  pair: string;
   source_type: string;
   interval?: string | null;
   gap_start: string;
