@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ALL_PAIRS } from "../../config/marketCatalog";
 import Layout from "../../components/Layout";
 import RunDetailPanel from "../../components/rl-agent/RunDetailPanel";
 import RiskLimitsForm from "../../components/rl-agent/RiskLimitsForm";
@@ -27,8 +28,6 @@ import {
   type FeatureSetVersion,
 } from "../../services/datasets";
 
-const PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
-
 export default function RlAgentPage() {
   const [status, setStatus] = useState<AgentStatus | null>(null);
   const [runs, setRuns] = useState<AgentRun[]>([]);
@@ -39,7 +38,7 @@ export default function RlAgentPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [pair, setPair] = useState<(typeof PAIRS)[number]>("Gold-USDT");
+  const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
   const [mode, setMode] = useState<"paper" | "live">("paper");
   const [learningEnabled, setLearningEnabled] = useState(true);
   const [learningWindow, setLearningWindow] = useState("30");
@@ -62,11 +61,13 @@ export default function RlAgentPage() {
       setRiskLimits(limits);
       setDatasets(datasetVersions);
       setFeatureSets(featureSetVersions);
-      if (!riskLimitId && limits.length > 0) {
-        setRiskLimitId(limits[0].id);
+      const firstRiskLimit = limits[0];
+      if (!riskLimitId && firstRiskLimit) {
+        setRiskLimitId(firstRiskLimit.id);
       }
-      if (!featureSetId && featureSetVersions.length > 0) {
-        setFeatureSetId(featureSetVersions[0].id);
+      const firstFeatureSet = featureSetVersions[0];
+      if (!featureSetId && firstFeatureSet) {
+        setFeatureSetId(firstFeatureSet.id);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load RL agent data.");
@@ -160,7 +161,7 @@ export default function RlAgentPage() {
       <section className="hero">
         <h1>RL Trading Command</h1>
         <p>
-          Launch, pause, and audit the learning agent across Gold-USDT perpetual pairs. Track
+          Launch, pause, and audit the learning agent across configured perpetual pairs. Track
           learning windows, active model versions, and risk compliance in real time.
         </p>
       </section>
@@ -183,7 +184,7 @@ export default function RlAgentPage() {
         <div className="summary-card" data-tone="slate">
           <span>Active Version</span>
           <strong>{activeVersion?.name ?? activeVersion?.id ?? "—"}</strong>
-          <div className="inline-muted">{activeRun?.pair ?? "Gold-USDT"}</div>
+          <div className="inline-muted">{activeRun?.pair ?? "XAUTUSDT"}</div>
         </div>
         <div className="summary-card" data-tone="clay">
           <span>Kill Switch</span>
@@ -200,7 +201,7 @@ export default function RlAgentPage() {
             <label>
               Pair
               <select value={pair} onChange={(event) => setPair(event.target.value as typeof pair)}>
-                {PAIRS.map((option) => (
+                {ALL_PAIRS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

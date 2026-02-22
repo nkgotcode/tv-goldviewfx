@@ -1,4 +1,4 @@
-const defaultBaseUrl = "http://localhost:8787";
+const defaultBaseUrl = "/api/backend";
 
 export type DashboardSummary = {
   idea_count: number;
@@ -70,16 +70,11 @@ export type Trade = {
 };
 
 export function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? defaultBaseUrl;
+  return defaultBaseUrl;
 }
 
 export function getApiHeaders() {
-  const headers: Record<string, string> = {};
-  const token = process.env.NEXT_PUBLIC_API_TOKEN ?? process.env.API_TOKEN;
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
+  return {};
 }
 
 async function fetchJson<T>(path: string): Promise<T> {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ALL_PAIRS } from "../../config/marketCatalog";
 import type { IngestionStatus } from "../../services/ingestion";
 import {
   triggerBingxBackfill,
@@ -9,7 +10,6 @@ import {
   triggerTradingViewSync,
 } from "../../services/ingestion";
 
-const PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
 const DEFAULT_INTERVALS = "1m,5m,15m,1h,4h,1d";
 
 function parseCsv(value: string) {
@@ -35,11 +35,9 @@ export default function IngestionControlPanel({
   const [tvFullContent, setTvFullContent] = useState(false);
   const [tvIncludeUpdates, setTvIncludeUpdates] = useState(false);
 
-  const [bingxPairs, setBingxPairs] = useState<Record<string, boolean>>({
-    "Gold-USDT": true,
-    XAUTUSDT: true,
-    PAXGUSDT: true,
-  });
+  const [bingxPairs, setBingxPairs] = useState<Record<string, boolean>>(
+    Object.fromEntries(ALL_PAIRS.map((pair) => [pair, true])),
+  );
   const [bingxIntervals, setBingxIntervals] = useState(DEFAULT_INTERVALS);
   const [bingxMaxBatches, setBingxMaxBatches] = useState("1");
 
@@ -170,7 +168,7 @@ export default function IngestionControlPanel({
         <label>
           BingX Pairs
           <div className="action-row" style={{ marginTop: "6px" }}>
-            {PAIRS.map((pair) => (
+            {ALL_PAIRS.map((pair) => (
               <label key={pair} className="toggle-row">
                 <span>{pair}</span>
                 <input

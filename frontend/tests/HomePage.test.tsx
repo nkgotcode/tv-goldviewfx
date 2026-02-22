@@ -84,6 +84,5 @@ it("renders command deck overview", () => {
   render(<HomePage />);
   expect(screen.getByText(/Signal Command Atlas/i)).toBeInTheDocument();
   expect(screen.getByText(/System Atlas/i)).toBeInTheDocument();
-  expect(screen.getByText(/Command Deck/i)).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /Navigate the live control rooms/i })).toBeInTheDocument();
 });

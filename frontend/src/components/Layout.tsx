@@ -43,6 +43,8 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
         <nav className="header-nav" aria-label="Primary">
           <Link href="/">Dashboard</Link>
+          <Link href="/gold">Gold</Link>
+          <Link href="/crypto">Crypto</Link>
           <Link href="/controls">Controls</Link>
           <Link href="/ops">Ops</Link>
           <Link href="/insights">Insights</Link>

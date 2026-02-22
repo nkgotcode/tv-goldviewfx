@@ -116,6 +116,18 @@ export type OnlineLearningConfig = {
   timesteps: number;
   decisionThreshold: number;
   autoRollForward: boolean;
+  minWinRateDelta: number;
+  minNetPnlDelta: number;
+  maxDrawdownDelta: number;
+  minTradeCountDelta: number;
+  leverageDefault: number;
+  takerFeeBps: number;
+  slippageBps: number;
+  fundingWeight: number;
+  drawdownPenalty: number;
+  feedbackRounds: number;
+  feedbackTimesteps: number;
+  feedbackHardRatio: number;
 };
 
 export type OnlineLearningReport = {
@@ -131,6 +143,28 @@ export type OnlineLearningReport = {
   backtestRunId?: string | null;
   status: "pass" | "fail";
   createdAt?: string | null;
+  metadata?: {
+    foldMetrics?: Array<{
+      fold: number;
+      start: string;
+      end: string;
+      winRate: number;
+      netPnlAfterFees: number;
+      maxDrawdown: number;
+      tradeCount: number;
+      status: "pass" | "fail";
+    }>;
+    aggregate?: {
+      folds: number;
+      passRate: number;
+      winRateAvg: number;
+      netPnlAfterFeesTotal: number;
+      maxDrawdownWorst: number;
+      tradeCountTotal: number;
+    } | null;
+    featureSchemaFingerprint?: string | null;
+    promotionComparison?: Record<string, unknown> | null;
+  } | null;
 };
 
 export type OnlineLearningUpdate = {
@@ -142,7 +176,12 @@ export type OnlineLearningUpdate = {
   startedAt?: string | null;
   completedAt?: string | null;
   evaluationReportId?: string | null;
+  championEvaluationReportId?: string | null;
+  promoted?: boolean | null;
+  decisionReasons?: string[];
+  metricDeltas?: Record<string, number>;
   evaluationReport?: OnlineLearningReport | null;
+  championEvaluationReport?: OnlineLearningReport | null;
 };
 
 export type OnlineLearningStatus = {

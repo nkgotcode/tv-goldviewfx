@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ALL_PAIRS } from "../config/marketCatalog";
 import { runIngestionAction, updateIngestionConfig } from "../services/ops";
 
 const FEED_OPTIONS = [
@@ -24,7 +25,7 @@ export default function IngestionControls() {
   const [backfillDays, setBackfillDays] = useState("");
   const [fullContent, setFullContent] = useState(true);
   const [includeUpdates, setIncludeUpdates] = useState(false);
-  const [pairs, setPairs] = useState("Gold-USDT,XAUTUSDT,PAXGUSDT");
+  const [pairs, setPairs] = useState(ALL_PAIRS.join(","));
   const [intervals, setIntervals] = useState("1m,3m,5m,15m,30m,1h,2h,4h,6h,12h,1d,3d,1w,1M");
   const [maxBatches, setMaxBatches] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -152,7 +153,7 @@ export default function IngestionControls() {
             id="pairs"
             value={pairs}
             onChange={(event) => setPairs(event.target.value)}
-            placeholder="Gold-USDT,XAUTUSDT,PAXGUSDT"
+            placeholder={ALL_PAIRS.join(",")}
           />
         </div>
         <div className="control-row">

@@ -1,5 +1,6 @@
 "use client";
 
+import { ALL_PAIRS } from "../../config/marketCatalog";
 import type { OnlineLearningStatus, OnlineLearningUpdate } from "../../services/rl_ops";
 
 function formatTimestamp(value?: string | null) {
@@ -24,6 +25,9 @@ function statusTone(status?: string | null) {
 
 function renderUpdateRow(update: OnlineLearningUpdate) {
   const report = update.evaluationReport;
+  const champion = update.championEvaluationReport;
+  const netDelta = update.metricDeltas?.netPnlDelta;
+  const winDelta = update.metricDeltas?.winRateDelta;
   return (
     <tr key={update.id}>
       <td>{formatTimestamp(update.startedAt)}</td>
@@ -43,6 +47,14 @@ function renderUpdateRow(update: OnlineLearningUpdate) {
       <td>{report ? formatNumber(report.winRate, 3) : "—"}</td>
       <td>{report ? formatNumber(report.netPnlAfterFees, 2) : "—"}</td>
       <td>{report ? report.tradeCount : "—"}</td>
+      <td>{champion ? formatNumber(champion.netPnlAfterFees, 2) : "—"}</td>
+      <td>{netDelta !== undefined ? formatNumber(netDelta, 2) : "—"}</td>
+      <td>{winDelta !== undefined ? formatNumber(winDelta, 3) : "—"}</td>
+      <td>
+        <span className={`status-pill ${statusTone(update.promoted === null || update.promoted === undefined ? "running" : update.promoted ? "succeeded" : "failed")}`}>
+          {update.promoted === null || update.promoted === undefined ? "pending" : update.promoted ? "promoted" : "rejected"}
+        </span>
+      </td>
     </tr>
   );
 }
@@ -100,11 +112,22 @@ export default function OnlineLearningPanel({
           <strong>{config?.decisionThreshold ?? "—"}</strong>
           <div className="inline-muted">Auto roll {config?.autoRollForward ? "on" : "off"}</div>
         </div>
+        <div className="summary-card" data-tone="slate">
+          <span>Delta gates</span>
+          <strong>Win Δ {formatNumber(config?.minWinRateDelta, 3)}</strong>
+          <div className="inline-muted">PnL Δ {formatNumber(config?.minNetPnlDelta, 2)}</div>
+        </div>
       </div>
 
       <div className="inline-muted">
-        Pair {config?.pair ?? "Gold-USDT"} · Window size {config?.windowSize ?? "—"} · Timesteps{" "}
+        Pair {config?.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT"} · Window size {config?.windowSize ?? "—"} · Timesteps{" "}
         {config?.timesteps ?? "—"} · RL service {status?.rlService?.mock ? "mock" : "live"}
+      </div>
+      <div className="inline-muted">
+        Leverage x{formatNumber(config?.leverageDefault, 2)} · Fees {formatNumber(config?.takerFeeBps, 2)} bps ·
+        Slippage {formatNumber(config?.slippageBps, 2)} bps · Funding weight {formatNumber(config?.fundingWeight, 2)} ·
+        Feedback rounds {config?.feedbackRounds ?? "—"} ({config?.feedbackTimesteps ?? "—"} steps, hard ratio{" "}
+        {formatNumber(config?.feedbackHardRatio, 2)})
       </div>
 
       <div>
@@ -147,11 +170,28 @@ export default function OnlineLearningPanel({
               <th>Win</th>
               <th>Net PnL</th>
               <th>Trades</th>
+              <th>Champion PnL</th>
+              <th>PnL Δ</th>
+              <th>Win Δ</th>
+              <th>Decision</th>
             </tr>
           </thead>
           <tbody>{updates.map(renderUpdateRow)}</tbody>
         </table>
       )}
+      {updates.some((update) => (update.decisionReasons ?? []).length > 0) ? (
+        <div>
+          <h5>Latest rejection reasons</h5>
+          {updates.slice(0, 3).map((update) => {
+            if (!update.decisionReasons || update.decisionReasons.length === 0) return null;
+            return (
+              <div key={`${update.id}-reasons`} className="inline-muted">
+                {formatTimestamp(update.startedAt)}: {update.decisionReasons.join(", ")}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </section>
   );
 }

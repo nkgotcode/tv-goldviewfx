@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CRYPTO_PAIRS, GOLD_PAIRS } from "../../config/marketCatalog";
 import Layout from "../../components/Layout";
 import DataSourceStatusTable from "../../components/rl-agent/DataSourceStatusTable";
 import { fetchDataSourceStatus, updateDataSourceConfig, type DataSourceStatus } from "../../services/data_sources";
-
-const PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
 
 export default function RlDataSourcesPage() {
   const [sources, setSources] = useState<DataSourceStatus[]>([]);
@@ -30,7 +29,8 @@ export default function RlDataSourcesPage() {
   }, [refresh]);
 
   const sourcesByPair = useMemo(() => {
-    return PAIRS.reduce<Record<string, DataSourceStatus[]>>((acc, pair) => {
+    const allPairs = [...GOLD_PAIRS, ...CRYPTO_PAIRS];
+    return allPairs.reduce<Record<string, DataSourceStatus[]>>((acc, pair) => {
       acc[pair] = sources.filter((source) => source.pair === pair);
       return acc;
     }, {});
@@ -80,13 +80,34 @@ export default function RlDataSourcesPage() {
         </div>
         <div className="summary-card" data-tone="clay">
           <span>Pairs</span>
-          <strong>{PAIRS.length}</strong>
+          <strong>{[...GOLD_PAIRS, ...CRYPTO_PAIRS].length}</strong>
           <div className="inline-muted">Active instruments</div>
         </div>
       </section>
 
+      <section className="table-card">
+        <h3>Gold Section</h3>
+        <p>Gold-market guardrails for XAU and related instruments.</p>
+      </section>
+
       <section className="rl-grid">
-        {PAIRS.map((pair) => (
+        {GOLD_PAIRS.map((pair) => (
+          <DataSourceStatusTable
+            key={pair}
+            pair={pair}
+            sources={sourcesByPair[pair] ?? []}
+            onToggle={handleToggle}
+          />
+        ))}
+      </section>
+
+      <section className="table-card">
+        <h3>Crypto Section</h3>
+        <p>Crypto futures guardrails for directional and high-beta symbols.</p>
+      </section>
+
+      <section className="rl-grid">
+        {CRYPTO_PAIRS.map((pair) => (
           <DataSourceStatusTable
             key={pair}
             pair={pair}

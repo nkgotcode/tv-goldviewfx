@@ -6,6 +6,7 @@ import OpsControlPanel from "../../components/rl-agent/OpsControlPanel";
 import DataSourceRunsTable from "../../components/rl-agent/DataSourceRunsTable";
 import BackfillForm from "../../components/rl-agent/BackfillForm";
 import OnlineLearningPanel from "../../components/rl-agent/OnlineLearningPanel";
+import { ALL_PAIRS } from "../../config/marketCatalog";
 import {
   fetchAgentStatus,
   fetchOnlineLearningStatus,
@@ -106,7 +107,7 @@ export default function RlOpsPage() {
         <div className="summary-card" data-tone="teal">
           <span>Mode</span>
           <strong>{agentStatus?.currentRun?.mode ?? "paper"}</strong>
-          <div className="inline-muted">Pair {agentStatus?.currentRun?.pair ?? "Gold-USDT"}</div>
+          <div className="inline-muted">Pair {agentStatus?.currentRun?.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT"}</div>
         </div>
         <div className="summary-card" data-tone="slate">
           <span>Risk Sets</span>

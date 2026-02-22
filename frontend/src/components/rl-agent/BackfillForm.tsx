@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { ALL_PAIRS } from "../../config/marketCatalog";
 import type { DataSourceBackfillRequest } from "../../services/data_sources";
 
-const PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
 const SOURCE_TYPES = [
   "bingx_candles",
   "bingx_trades",
@@ -23,7 +23,7 @@ function toInputValue(date: Date) {
 
 export default function BackfillForm({ onSubmit }: { onSubmit: (payload: DataSourceBackfillRequest) => Promise<void> }) {
   const [sourceType, setSourceType] = useState<(typeof SOURCE_TYPES)[number]>("bingx_candles");
-  const [pair, setPair] = useState<(typeof PAIRS)[number]>("Gold-USDT");
+  const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
   const [start, setStart] = useState(() => toInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)));
   const [end, setEnd] = useState(() => toInputValue(new Date()));
   const [loading, setLoading] = useState(false);
@@ -65,7 +65,7 @@ export default function BackfillForm({ onSubmit }: { onSubmit: (payload: DataSou
         <label>
           Pair
           <select value={pair} onChange={(event) => setPair(event.target.value as typeof pair)}>
-            {PAIRS.map((option) => (
+            {ALL_PAIRS.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>

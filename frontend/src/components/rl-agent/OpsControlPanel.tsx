@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ALL_PAIRS } from "../../config/marketCatalog";
 import type { AgentStatus, RiskLimitSet } from "../../services/rl_agent";
 import type { IngestionStatus } from "../../services/ingestion";
 import {
@@ -14,8 +15,6 @@ import {
   triggerTradingViewSync,
 } from "../../services/rl_ops";
 
-const PAIRS = ["Gold-USDT", "XAUTUSDT", "PAXGUSDT"] as const;
-
 export default function OpsControlPanel({
   agentStatus,
   riskLimits,
@@ -27,7 +26,7 @@ export default function OpsControlPanel({
   ingestionStatus: IngestionStatus | null;
   onUpdated: () => Promise<void>;
 }) {
-  const [pair, setPair] = useState<(typeof PAIRS)[number]>("Gold-USDT");
+  const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
   const [mode, setMode] = useState<"paper" | "live">("paper");
   const [learningEnabled, setLearningEnabled] = useState(true);
   const [learningWindow, setLearningWindow] = useState("30");
@@ -181,7 +180,7 @@ export default function OpsControlPanel({
         <label>
           Pair
           <select value={pair} onChange={(event) => setPair(event.target.value as typeof pair)}>
-            {PAIRS.map((option) => (
+            {ALL_PAIRS.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>

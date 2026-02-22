@@ -5,6 +5,7 @@ import Link from "next/link";
 import Layout from "../components/Layout";
 import HeroActions from "../components/HeroActions";
 import MarketKlinePanel from "../components/MarketKlinePanel";
+import { CRYPTO_PAIRS } from "../config/marketCatalog";
 import type { DashboardSummary } from "../services/api";
 
 export default function HomePage() {
@@ -205,9 +206,16 @@ export default function HomePage() {
           <MarketKlinePanel
             title="Gold-USDT preview"
             description="Recent candles with the latest trades overlaid."
-            defaultLimit={200}
             showModeToggle={false}
             tone="teal"
+          />
+          <MarketKlinePanel
+            title="Crypto preview"
+            description="BTC tape and crypto pair selector for quick momentum checks."
+            defaultPair="BTC-USDT"
+            pairs={CRYPTO_PAIRS}
+            showModeToggle={false}
+            tone="olive"
           />
           <div className="table-card">
             <h3>Signal pulse checklist</h3>
