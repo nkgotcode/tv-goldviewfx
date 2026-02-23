@@ -370,6 +370,9 @@ export type ModelArtifact = {
 export type HealthResponse = {
   status: "ok";
   environment: string;
+  ml_dependencies?: Record<string, boolean>;
+  strict_model_inference?: boolean;
+  strict_backtest?: boolean;
   timestamp: string;
 };
 

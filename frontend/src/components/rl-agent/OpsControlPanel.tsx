@@ -15,6 +15,13 @@ import {
   triggerTradingViewSync,
 } from "../../services/rl_ops";
 
+function formatTimestamp(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
 export default function OpsControlPanel({
   agentStatus,
   riskLimits,
@@ -176,6 +183,24 @@ export default function OpsControlPanel({
 
       {error ? <div className="empty">{error}</div> : null}
 
+      <div className="panel-grid">
+        <div className="panel">
+          <h5>TradingView</h5>
+          <div className="inline-muted">State: {ingestionStatus?.tradingview.overall_status ?? "unknown"}</div>
+          <div className="inline-muted">Last run: {formatTimestamp(ingestionStatus?.tradingview.last_run?.finished_at ?? null)}</div>
+        </div>
+        <div className="panel">
+          <h5>Telegram</h5>
+          <div className="inline-muted">State: {ingestionStatus?.telegram.overall_status ?? "unknown"}</div>
+          <div className="inline-muted">Last run: {formatTimestamp(ingestionStatus?.telegram.last_run?.finished_at ?? null)}</div>
+        </div>
+        <div className="panel">
+          <h5>BingX</h5>
+          <div className="inline-muted">State: {ingestionStatus?.bingx.overall_status ?? "unknown"}</div>
+          <div className="inline-muted">Last update: {formatTimestamp(ingestionStatus?.bingx.last_updated_at ?? null)}</div>
+        </div>
+      </div>
+
       <div className="form-grid">
         <label>
           Pair
@@ -232,6 +257,7 @@ export default function OpsControlPanel({
         </label>
       </div>
 
+      <h5>Trading Run Actions</h5>
       <div className="action-row">
         <button type="button" onClick={handleStart} disabled={actionLoading}>
           Start Run
@@ -247,6 +273,7 @@ export default function OpsControlPanel({
         </button>
       </div>
 
+      <h5>Ingestion Actions</h5>
       <div className="action-row">
         <button type="button" onClick={handleTradingViewSync} disabled={actionLoading}>
           Sync TradingView

@@ -7,6 +7,7 @@ import EvaluationReportPanel from "../../components/rl-agent/EvaluationReportPan
 import EvaluationExecutionTimeline, {
   type EvaluationExecutionInput,
 } from "../../components/rl-agent/EvaluationExecutionTimeline";
+import NautilusBacktestStatusPanel from "../../components/rl-agent/NautilusBacktestStatusPanel";
 import { listAgentVersions, type AgentVersion } from "../../services/rl_agent";
 import {
   listEvaluationReports,
@@ -14,6 +15,7 @@ import {
   type EvaluationReport,
   type EvaluationRequest,
 } from "../../services/rl_evaluations";
+import { fetchOnlineLearningStatus, type OnlineLearningStatus } from "../../services/rl_ops";
 
 const ALL_PAIRS_OPTION = "__all_pairs__";
 
@@ -149,6 +151,7 @@ function buildRunParams(report: EvaluationReport | null): Record<string, unknown
 export default function RlEvaluationsPage() {
   const [reports, setReports] = useState<EvaluationReport[]>([]);
   const [versions, setVersions] = useState<AgentVersion[]>([]);
+  const [learningStatus, setLearningStatus] = useState<OnlineLearningStatus | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string>("");
   const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
   const [versionId, setVersionId] = useState<string>("");
@@ -181,12 +184,14 @@ export default function RlEvaluationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [agentVersions, evaluationReports] = await Promise.all([
+      const [agentVersions, evaluationReports, learning] = await Promise.all([
         listAgentVersions(),
         listEvaluationReports("gold-rl-agent", versionId || undefined),
+        fetchOnlineLearningStatus(1).catch(() => null),
       ]);
       setVersions(agentVersions);
-      setReports(evaluationReports as EvaluationReport[]);
+      setReports(evaluationReports);
+      setLearningStatus(learning);
       const firstVersion = agentVersions[0];
       if (!versionId && firstVersion) {
         setVersionId(firstVersion.id);
@@ -402,6 +407,13 @@ export default function RlEvaluationsPage() {
 
       {error ? <div className="empty">{error}</div> : null}
       {actionNote ? <div className="empty">{actionNote}</div> : null}
+
+      <NautilusBacktestStatusPanel
+        status={learningStatus}
+        latestBacktestRunId={selectedReport?.backtest_run_id ?? null}
+        title="Where Nautilus backtesting is shown"
+        description="Nautilus runs are attached to evaluation reports as backtest_run_id. Use this summary plus execution timelines below to verify backtesting is active and recorded."
+      />
 
       <section className="summary-grid">
         <div className="summary-card" data-tone="ember">
@@ -652,6 +664,7 @@ export default function RlEvaluationsPage() {
               <tr>
                 <th>Created</th>
                 <th>Status</th>
+                <th>Backtest</th>
                 <th>Pair</th>
                 <th>Period</th>
                 <th>Duration</th>
@@ -671,6 +684,11 @@ export default function RlEvaluationsPage() {
                     <td>{formatDate(report.created_at)}</td>
                     <td>
                       <span className="badge">{report.status}</span>
+                    </td>
+                    <td>
+                      <span className={`status-pill ${report.backtest_run_id ? "status-ok" : "status-warn"}`}>
+                        {report.backtest_run_id ? "recorded" : "missing"}
+                      </span>
                     </td>
                     <td>{report.pair}</td>
                     <td>

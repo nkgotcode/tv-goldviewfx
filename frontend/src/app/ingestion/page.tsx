@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import Layout from "../../components/Layout";
 import IngestionSummaryCards from "../../components/ingestion/IngestionSummaryCards";
 import IngestionSourcesTable from "../../components/ingestion/IngestionSourcesTable";
@@ -37,6 +38,14 @@ export default function IngestionPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const blockers = status
+    ? [
+        status.tradingview.overall_status !== "ok" ? `TradingView is ${status.tradingview.overall_status}` : null,
+        status.telegram.overall_status !== "ok" ? `Telegram is ${status.telegram.overall_status}` : null,
+        status.bingx.overall_status !== "ok" ? `BingX market data is ${status.bingx.overall_status}` : null,
+      ].filter((item): item is string => Boolean(item))
+    : [];
 
   return (
     <Layout>
@@ -88,6 +97,35 @@ export default function IngestionPage() {
       ) : null}
 
       {status ? <IngestionSummaryCards status={status} /> : null}
+
+      <section className="table-card">
+        <h3>Readiness For Learning + Backtesting</h3>
+        <p>Learning and Nautilus evaluations depend on fresh ingestion windows. Use this checklist before running RL cycles.</p>
+        <div className="panel-grid">
+          <div className="panel">
+            <h5>Current blockers</h5>
+            <div className="inline-muted">
+              {blockers.length > 0 ? blockers.join(" · ") : "No active ingestion blockers detected."}
+            </div>
+          </div>
+          <div className="panel">
+            <h5>Operator sequence</h5>
+            <div className="inline-muted">1) Refresh stale feeds</div>
+            <div className="inline-muted">2) Run backfills for gaps</div>
+            <div className="inline-muted">3) Trigger learning/evaluation after freshness is green</div>
+          </div>
+          <div className="panel">
+            <h5>Where backtesting appears</h5>
+            <div className="inline-muted">Backtest IDs and Nautilus execution trace live in RL Evaluations.</div>
+            <Link className="text-link" href="/rl-evaluations">
+              Open RL Evaluations -&gt;
+            </Link>
+            <Link className="text-link" href="/rl-ops">
+              Open RL Ops -&gt;
+            </Link>
+          </div>
+        </div>
+      </section>
 
       <section className="rl-grid">
         <IngestionControlPanel status={status} onUpdated={refresh} />
