@@ -15,6 +15,8 @@ agentTrainingRoutes.post("/:agentId/training", requireOperatorRole, validateJson
     pair: payload.pair,
     periodStart: payload.periodStart,
     periodEnd: payload.periodEnd,
+    interval: payload.interval ?? null,
+    contextIntervals: payload.contextIntervals ?? [],
     datasetVersionId: payload.datasetVersionId ?? null,
     featureSetVersionId: payload.featureSetVersionId ?? null,
     windowSize: payload.windowSize,

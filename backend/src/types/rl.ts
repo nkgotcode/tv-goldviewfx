@@ -275,6 +275,7 @@ export type EvaluationRequest = {
   periodStart: string;
   periodEnd: string;
   interval?: string | null;
+  contextIntervals?: string[] | null;
   agentVersionId?: string | null;
   datasetVersionId?: string | null;
   featureSetVersionId?: string | null;
@@ -293,6 +294,7 @@ export type EvaluationRequest = {
   drawdownPenalty?: number | null;
   walkForward?: WalkForwardFoldConfig | null;
   featureSchemaFingerprint?: string | null;
+  featureKeyExtras?: string[] | null;
   datasetFeatures?: Array<{
     timestamp: string;
     open: number;
@@ -307,6 +309,8 @@ export type TrainingRequest = {
   pair: TradingPair;
   periodStart: string;
   periodEnd: string;
+  interval?: string | null;
+  contextIntervals?: string[] | null;
   datasetVersionId?: string | null;
   featureSetVersionId?: string | null;
   datasetHash?: string | null;
@@ -323,6 +327,7 @@ export type TrainingRequest = {
   timesteps: number;
   seed?: number | null;
   featureSchemaFingerprint?: string | null;
+  featureKeyExtras?: string[] | null;
   datasetFeatures?: Array<{
     timestamp: string;
     open: number;
@@ -362,6 +367,7 @@ export type HealthResponse = {
 export type DatasetPreviewRequest = {
   pair: TradingPair;
   interval: string;
+  contextIntervals?: string[] | null;
   startAt: string;
   endAt: string;
   windowSize?: number;

@@ -12,7 +12,8 @@ import {
   fetchOnlineLearningStatus,
   fetchOpsIngestionStatus,
   listRiskLimitSets,
-  runOnlineLearningNow,
+  runOnlineLearningWithSettings,
+  type OnlineLearningRunRequest,
   type OnlineLearningStatus,
 } from "../../services/rl_ops";
 import { fetchDataSourceRuns, triggerDataSourceBackfill, type DataSourceRun, type DataSourceBackfillRequest } from "../../services/data_sources";
@@ -70,11 +71,11 @@ export default function RlOpsPage() {
     await refresh();
   };
 
-  const handleRunLearningNow = async () => {
+  const handleRunLearningNow = async (payload?: OnlineLearningRunRequest) => {
     setLearningAction(true);
     setLearningError(null);
     try {
-      await runOnlineLearningNow();
+      await runOnlineLearningWithSettings(payload ?? {});
       await refresh();
     } catch (err) {
       setLearningError(err instanceof Error ? err.message : "Failed to run online learning.");

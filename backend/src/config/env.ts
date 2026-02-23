@@ -110,6 +110,8 @@ const envSchema = z.object({
   RL_ENFORCE_PROVENANCE: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_ENABLED: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
+  RL_ONLINE_LEARNING_INTERVAL: z.string().regex(/^\d+(m|h|d|w|M)$/).default("1m"),
+  RL_ONLINE_LEARNING_CONTEXT_INTERVALS: z.string().optional(),
   RL_ONLINE_LEARNING_PAIR: z
     .string()
     .default("XAUTUSDT")
@@ -123,6 +125,10 @@ const envSchema = z.object({
   RL_ONLINE_LEARNING_TIMESTEPS: z.coerce.number().int().positive().default(500),
   RL_ONLINE_LEARNING_DECISION_THRESHOLD: z.coerce.number().positive().default(0.2),
   RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD: booleanFromEnv.default(true),
+  RL_ONLINE_LEARNING_MIN_WIN_RATE: z.coerce.number().min(0).max(1).default(0.55),
+  RL_ONLINE_LEARNING_MIN_NET_PNL: z.coerce.number().default(0),
+  RL_ONLINE_LEARNING_MAX_DRAWDOWN: z.coerce.number().min(0).max(1).default(0.25),
+  RL_ONLINE_LEARNING_MIN_TRADE_COUNT: z.coerce.number().int().nonnegative().default(20),
   RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA: z.coerce.number().default(0),
   RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA: z.coerce.number().default(0),
   RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA: z.coerce.number().nonnegative().default(0.05),

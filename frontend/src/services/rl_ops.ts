@@ -107,6 +107,8 @@ export async function stopAgentRun(agentId = "gold-rl-agent") {
 export type OnlineLearningConfig = {
   enabled: boolean;
   intervalMin: number;
+  interval: string;
+  contextIntervals: string[];
   pair: string;
   trainWindowMin: number;
   evalWindowMin: number;
@@ -116,6 +118,10 @@ export type OnlineLearningConfig = {
   timesteps: number;
   decisionThreshold: number;
   autoRollForward: boolean;
+  minWinRate: number;
+  minNetPnl: number;
+  maxDrawdown: number;
+  minTradeCount: number;
   minWinRateDelta: number;
   minNetPnlDelta: number;
   maxDrawdownDelta: number;
@@ -207,5 +213,38 @@ export async function fetchOnlineLearningStatus(limit = 5): Promise<OnlineLearni
 export async function runOnlineLearningNow() {
   return fetchJson<{ status: string }>(`/ops/learning/run`, {
     method: "POST",
+  });
+}
+
+export type OnlineLearningRunRequest = {
+  pair?: string;
+  interval?: string;
+  contextIntervals?: string[];
+  contextIntervalsCsv?: string;
+  trainWindowMin?: number;
+  evalWindowMin?: number;
+  evalLagMin?: number;
+  windowSize?: number;
+  stride?: number;
+  timesteps?: number;
+  decisionThreshold?: number;
+  autoRollForward?: boolean;
+  promotionGates?: {
+    minWinRate?: number;
+    minNetPnl?: number;
+    maxDrawdown?: number;
+    minTradeCount?: number;
+    minWinRateDelta?: number;
+    minNetPnlDelta?: number;
+    maxDrawdownDelta?: number;
+    minTradeCountDelta?: number;
+  };
+};
+
+export async function runOnlineLearningWithSettings(payload: OnlineLearningRunRequest) {
+  return fetchJson<{ status: string }>(`/ops/learning/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }

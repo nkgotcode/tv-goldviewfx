@@ -66,6 +66,7 @@ export class RlServiceClient {
       period_start: payload.periodStart,
       period_end: payload.periodEnd,
       interval: payload.interval ?? "1m",
+      context_intervals: payload.contextIntervals ?? [],
       agent_version_id: payload.agentVersionId ?? null,
       dataset_version_id: payload.datasetVersionId ?? null,
       feature_set_version_id: payload.featureSetVersionId ?? null,
@@ -92,6 +93,7 @@ export class RlServiceClient {
           }
         : null,
       feature_schema_fingerprint: payload.featureSchemaFingerprint ?? null,
+      feature_key_extras: payload.featureKeyExtras ?? null,
       dataset_features: payload.datasetFeatures ?? null,
     });
   }
@@ -100,6 +102,7 @@ export class RlServiceClient {
     return this.postJson("/datasets/preview", {
       pair: payload.pair,
       interval: payload.interval,
+      context_intervals: payload.contextIntervals ?? [],
       start_at: payload.startAt,
       end_at: payload.endAt,
       window_size: payload.windowSize,
@@ -125,10 +128,13 @@ export class RlServiceClient {
       pair: payload.pair,
       period_start: payload.periodStart,
       period_end: payload.periodEnd,
+      interval: payload.interval ?? "1m",
+      context_intervals: payload.contextIntervals ?? [],
       dataset_version_id: payload.datasetVersionId ?? null,
       feature_set_version_id: payload.featureSetVersionId ?? null,
       dataset_hash: payload.datasetHash ?? null,
       feature_schema_fingerprint: payload.featureSchemaFingerprint ?? null,
+      feature_key_extras: payload.featureKeyExtras ?? null,
       timesteps: payload.timesteps,
       seed: payload.seed ?? null,
       window_size: payload.windowSize,

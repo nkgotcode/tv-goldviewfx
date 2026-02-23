@@ -1,16 +1,108 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { loadEnv } from "../../config/env";
+import { resolveSupportedPair } from "../../config/market_catalog";
 import { loadRlServiceConfig } from "../../config/rl_service";
 import { getEvaluationReport, getLatestEvaluationReport } from "../../db/repositories/evaluation_reports";
 import { listRecentLearningUpdates } from "../../db/repositories/learning_updates";
-import { runOnlineLearningCycle } from "../../services/online_learning_service";
+import { runOnlineLearningCycle, type OnlineLearningRunOverrides } from "../../services/online_learning_service";
 import { recordOpsAudit } from "../../services/ops_audit";
 import { logWarn } from "../../services/logger";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
+import type { TradingPair } from "../../types/rl";
 
 export const opsLearningRoutes = new Hono();
 
 opsLearningRoutes.use("*", withOpsIdentity);
+
+const intervalRegex = /^\d+(m|h|d|w|M)$/;
+
+const manualRunPayloadSchema = z.object({
+  pair: z.string().min(1).optional(),
+  interval: z.string().regex(intervalRegex).optional(),
+  contextIntervals: z.array(z.string().regex(intervalRegex)).optional(),
+  contextIntervalsCsv: z.string().optional(),
+  trainWindowMin: z.number().int().positive().optional(),
+  evalWindowMin: z.number().int().positive().optional(),
+  evalLagMin: z.number().int().nonnegative().optional(),
+  windowSize: z.number().int().positive().optional(),
+  stride: z.number().int().positive().optional(),
+  timesteps: z.number().int().positive().optional(),
+  decisionThreshold: z.number().positive().optional(),
+  autoRollForward: z.boolean().optional(),
+  promotionGates: z
+    .object({
+      minWinRate: z.number().min(0).max(1).optional(),
+      minNetPnl: z.number().optional(),
+      maxDrawdown: z.number().min(0).max(1).optional(),
+      minTradeCount: z.number().int().nonnegative().optional(),
+      minWinRateDelta: z.number().optional(),
+      minNetPnlDelta: z.number().optional(),
+      maxDrawdownDelta: z.number().nonnegative().optional(),
+      minTradeCountDelta: z.number().int().optional(),
+    })
+    .optional(),
+});
+
+function parseContextIntervals(value?: string | null) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeContextIntervals(baseInterval: string, values?: string[] | null) {
+  if (!values || values.length === 0) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of values) {
+    const interval = value.trim();
+    if (!intervalRegex.test(interval)) continue;
+    if (interval === baseInterval) continue;
+    if (seen.has(interval)) continue;
+    seen.add(interval);
+    normalized.push(interval);
+  }
+  return normalized;
+}
+
+function buildOnlineLearningConfig(env: ReturnType<typeof loadEnv>) {
+  return {
+    enabled: env.RL_ONLINE_LEARNING_ENABLED,
+    intervalMin: env.RL_ONLINE_LEARNING_INTERVAL_MIN,
+    interval: env.RL_ONLINE_LEARNING_INTERVAL,
+    contextIntervals: normalizeContextIntervals(
+      env.RL_ONLINE_LEARNING_INTERVAL,
+      parseContextIntervals(env.RL_ONLINE_LEARNING_CONTEXT_INTERVALS),
+    ),
+    pair: env.RL_ONLINE_LEARNING_PAIR,
+    trainWindowMin: env.RL_ONLINE_LEARNING_TRAIN_WINDOW_MIN,
+    evalWindowMin: env.RL_ONLINE_LEARNING_EVAL_WINDOW_MIN,
+    evalLagMin: env.RL_ONLINE_LEARNING_EVAL_LAG_MIN,
+    windowSize: env.RL_ONLINE_LEARNING_WINDOW_SIZE,
+    stride: env.RL_ONLINE_LEARNING_STRIDE,
+    timesteps: env.RL_ONLINE_LEARNING_TIMESTEPS,
+    decisionThreshold: env.RL_ONLINE_LEARNING_DECISION_THRESHOLD,
+    autoRollForward: env.RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD,
+    minWinRate: env.RL_ONLINE_LEARNING_MIN_WIN_RATE,
+    minNetPnl: env.RL_ONLINE_LEARNING_MIN_NET_PNL,
+    maxDrawdown: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN,
+    minTradeCount: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT,
+    minWinRateDelta: env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA,
+    minNetPnlDelta: env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
+    maxDrawdownDelta: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
+    minTradeCountDelta: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
+    leverageDefault: env.RL_PPO_LEVERAGE_DEFAULT,
+    takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+    slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+    fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+    drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+    feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
+    feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
+    feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
+  };
+}
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
@@ -86,31 +178,7 @@ opsLearningRoutes.get("/status", async (c) => {
 
     return c.json({
       generatedAt: new Date().toISOString(),
-      config: {
-        enabled: env.RL_ONLINE_LEARNING_ENABLED,
-        intervalMin: env.RL_ONLINE_LEARNING_INTERVAL_MIN,
-        pair: env.RL_ONLINE_LEARNING_PAIR,
-        trainWindowMin: env.RL_ONLINE_LEARNING_TRAIN_WINDOW_MIN,
-        evalWindowMin: env.RL_ONLINE_LEARNING_EVAL_WINDOW_MIN,
-        evalLagMin: env.RL_ONLINE_LEARNING_EVAL_LAG_MIN,
-        windowSize: env.RL_ONLINE_LEARNING_WINDOW_SIZE,
-        stride: env.RL_ONLINE_LEARNING_STRIDE,
-        timesteps: env.RL_ONLINE_LEARNING_TIMESTEPS,
-        decisionThreshold: env.RL_ONLINE_LEARNING_DECISION_THRESHOLD,
-        autoRollForward: env.RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD,
-        minWinRateDelta: env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA,
-        minNetPnlDelta: env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
-        maxDrawdownDelta: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
-        minTradeCountDelta: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
-        leverageDefault: env.RL_PPO_LEVERAGE_DEFAULT,
-        takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
-        slippageBps: env.RL_PPO_SLIPPAGE_BPS,
-        fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
-        drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
-        feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
-        feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
-        feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
-      },
+      config: buildOnlineLearningConfig(env),
       rlService: {
         url: rlConfig.url,
         mock: rlConfig.mock,
@@ -122,31 +190,7 @@ opsLearningRoutes.get("/status", async (c) => {
     logWarn("Failed to load online learning status", { error: String(error) });
     return c.json({
       generatedAt: new Date().toISOString(),
-      config: {
-        enabled: env.RL_ONLINE_LEARNING_ENABLED,
-        intervalMin: env.RL_ONLINE_LEARNING_INTERVAL_MIN,
-        pair: env.RL_ONLINE_LEARNING_PAIR,
-        trainWindowMin: env.RL_ONLINE_LEARNING_TRAIN_WINDOW_MIN,
-        evalWindowMin: env.RL_ONLINE_LEARNING_EVAL_WINDOW_MIN,
-        evalLagMin: env.RL_ONLINE_LEARNING_EVAL_LAG_MIN,
-        windowSize: env.RL_ONLINE_LEARNING_WINDOW_SIZE,
-        stride: env.RL_ONLINE_LEARNING_STRIDE,
-        timesteps: env.RL_ONLINE_LEARNING_TIMESTEPS,
-        decisionThreshold: env.RL_ONLINE_LEARNING_DECISION_THRESHOLD,
-        autoRollForward: env.RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD,
-        minWinRateDelta: env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA,
-        minNetPnlDelta: env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
-        maxDrawdownDelta: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
-        minTradeCountDelta: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
-        leverageDefault: env.RL_PPO_LEVERAGE_DEFAULT,
-        takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
-        slippageBps: env.RL_PPO_SLIPPAGE_BPS,
-        fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
-        drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
-        feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
-        feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
-        feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
-      },
+      config: buildOnlineLearningConfig(env),
       rlService: {
         url: rlConfig.url,
         mock: rlConfig.mock,
@@ -159,12 +203,46 @@ opsLearningRoutes.get("/status", async (c) => {
 
 opsLearningRoutes.post("/run", requireOperatorRole, async (c) => {
   try {
-    const result = await runOnlineLearningCycle("manual");
+    const env = loadEnv();
+    const rawPayload = await c.req.json().catch(() => ({}));
+    const parsed = manualRunPayloadSchema.safeParse(rawPayload ?? {});
+    if (!parsed.success) {
+      return c.json({ error: "invalid_payload", details: parsed.error.flatten() }, 400);
+    }
+    const payload = parsed.data;
+    const resolvedPair = payload.pair ? resolveSupportedPair(payload.pair) : null;
+    if (payload.pair && !resolvedPair) {
+      return c.json({ error: "unsupported_pair", pair: payload.pair }, 400);
+    }
+    const interval = payload.interval ?? env.RL_ONLINE_LEARNING_INTERVAL;
+    const hasContextOverride = payload.contextIntervals !== undefined || payload.contextIntervalsCsv !== undefined;
+    const mergedContextIntervals = normalizeContextIntervals(interval, [
+      ...(payload.contextIntervals ?? []),
+      ...parseContextIntervals(payload.contextIntervalsCsv),
+    ]);
+    const overrides: OnlineLearningRunOverrides = {
+      pair: (resolvedPair ?? undefined) as TradingPair | undefined,
+      interval: payload.interval,
+      contextIntervals: hasContextOverride ? mergedContextIntervals : undefined,
+      trainWindowMin: payload.trainWindowMin,
+      evalWindowMin: payload.evalWindowMin,
+      evalLagMin: payload.evalLagMin,
+      windowSize: payload.windowSize,
+      stride: payload.stride,
+      timesteps: payload.timesteps,
+      decisionThreshold: payload.decisionThreshold,
+      autoRollForward: payload.autoRollForward,
+      promotionGates: payload.promotionGates ?? null,
+    };
+    const result = await runOnlineLearningCycle("manual", overrides);
     await recordOpsAudit({
       actor: c.get("opsActor") ?? "system",
       action: "online_learning.run",
       resource_type: "learning_update",
-      metadata: result,
+      metadata: {
+        ...result,
+        overrides,
+      },
     });
     return c.json({ ...result, ranAt: new Date().toISOString() });
   } catch (error) {

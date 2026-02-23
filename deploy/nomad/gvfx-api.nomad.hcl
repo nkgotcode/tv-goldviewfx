@@ -90,7 +90,7 @@ variable "timescale_market_data_enabled" {
 
 variable "rl_online_learning_enabled" {
   type    = string
-  default = "false"
+  default = "true"
 }
 
 variable "rl_service_timeout_ms" {
@@ -101,6 +101,41 @@ variable "rl_service_timeout_ms" {
 variable "rl_online_learning_decision_threshold" {
   type    = number
   default = 0.2
+}
+
+variable "rl_online_learning_interval_min" {
+  type    = number
+  default = 60
+}
+
+variable "rl_online_learning_interval" {
+  type    = string
+  default = "1m"
+}
+
+variable "rl_online_learning_context_intervals" {
+  type    = string
+  default = "5m,15m,1h,4h"
+}
+
+variable "rl_online_learning_min_win_rate" {
+  type    = number
+  default = 0.62
+}
+
+variable "rl_online_learning_min_net_pnl" {
+  type    = number
+  default = 0
+}
+
+variable "rl_online_learning_max_drawdown" {
+  type    = number
+  default = 0.12
+}
+
+variable "rl_online_learning_min_trade_count" {
+  type    = number
+  default = 25
 }
 
 variable "api_required_rl_tier" {
@@ -202,6 +237,13 @@ job "gvfx-api" {
         BINGX_MARKET_DATA_PAIRS = var.bingx_market_data_pairs
         TIMESCALE_MARKET_DATA_ENABLED = var.timescale_market_data_enabled
         RL_ONLINE_LEARNING_ENABLED = var.rl_online_learning_enabled
+        RL_ONLINE_LEARNING_INTERVAL_MIN = "${var.rl_online_learning_interval_min}"
+        RL_ONLINE_LEARNING_INTERVAL = var.rl_online_learning_interval
+        RL_ONLINE_LEARNING_CONTEXT_INTERVALS = var.rl_online_learning_context_intervals
+        RL_ONLINE_LEARNING_MIN_WIN_RATE = "${var.rl_online_learning_min_win_rate}"
+        RL_ONLINE_LEARNING_MIN_NET_PNL = "${var.rl_online_learning_min_net_pnl}"
+        RL_ONLINE_LEARNING_MAX_DRAWDOWN = "${var.rl_online_learning_max_drawdown}"
+        RL_ONLINE_LEARNING_MIN_TRADE_COUNT = "${var.rl_online_learning_min_trade_count}"
         RL_SERVICE_TIMEOUT_MS = "${var.rl_service_timeout_ms}"
         RL_ONLINE_LEARNING_DECISION_THRESHOLD = "${var.rl_online_learning_decision_threshold}"
       }

@@ -22,12 +22,30 @@ export type LearningUpdateInput = {
   rollbackVersionId?: string | null;
 };
 
-const PROMOTION_RULES = {
-  minWinRate: 0.55,
-  minNetPnl: 0,
-  maxDrawdown: 0.25,
-  minTradeCount: 20,
+export type PromotionGates = {
+  minWinRate: number;
+  minNetPnl: number;
+  maxDrawdown: number;
+  minTradeCount: number;
+  minWinRateDelta: number;
+  minNetPnlDelta: number;
+  maxDrawdownDelta: number;
+  minTradeCountDelta: number;
 };
+
+function resolvePromotionGates(overrides?: Partial<PromotionGates> | null): PromotionGates {
+  const env = loadEnv();
+  return {
+    minWinRate: overrides?.minWinRate ?? env.RL_ONLINE_LEARNING_MIN_WIN_RATE,
+    minNetPnl: overrides?.minNetPnl ?? env.RL_ONLINE_LEARNING_MIN_NET_PNL,
+    maxDrawdown: overrides?.maxDrawdown ?? env.RL_ONLINE_LEARNING_MAX_DRAWDOWN,
+    minTradeCount: overrides?.minTradeCount ?? env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT,
+    minWinRateDelta: overrides?.minWinRateDelta ?? env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA,
+    minNetPnlDelta: overrides?.minNetPnlDelta ?? env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
+    maxDrawdownDelta: overrides?.maxDrawdownDelta ?? env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
+    minTradeCountDelta: overrides?.minTradeCountDelta ?? env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
+  };
+}
 
 type PromotionDecision = {
   promoted: boolean;
@@ -39,8 +57,9 @@ function evaluatePromotionDecision(params: {
   challenger: LearningUpdateMetrics;
   challengerStatus?: "pass" | "fail";
   champion?: LearningUpdateMetrics | null;
+  promotionGates?: Partial<PromotionGates> | null;
 }): PromotionDecision {
-  const env = loadEnv();
+  const gates = resolvePromotionGates(params.promotionGates);
   const challenger = params.challenger;
   const champion = params.champion ?? null;
   const reasons: string[] = [];
@@ -52,16 +71,16 @@ function evaluatePromotionDecision(params: {
   };
 
   if (params.challengerStatus === "fail") reasons.push("challenger_report_failed");
-  if (challenger.winRate < PROMOTION_RULES.minWinRate) reasons.push("win_rate_below_threshold");
-  if (challenger.netPnlAfterFees <= PROMOTION_RULES.minNetPnl) reasons.push("net_pnl_non_positive");
-  if (challenger.maxDrawdown > PROMOTION_RULES.maxDrawdown) reasons.push("drawdown_too_high");
-  if (challenger.tradeCount < PROMOTION_RULES.minTradeCount) reasons.push("insufficient_trade_count");
+  if (challenger.winRate < gates.minWinRate) reasons.push("win_rate_below_threshold");
+  if (challenger.netPnlAfterFees <= gates.minNetPnl) reasons.push("net_pnl_non_positive");
+  if (challenger.maxDrawdown > gates.maxDrawdown) reasons.push("drawdown_too_high");
+  if (challenger.tradeCount < gates.minTradeCount) reasons.push("insufficient_trade_count");
 
   if (champion) {
-    if (deltas.winRateDelta < env.RL_ONLINE_LEARNING_MIN_WIN_RATE_DELTA) reasons.push("win_rate_delta_below_gate");
-    if (deltas.netPnlDelta < env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA) reasons.push("net_pnl_delta_below_gate");
-    if (deltas.drawdownDelta > env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA) reasons.push("drawdown_delta_above_gate");
-    if (deltas.tradeCountDelta < env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA) reasons.push("trade_count_delta_below_gate");
+    if (deltas.winRateDelta < gates.minWinRateDelta) reasons.push("win_rate_delta_below_gate");
+    if (deltas.netPnlDelta < gates.minNetPnlDelta) reasons.push("net_pnl_delta_below_gate");
+    if (deltas.drawdownDelta > gates.maxDrawdownDelta) reasons.push("drawdown_delta_above_gate");
+    if (deltas.tradeCountDelta < gates.minTradeCountDelta) reasons.push("trade_count_delta_below_gate");
   }
 
   return {
@@ -164,6 +183,7 @@ export async function runLearningUpdateFromReport(input: {
     tradeCount?: number;
   } | null;
   rollbackVersionId?: string | null;
+  promotionGates?: Partial<PromotionGates> | null;
 }) {
   const report = input.report;
   const startedAt = new Date().toISOString();
@@ -204,6 +224,7 @@ export async function runLearningUpdateFromReport(input: {
     challenger: challengerMetrics,
     challengerStatus: report.status,
     champion: championMetrics,
+    promotionGates: input.promotionGates,
   });
 
   if (decision.promoted) {

@@ -7,10 +7,11 @@ import type { Trade } from "../services/api";
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const MODES = ["all", "paper", "live"] as const;
-const INITIAL_BAR_COUNT = 1200;
-const HISTORY_CHUNK_BARS = 500;
-const PRELOAD_HISTORY_REQUESTS = 24;
-const PRELOAD_HISTORY_MAX_BARS = 24_000;
+const INITIAL_BAR_COUNT = 1000;
+const INITIAL_TARGET_BARS = 5000;
+const HISTORY_CHUNK_BARS = 1000;
+const PRELOAD_HISTORY_REQUESTS = 8;
+const PRELOAD_HISTORY_MAX_BARS = 8_000;
 const MAX_EMPTY_LOOKBACK_ATTEMPTS = 6;
 const UPDATE_FETCH_BARS = 500;
 const LIVE_POLL_MS = 4000;
@@ -316,7 +317,12 @@ export default function MarketKlinePanel({
             let requestCount = 0;
             let prependedBars = 0;
             let anchor = data[0].timestamp;
-            while (!canceled && requestCount < PRELOAD_HISTORY_REQUESTS && prependedBars < PRELOAD_HISTORY_MAX_BARS) {
+            while (
+              !canceled &&
+              requestCount < PRELOAD_HISTORY_REQUESTS &&
+              prependedBars < PRELOAD_HISTORY_MAX_BARS &&
+              data.length < INITIAL_TARGET_BARS
+            ) {
               const older = await fetchOlder(anchor);
               if (older.length === 0) break;
               data = [...older, ...data];

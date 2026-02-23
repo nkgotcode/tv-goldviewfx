@@ -98,10 +98,12 @@ export type DatasetFeatureProvenance = {
   resolvedBingxSymbol: string;
   candidatePairs: string[];
   interval: string;
+  contextIntervals: string[];
   periodStart: string;
   periodEnd: string;
   rowCounts: {
     candles: number;
+    contextCandles: Record<string, number>;
     funding: number;
     openInterest: number;
     markIndex: number;
@@ -110,6 +112,7 @@ export type DatasetFeatureProvenance = {
   };
   dataSources: DatasetDataSourceEntry[];
   dataFields: string[];
+  contextFeatureKeys: string[];
   candlesOrigin: "stored" | "live" | "stored+live" | "synthetic";
   liveFetch: {
     attemptedSymbols: string[];
@@ -121,6 +124,7 @@ export type DatasetFeatureProvenance = {
 
 export type DatasetFeatureBuildResult = {
   features: Array<Record<string, number | string>>;
+  contextFeatureKeys: string[];
   provenance: DatasetFeatureProvenance;
 };
 
@@ -141,6 +145,15 @@ function resolveCandidatePairs(requestedPair: string) {
   const requestedToken = normalizePairToken(requestedSymbol);
   const aliasPairs = getSupportedPairs().filter((pair) => normalizePairToken(toBingxSymbol(pair)) === requestedToken);
   return uniqueValues([requestedPair, ...aliasPairs]);
+}
+
+function normalizeContextIntervals(baseInterval: string, contextIntervals?: string[] | null) {
+  if (!Array.isArray(contextIntervals)) return [];
+  const values = contextIntervals
+    .map((value) => value.trim())
+    .filter((value) => /^\d+(m|h|d|w|M)$/.test(value))
+    .filter((value) => value !== baseInterval);
+  return Array.from(new Set(values));
 }
 
 function mergeCandles(...groups: CandleRow[][]) {
@@ -380,6 +393,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
     (process.env.BINGX_MARKET_DATA_MOCK ?? "").toLowerCase(),
   );
   const candidatePairs = resolveCandidatePairs(input.pair);
+  const contextIntervals = normalizeContextIntervals(input.interval, input.contextIntervals);
   const requestedBingxSymbol = toBingxSymbol(input.pair);
 
   const candleResults = await Promise.all(
@@ -480,6 +494,42 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
   if (convexCandles.length > 0 && liveCandles.length > 0) candlesOrigin = "stored+live";
   if (convexCandles.length === 0 && liveCandles.length > 0) candlesOrigin = "live";
 
+  const contextCandlesByInterval = new Map<string, CandleRow[]>();
+  const contextRowCounts: Record<string, number> = {};
+  if (contextIntervals.length > 0) {
+    const contextResults = await Promise.all(
+      contextIntervals.map(async (contextInterval) => {
+        const rowsByPair = await Promise.all(
+          candidatePairs.map(async (candidatePair) => {
+            try {
+              const rows = await listBingxCandles({
+                pair: candidatePair,
+                interval: contextInterval,
+                start: input.startAt,
+                end: input.endAt,
+              });
+              return rows as CandleRow[];
+            } catch (error) {
+              logWarn("BingX context candle query failed; continuing without interval context", {
+                requestedPair: input.pair,
+                candidatePair,
+                contextInterval,
+                error: String(error),
+              });
+              return [] as CandleRow[];
+            }
+          }),
+        );
+        const merged = mergeCandles(...rowsByPair);
+        return { contextInterval, rows: merged };
+      }),
+    );
+    for (const result of contextResults) {
+      contextCandlesByInterval.set(result.contextInterval, result.rows);
+      contextRowCounts[result.contextInterval] = result.rows.length;
+    }
+  }
+
   if (candles.length === 0) {
     const config = loadRlServiceConfig();
     const allowSynthetic = config.mock || ["1", "true", "yes", "on"].includes((process.env.BINGX_MARKET_DATA_MOCK ?? "").toLowerCase());
@@ -488,6 +538,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
       const dataFields = syntheticFeatures.length === 0 ? [] : Object.keys(syntheticFeatures[0] ?? {}).sort();
       return {
         features: syntheticFeatures,
+        contextFeatureKeys: [],
         provenance: {
           requestedPair: input.pair,
           requestedBingxSymbol,
@@ -495,10 +546,12 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
           resolvedBingxSymbol,
           candidatePairs,
           interval: input.interval,
+          contextIntervals,
           periodStart: input.startAt,
           periodEnd: input.endAt,
           rowCounts: {
             candles: syntheticFeatures.length,
+            contextCandles: contextRowCounts,
             funding: 0,
             openInterest: 0,
             markIndex: 0,
@@ -507,6 +560,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
           },
           dataSources: [{ source: "synthetic_candles", pairs: [resolvedPair], rows: syntheticFeatures.length }],
           dataFields,
+          contextFeatureKeys: [],
           candlesOrigin: "synthetic",
           liveFetch: {
             attemptedSymbols: Array.from(liveAttemptedSymbols),
@@ -521,6 +575,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
   if (candles.length === 0) {
     return {
       features: [],
+      contextFeatureKeys: [],
       provenance: {
         requestedPair: input.pair,
         requestedBingxSymbol,
@@ -528,10 +583,12 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
         resolvedBingxSymbol,
         candidatePairs,
         interval: input.interval,
+        contextIntervals,
         periodStart: input.startAt,
         periodEnd: input.endAt,
         rowCounts: {
           candles: 0,
+          contextCandles: contextRowCounts,
           funding: 0,
           openInterest: 0,
           markIndex: 0,
@@ -540,6 +597,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
         },
         dataSources: [],
         dataFields: [],
+        contextFeatureKeys: [],
         candlesOrigin,
         liveFetch: {
           attemptedSymbols: Array.from(liveAttemptedSymbols),
@@ -649,6 +707,16 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
   const normalizedOpenInterest = normalizeTimeSeries(openInterest as OpenInterestRow[], "captured_at");
   const normalizedMarkIndex = normalizeTimeSeries(markIndexPrices as MarkIndexRow[], "captured_at");
   const normalizedTickers = normalizeTimeSeries(tickers as TickerRow[], "captured_at");
+  const normalizedContext = new Map<string, ReturnType<typeof normalizeTimeSeries<CandleRow>>>();
+  const contextCursor = new Map<string, number>();
+  for (const contextInterval of contextIntervals) {
+    normalizedContext.set(
+      contextInterval,
+      normalizeTimeSeries(contextCandlesByInterval.get(contextInterval) ?? [], "open_time"),
+    );
+    contextCursor.set(contextInterval, -1);
+  }
+  const contextFeatureKeys = new Set<string>();
 
   let fundingIdx = -1;
   let oiIdx = -1;
@@ -700,6 +768,35 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
     const indexPrice = parseNumber(markIndexRow?.index_price ?? candle.close);
     const markIndexBasisBps = indexPrice !== 0 ? ((markPrice - indexPrice) / indexPrice) * 10_000 : 0;
 
+    const contextFeatures: Record<string, number> = {};
+    for (const contextInterval of contextIntervals) {
+      const rows = normalizedContext.get(contextInterval) ?? [];
+      let cursor = contextCursor.get(contextInterval) ?? -1;
+      while (cursor + 1 < rows.length && rows[cursor + 1].ts <= candleTime) {
+        cursor += 1;
+      }
+      contextCursor.set(contextInterval, cursor);
+      const current = cursor >= 0 ? rows[cursor].row : null;
+      const previous = cursor > 0 ? rows[cursor - 1].row : null;
+      const prefix = `ctx_${contextInterval}_`;
+      const close = parseNumber(current?.close ?? candle.close);
+      const prevClose = parseNumber(previous?.close ?? close);
+      const open = parseNumber(current?.open ?? close);
+      const high = parseNumber(current?.high ?? close);
+      const low = parseNumber(current?.low ?? close);
+      const volume = parseNumber(current?.volume ?? 0);
+      contextFeatures[`${prefix}open`] = open;
+      contextFeatures[`${prefix}high`] = high;
+      contextFeatures[`${prefix}low`] = low;
+      contextFeatures[`${prefix}close`] = close;
+      contextFeatures[`${prefix}volume`] = volume;
+      contextFeatures[`${prefix}return_pct`] = prevClose !== 0 ? (close - prevClose) / Math.abs(prevClose) : 0;
+      contextFeatures[`${prefix}range_pct`] = close !== 0 ? (high - low) / Math.abs(close) : 0;
+      for (const key of Object.keys(contextFeatures)) {
+        if (key.startsWith(prefix)) contextFeatureKeys.add(key);
+      }
+    }
+
     enrichedByTime.set(candle.open_time, {
       funding_rate: fundingRate,
       funding_rate_annualized: fundingRate * 3 * 365,
@@ -711,6 +808,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
       ticker_last_price: parseNumber(tickerRow?.last_price ?? candle.close),
       ticker_price_change_24h: parseNumber(tickerRow?.price_change_24h ?? 0),
       ticker_volume_24h: parseNumber(tickerRow?.volume_24h ?? 0),
+      ...contextFeatures,
     });
   }
 
@@ -778,10 +876,16 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
       pairs: featureSnapshots.length > 0 ? [resolvedPair] : [],
       rows: featureSnapshots.length,
     },
+    ...contextIntervals.map((contextInterval) => ({
+      source: `bingx_candles_ctx_${contextInterval}`,
+      pairs: storedPairsUsed.length > 0 ? storedPairsUsed : [resolvedPair],
+      rows: contextRowCounts[contextInterval] ?? 0,
+    })),
   ].filter((entry) => entry.rows > 0);
 
   return {
     features,
+    contextFeatureKeys: Array.from(contextFeatureKeys).sort(),
     provenance: {
       requestedPair: input.pair,
       requestedBingxSymbol,
@@ -789,10 +893,12 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
       resolvedBingxSymbol,
       candidatePairs,
       interval: input.interval,
+      contextIntervals,
       periodStart: input.startAt,
       periodEnd: input.endAt,
       rowCounts: {
         candles: candles.length,
+        contextCandles: contextRowCounts,
         funding: fundingRates.length,
         openInterest: openInterest.length,
         markIndex: markIndexPrices.length,
@@ -801,6 +907,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
       },
       dataSources,
       dataFields: Array.from(dataFields).sort(),
+      contextFeatureKeys: Array.from(contextFeatureKeys).sort(),
       candlesOrigin,
       liveFetch: {
         attemptedSymbols: Array.from(liveAttemptedSymbols),
@@ -820,6 +927,7 @@ export async function buildDatasetFeatures(input: DatasetPreviewRequest) {
 export async function createDatasetVersion(input: {
   pair: TradingPair;
   interval: string;
+  contextIntervals?: string[] | null;
   startAt: string;
   endAt: string;
   featureSetVersionId?: string | null;
@@ -834,6 +942,7 @@ export async function createDatasetVersion(input: {
   const features = await buildDatasetFeatures({
     pair: input.pair,
     interval: input.interval,
+    contextIntervals: input.contextIntervals ?? [],
     startAt: input.startAt,
     endAt: input.endAt,
     windowSize,
@@ -845,6 +954,7 @@ export async function createDatasetVersion(input: {
   const previewRequest: DatasetPreviewRequest = {
     pair: input.pair,
     interval: input.interval,
+    contextIntervals: input.contextIntervals ?? [],
     startAt: input.startAt,
     endAt: input.endAt,
     windowSize,

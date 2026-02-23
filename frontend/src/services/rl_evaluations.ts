@@ -26,6 +26,7 @@ export type EvaluationRequest = {
   periodStart: string;
   periodEnd: string;
   interval?: string;
+  contextIntervals?: string[];
   agentVersionId?: string;
   datasetVersionId?: string;
   featureSetVersionId?: string;

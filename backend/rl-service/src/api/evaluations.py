@@ -29,6 +29,7 @@ def run_evaluation_endpoint(payload: EvaluationRequest) -> EvaluationReport:
             slippage_bps=payload.slippage_bps,
             funding_weight=payload.funding_weight,
             drawdown_penalty=payload.drawdown_penalty,
+            feature_key_extras=payload.feature_key_extras,
             walk_forward=payload.walk_forward,
             feature_schema_fingerprint=payload.feature_schema_fingerprint,
         )

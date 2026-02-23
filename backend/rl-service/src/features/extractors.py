@@ -34,6 +34,13 @@ FUTURES_FEATURE_KEYS = [
 FEATURE_KEYS = [*BASE_FEATURE_KEYS, *DEFAULT_TECHNICAL_KEYS, *FUTURES_FEATURE_KEYS, *AUX_FEATURE_KEYS]
 
 
+def resolve_feature_keys(extras: list[str] | None = None) -> list[str]:
+    if not extras:
+        return FEATURE_KEYS
+    dynamic = sorted({key for key in extras if isinstance(key, str) and key.strip()})
+    return [*FEATURE_KEYS, *dynamic]
+
+
 def resolve_signal_conflicts(signals: Iterable[AuxiliarySignal], neutral_band: float = 0.1) -> float:
     weighted = []
     for signal in signals:

@@ -70,6 +70,18 @@ def _window_futures_features(window: list[dict]) -> dict[str, float]:
     }
 
 
+def _window_context_features(window: list[dict]) -> dict[str, float]:
+    if not window:
+        return {}
+    last = window[-1]
+    features: dict[str, float] = {}
+    for key, value in last.items():
+        if not isinstance(key, str) or not key.startswith("ctx_"):
+            continue
+        features[key] = _safe_float(value, 0.0)
+    return features
+
+
 def _compute_window_features(
     window: list[dict],
     feature_keys: Iterable[str],
@@ -105,7 +117,8 @@ def _compute_window_features(
         technical_config=technical_config,
     )
     futures_features = _window_futures_features(window)
-    all_features = {**result.features, **futures_features}
+    context_features = _window_context_features(window)
+    all_features = {**result.features, **futures_features, **context_features}
     keys = resolved_keys or result.feature_keys
     observation = np.array([float(all_features.get(key, 0.0)) for key in keys], dtype=np.float32)
     return WindowFeatures(

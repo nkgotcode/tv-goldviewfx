@@ -11,6 +11,11 @@ export const agentRunStatusSchema = z.enum(["running", "paused", "stopped"]);
 export const candleIntervalSchema = z
   .string()
   .regex(/^\d+(m|h|d|w|M)$/, "Invalid interval format (expected like 1m, 5m, 1h, 1d)");
+export const contextIntervalsSchema = z
+  .array(candleIntervalSchema)
+  .max(12, "Too many context intervals")
+  .transform((intervals) => Array.from(new Set(intervals.map((value) => value.trim()))))
+  .optional();
 export const dataSourceTypeSchema = z.enum([
   "bingx_candles",
   "bingx_orderbook",
@@ -69,6 +74,7 @@ export const evaluationRequestSchema = z.object({
   periodStart: z.string().datetime(),
   periodEnd: z.string().datetime(),
   interval: candleIntervalSchema.optional(),
+  contextIntervals: contextIntervalsSchema,
   agentVersionId: z.string().uuid().optional(),
   datasetVersionId: z.string().uuid().optional(),
   featureSetVersionId: z.string().uuid().optional(),
@@ -96,6 +102,8 @@ export const trainingRequestSchema = z.object({
   pair: tradingPairSchema,
   periodStart: z.string().datetime(),
   periodEnd: z.string().datetime(),
+  interval: candleIntervalSchema.optional(),
+  contextIntervals: contextIntervalsSchema,
   datasetVersionId: z.string().uuid().optional(),
   featureSetVersionId: z.string().uuid().optional(),
   windowSize: z.number().int().positive().optional(),

@@ -13,6 +13,8 @@ export type TrainingRunInput = {
   pair: TradingPair;
   periodStart: string;
   periodEnd: string;
+  interval?: string | null;
+  contextIntervals?: string[] | null;
   datasetVersionId?: string | null;
   featureSetVersionId?: string | null;
   windowSize?: number;
@@ -20,6 +22,19 @@ export type TrainingRunInput = {
   timesteps?: number;
   seed?: number | null;
 };
+
+function extractContextFeatureKeys(rows: Array<Record<string, unknown>>) {
+  const keys = new Set<string>();
+  const sampleCount = Math.min(rows.length, 200);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const row = rows[index];
+    for (const key of Object.keys(row)) {
+      if (!key.startsWith("ctx_")) continue;
+      keys.add(key);
+    }
+  }
+  return Array.from(keys).sort();
+}
 
 export type TrainingRunResult = {
   agentVersion: Record<string, unknown>;
@@ -68,7 +83,8 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     ? await getDatasetVersion(input.datasetVersionId)
     : await createDatasetVersion({
         pair: input.pair,
-        interval: "1m",
+        interval: input.interval ?? "1m",
+        contextIntervals: input.contextIntervals ?? [],
         startAt: input.periodStart,
         endAt: input.periodEnd,
         featureSetVersionId: input.featureSetVersionId ?? null,
@@ -83,6 +99,7 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
   const datasetFeatures = await buildDatasetFeatures({
     pair: input.pair,
     interval: dataset.interval,
+    contextIntervals: input.contextIntervals ?? [],
     startAt: dataset.start_at,
     endAt: dataset.end_at,
     windowSize: dataset.window_size ?? windowSize,
@@ -90,6 +107,7 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     featureSetVersionId,
     featureSchemaFingerprint: featureSchemaFingerprint as string,
   });
+  const featureKeyExtras = extractContextFeatureKeys(datasetFeatures as Array<Record<string, unknown>>);
 
   if (datasetFeatures.length === 0) {
     throw new Error("No dataset features available for training");
@@ -100,6 +118,8 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     pair: input.pair,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
+    interval: dataset.interval,
+    contextIntervals: input.contextIntervals ?? [],
     datasetVersionId: dataset.id,
     featureSetVersionId,
     datasetHash: dataset.dataset_hash ?? dataset.checksum ?? null,
@@ -116,6 +136,7 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
     timesteps,
     seed: input.seed ?? null,
     featureSchemaFingerprint: featureSchemaFingerprint as string,
+    featureKeyExtras,
     datasetFeatures,
   };
 

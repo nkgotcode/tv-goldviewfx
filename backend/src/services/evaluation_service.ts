@@ -113,6 +113,19 @@ function mergeEvaluationMetadata(
   return metadata;
 }
 
+function extractContextFeatureKeys(rows: Array<Record<string, unknown>>) {
+  const keys = new Set<string>();
+  const sampleCount = Math.min(rows.length, 200);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const row = rows[index];
+    for (const key of Object.keys(row)) {
+      if (!key.startsWith("ctx_")) continue;
+      keys.add(key);
+    }
+  }
+  return Array.from(keys).sort();
+}
+
 export function normalizeEvaluationReport(
   payload: Partial<EvaluationReport> & Record<string, unknown>,
   criteria: PromotionCriteria = DEFAULT_PROMOTION_CRITERIA,
@@ -224,6 +237,7 @@ export async function runEvaluation(request: EvaluationRequest) {
     : await createDatasetVersion({
         pair: request.pair,
         interval: requestedInterval,
+        contextIntervals: request.contextIntervals ?? [],
         startAt: request.periodStart,
         endAt: request.periodEnd,
         featureSetVersionId: request.featureSetVersionId ?? null,
@@ -241,6 +255,7 @@ export async function runEvaluation(request: EvaluationRequest) {
   const { features: datasetFeatures, provenance } = await buildDatasetFeaturesWithProvenance({
     pair: request.pair,
     interval,
+    contextIntervals: request.contextIntervals ?? [],
     startAt: dataset.start_at,
     endAt: dataset.end_at,
     windowSize: dataset.window_size ?? 30,
@@ -248,6 +263,7 @@ export async function runEvaluation(request: EvaluationRequest) {
     featureSetVersionId,
     featureSchemaFingerprint,
   });
+  const featureKeyExtras = extractContextFeatureKeys(datasetFeatures as Array<Record<string, unknown>>);
   const windowSize = request.windowSize ?? dataset.window_size ?? 30;
   const stride = request.stride ?? dataset.stride ?? 1;
   const leverage = request.leverage ?? env.RL_PPO_LEVERAGE_DEFAULT;
@@ -263,6 +279,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       periodStart: request.periodStart,
       periodEnd: request.periodEnd,
       interval,
+      contextIntervals: request.contextIntervals ?? [],
       agentVersionId: versionId,
       datasetVersionId: dataset.id,
       featureSetVersionId,
@@ -281,6 +298,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       drawdownPenalty,
       walkForward: request.walkForward ?? null,
       featureSchemaFingerprint,
+      featureKeyExtras,
       datasetFeatures,
     };
     if (!payload.artifactDownloadUrl && E2E_RUN_ENABLED) {
@@ -288,6 +306,8 @@ export async function runEvaluation(request: EvaluationRequest) {
         pair: request.pair,
         periodStart: request.periodStart,
         periodEnd: request.periodEnd,
+        interval,
+        contextIntervals: request.contextIntervals ?? [],
         datasetVersionId: dataset.id,
         featureSetVersionId: request.featureSetVersionId ?? dataset.feature_set_version_id ?? null,
         datasetHash: dataset.dataset_hash ?? dataset.checksum ?? null,
@@ -303,6 +323,7 @@ export async function runEvaluation(request: EvaluationRequest) {
         feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
         feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
         featureSchemaFingerprint,
+        featureKeyExtras,
         datasetFeatures,
       });
       payload.artifactBase64 =
@@ -345,6 +366,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       periodStart: request.periodStart,
       periodEnd: request.periodEnd,
       interval,
+      contextIntervals: request.contextIntervals ?? [],
       agentVersionId: versionId,
       datasetVersionId: dataset.id,
       featureSetVersionId,
@@ -359,6 +381,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       fundingWeight,
       drawdownPenalty,
       walkForward: request.walkForward ?? null,
+      featureKeyExtras,
     },
     dataFields: provenance.dataFields,
     provenance: provenance as unknown as Record<string, unknown>,

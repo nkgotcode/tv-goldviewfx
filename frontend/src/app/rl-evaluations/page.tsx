@@ -41,6 +41,19 @@ function normalizePairToken(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+function parseIntervalCsv(value: string) {
+  const tokens = value
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const unique = Array.from(new Set(tokens));
+  const invalid = unique.filter((token) => !/^\d+(m|h|d|w|M)$/.test(token));
+  if (invalid.length > 0) {
+    throw new Error(`Invalid interval(s): ${invalid.join(", ")}`);
+  }
+  return unique;
+}
+
 function toBingxSymbolToken(pair: string) {
   const token = normalizePairToken(pair);
   if (token === "GOLDUSDT" || token === "GOLD" || token === "XAUTUSDT") return "XAUTUSDT";
@@ -139,6 +152,7 @@ export default function RlEvaluationsPage() {
   const [periodStart, setPeriodStart] = useState(() => toInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)));
   const [periodEnd, setPeriodEnd] = useState(() => toInputValue(new Date()));
   const [interval, setInterval] = useState("1m");
+  const [contextIntervals, setContextIntervals] = useState("5m,15m,1h");
   const [datasetVersionId, setDatasetVersionId] = useState("");
   const [featureSetVersionId, setFeatureSetVersionId] = useState("");
   const [decisionThreshold, setDecisionThreshold] = useState("");
@@ -237,6 +251,10 @@ export default function RlEvaluationsPage() {
           periodEnd: periodEndIso,
           interval,
         };
+        const parsedContextIntervals = parseIntervalCsv(contextIntervals);
+        if (parsedContextIntervals.length > 0) {
+          payload.contextIntervals = parsedContextIntervals.filter((candidate) => candidate !== interval);
+        }
         if (versionId) payload.agentVersionId = versionId;
         if (datasetVersionId.trim()) payload.datasetVersionId = datasetVersionId.trim();
         if (featureSetVersionId.trim()) payload.featureSetVersionId = featureSetVersionId.trim();
@@ -435,6 +453,15 @@ export default function RlEvaluationsPage() {
                   </option>
                 ))}
               </select>
+            </label>
+            <label>
+              Context Intervals (CSV)
+              <input
+                type="text"
+                value={contextIntervals}
+                placeholder="5m,15m,1h"
+                onChange={(event) => setContextIntervals(event.target.value)}
+              />
             </label>
             <label>
               Dataset Version (optional)

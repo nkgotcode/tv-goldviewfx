@@ -21,7 +21,7 @@ def run_training(payload: TrainingRequest) -> TrainingResponse:
             stride=payload.stride,
             metadata={
                 "pair": payload.pair,
-                "interval": "1m",
+                "interval": payload.interval,
                 "start_at": payload.period_start,
                 "end_at": payload.period_end,
                 "feature_schema_fingerprint": payload.feature_schema_fingerprint,
@@ -45,6 +45,7 @@ def run_training(payload: TrainingRequest) -> TrainingResponse:
                 feedback_rounds=payload.feedback_rounds,
                 feedback_timesteps=payload.feedback_timesteps,
                 feedback_hard_ratio=payload.feedback_hard_ratio,
+                feature_key_extras=payload.feature_key_extras,
             ),
         )
 

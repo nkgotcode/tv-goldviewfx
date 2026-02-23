@@ -10,7 +10,7 @@ import numpy as np
 from config import load_config
 from data.dataset_builder import build_dataset
 from envs.market_env import _compute_window_features
-from features.extractors import FEATURE_KEYS
+from features.extractors import resolve_feature_keys
 from models.artifact_loader import decode_base64, fetch_artifact
 from models.registry import load_sb3_model_from_bytes
 from reports.evaluation_report import build_evaluation_report
@@ -107,6 +107,7 @@ def _build_trade_records(
     end_idx: int,
     leverage: float,
     funding_weight: float,
+    feature_keys: list[str],
 ) -> list[TradeRecord]:
     if end_idx - start_idx < 2:
         return []
@@ -114,7 +115,7 @@ def _build_trade_records(
     for idx in range(start_idx, end_idx - 1):
         current_window = windows[idx]
         next_window = windows[idx + 1]
-        features = _compute_window_features(current_window, FEATURE_KEYS)
+        features = _compute_window_features(current_window, feature_keys)
         observation = np.array(features.observation, dtype=float)
         action, _ = model.predict(observation, deterministic=True)
         try:
@@ -162,6 +163,7 @@ def run_evaluation(
     slippage_bps: float = 1.0,
     funding_weight: float = 1.0,
     drawdown_penalty: float = 0.0,
+    feature_key_extras: list[str] | None = None,
     criteria: PromotionCriteria | None = None,
     walk_forward: WalkForwardConfig | None = None,
     feature_schema_fingerprint: str | None = None,
@@ -183,6 +185,7 @@ def run_evaluation(
         artifact = fetch_artifact(artifact_download_url, expected_checksum=artifact_checksum)
 
     model = load_sb3_model_from_bytes(artifact.data)
+    feature_keys = resolve_feature_keys(feature_key_extras)
 
     dataset = build_dataset(
         dataset_features,
@@ -223,6 +226,7 @@ def run_evaluation(
             end_idx=fold.test_end,
             leverage=leverage,
             funding_weight=funding_weight,
+            feature_keys=feature_keys,
         )
         if not fold_trades and folds.strict:
             raise ValueError(f"No trades available for fold {fold.fold}")
@@ -306,5 +310,6 @@ def run_evaluation(
                 "funding_weight": funding_weight,
                 "drawdown_penalty": drawdown_penalty,
             },
+            "feature_key_extras": feature_key_extras or [],
         },
     )

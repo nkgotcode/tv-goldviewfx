@@ -108,6 +108,7 @@ class EvaluationRequest(BaseModel):
     period_start: datetime
     period_end: datetime
     interval: str = "1m"
+    context_intervals: list[str] = Field(default_factory=list)
     agent_version_id: str | None = None
     dataset_version_id: str | None = None
     feature_set_version_id: str | None = None
@@ -127,6 +128,7 @@ class EvaluationRequest(BaseModel):
     drawdown_penalty: float = 0.0
     walk_forward: WalkForwardConfig | None = None
     feature_schema_fingerprint: str | None = None
+    feature_key_extras: list[str] | None = None
 
 
 class EvaluationReport(BaseModel):
@@ -157,6 +159,7 @@ class HealthResponse(BaseModel):
 class DatasetRequest(BaseModel):
     pair: TradingPair
     interval: str = "1m"
+    context_intervals: list[str] = Field(default_factory=list)
     start_at: datetime
     end_at: datetime
     window_size: int = 30
@@ -206,6 +209,8 @@ class TrainingRequest(BaseModel):
     pair: TradingPair
     period_start: datetime
     period_end: datetime
+    interval: str = "1m"
+    context_intervals: list[str] = Field(default_factory=list)
     dataset_hash: str | None = None
     dataset_features: list[dict] | None = None
     window_size: int = 30
@@ -221,6 +226,7 @@ class TrainingRequest(BaseModel):
     timesteps: int = 5_000
     seed: int | None = None
     feature_schema_fingerprint: str | None = None
+    feature_key_extras: list[str] | None = None
 
 
 class TrainingResponse(BaseModel):

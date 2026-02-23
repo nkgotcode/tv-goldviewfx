@@ -8,7 +8,7 @@ from hashlib import sha256
 import numpy as np
 
 from envs.market_env import MarketWindowEnv
-from features.extractors import FEATURE_KEYS
+from features.extractors import resolve_feature_keys
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,7 @@ class TrainingConfig:
     feedback_rounds: int = 0
     feedback_timesteps: int = 256
     feedback_hard_ratio: float = 0.3
+    feature_key_extras: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -35,9 +36,10 @@ class TrainingResult:
 
 
 def _build_env(windows: list[list[dict]], config: TrainingConfig) -> MarketWindowEnv:
+    feature_keys = resolve_feature_keys(config.feature_key_extras)
     return MarketWindowEnv(
         windows=windows,
-        feature_keys=FEATURE_KEYS,
+        feature_keys=feature_keys,
         leverage=config.leverage,
         taker_fee_bps=config.taker_fee_bps,
         slippage_bps=config.slippage_bps,
