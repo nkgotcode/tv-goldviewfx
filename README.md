@@ -55,6 +55,14 @@ The landing dashboard surfaces the system atlas plus links into dedicated views:
 `/rl-data-sources`, and `/rl-evaluations`.
 Market tape panels use KLineChart overlays to annotate trades and backtests.
 
+### Host frontend outside Nomad
+
+You can run only backend/worker services on Nomad and host `frontend/` on another platform (for example Vercel, Cloudflare Pages, or Netlify).
+
+- Frontend env: set `NEXT_PUBLIC_API_BASE_URL` to your public API URL.
+- Backend env: set `CORS_ORIGIN` to the frontend origin so browser requests are allowed.
+- Nomad: skip `deploy/nomad/gvfx-frontend.nomad.hcl` and deploy `gvfx-api`, `gvfx-rl-service`, and `gvfx-worker`.
+
 ## RL service (Python 3.12+ + uv)
 
 ```bash
@@ -122,6 +130,9 @@ For legacy data migration, see `docs/convex-migration.md`.
 
 ## Testing (DB-backed integration + Convex E2E)
 
+- Runtime guard: `DISABLE_TEST_DATA_IN_DB=true` blocks fixture/mock/test sources from writing DB state.
+  `NODE_ENV=production` requires this to remain `true` and startup fails if fixture/mock flags are enabled.
+  Set `DISABLE_TEST_DATA_IN_DB=false` only inside isolated test environments.
 - Backend unit/integration tests use `backend/tests/setup.ts` and auto-enable DB fixtures when either:
   - `TIMESCALE_RL_OPS_ENABLED=true` with a reachable `TIMESCALE_URL`, or
   - `CONVEX_URL` is reachable.
@@ -132,14 +143,13 @@ For legacy data migration, see `docs/convex-migration.md`.
 - To run the fully scripted E2E flow (Convex + backend + frontend + Playwright): `./scripts/e2e-local.sh`
 - The E2E script auto-selects free backend/frontend ports and sets `BINGX_MARKET_DATA_MOCK=true` to avoid live BingX calls.
 
-## BingX perpetuals (GOLD-USDT)
+## BingX perpetuals (XAUT-USDT / PAXG-USDT)
 
 - Set `BINGX_API_KEY` and `BINGX_SECRET_KEY` for live trading.
 - Use `POST /agent/enable` and `PUT /agent/config` to switch `mode` to `live`.
-- The default instrument is `GOLD-USDT` (BingX perpetuals).
+- The default gold instrument is `XAUTUSDT` (mapped to BingX `XAUT-USDT`).
 - Orders are tagged with `client_order_id` (gvfx-*) so only system orders are managed.
-- BingX API symbols map as: `XAUTUSDT` → `XAUT-USDT`, `PAXGUSDT` → `PAXG-USDT`.
-  If `GOLD-USDT` is missing in `/openApi/swap/v2/quote/contracts`, confirm the exact symbol to use.
+- BingX API symbols map as: `XAUTUSDT` -> `XAUT-USDT`, `PAXGUSDT` -> `PAXG-USDT`.
 
 ## BingX market data ingestion cadence
 
@@ -169,7 +179,7 @@ For legacy data migration, see `docs/convex-migration.md`.
 
 - The worker opens a WebSocket connection to `wss://open-api-swap.bingx.com/swap-market`
   and subscribes to trades, depth, kline, ticker, and mark price streams for
-  `GOLD-USDT`, `XAUT-USDT`, and `PAXG-USDT`.
+  `XAUT-USDT`, `PAXG-USDT`, and configured crypto symbols.
 - WebSocket payloads are gzip-compressed; the server sends `Ping` every ~5s and expects `Pong`.
 - Configure via `BINGX_WS_ENABLED`, `BINGX_WS_URL`, `BINGX_WS_DEPTH_LEVEL`,
   `BINGX_WS_DEPTH_SPEED_MS`, and `BINGX_WS_FLUSH_INTERVAL_MS`.
@@ -200,6 +210,10 @@ For legacy data migration, see `docs/convex-migration.md`.
   - Mark/index prices
   - Tickers (last price + 24h stats)
 - These feeds must be available and time-aligned before RL training, evaluation, or live inference runs.
+- Online learning defaults:
+  - `RL_ONLINE_LEARNING_PAIRS` controls multi-ticker scheduled evaluation/training.
+  - `RL_ONLINE_LEARNING_INTERVAL` controls the primary training/evaluation timeframe.
+  - `RL_ONLINE_LEARNING_CONTEXT_INTERVALS` controls HTF/LTF context features.
 
 ## Sentiment analysis (OpenRouter)
 

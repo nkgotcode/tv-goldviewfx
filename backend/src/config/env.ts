@@ -60,6 +60,7 @@ const envSchema = z.object({
   BINGX_SECRET_KEY: z.string().optional(),
   BINGX_BASE_URL: z.string().url().optional(),
   BINGX_RECV_WINDOW: z.coerce.number().int().positive().default(5000),
+  EXCHANGE_METADATA_TTL_SEC: z.coerce.number().int().positive().default(3600),
   TIMESCALE_MARKET_DATA_ENABLED: booleanFromEnv.default(false),
   TIMESCALE_RL_OPS_ENABLED: booleanFromEnv.default(false),
   TIMESCALE_URL: z.string().optional(),
@@ -107,11 +108,13 @@ const envSchema = z.object({
   DRIFT_CONFIDENCE_DELTA: z.coerce.number().min(0).max(1).default(0.3),
   RETRY_QUEUE_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
   ALLOW_LIVE_SIMULATION: booleanFromEnv.default(false),
+  DISABLE_TEST_DATA_IN_DB: booleanFromEnv.default(true),
   RL_ENFORCE_PROVENANCE: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_ENABLED: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
-  RL_ONLINE_LEARNING_INTERVAL: z.string().regex(/^\d+(m|h|d|w|M)$/).default("1m"),
+  RL_ONLINE_LEARNING_INTERVAL: z.string().regex(/^\d+(m|h|d|w|M)$/).default("5m"),
   RL_ONLINE_LEARNING_CONTEXT_INTERVALS: z.string().optional(),
+  RL_ONLINE_LEARNING_PAIRS: z.string().optional(),
   RL_ONLINE_LEARNING_PAIR: z
     .string()
     .default("XAUTUSDT")
@@ -123,7 +126,7 @@ const envSchema = z.object({
   RL_ONLINE_LEARNING_WINDOW_SIZE: z.coerce.number().int().positive().default(30),
   RL_ONLINE_LEARNING_STRIDE: z.coerce.number().int().positive().default(1),
   RL_ONLINE_LEARNING_TIMESTEPS: z.coerce.number().int().positive().default(500),
-  RL_ONLINE_LEARNING_DECISION_THRESHOLD: z.coerce.number().positive().default(0.2),
+  RL_ONLINE_LEARNING_DECISION_THRESHOLD: z.coerce.number().positive().default(0.35),
   RL_ONLINE_LEARNING_AUTO_ROLL_FORWARD: booleanFromEnv.default(true),
   RL_ONLINE_LEARNING_MIN_WIN_RATE: z.coerce.number().min(0).max(1).default(0.55),
   RL_ONLINE_LEARNING_MIN_NET_PNL: z.coerce.number().default(0),
@@ -133,6 +136,12 @@ const envSchema = z.object({
   RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA: z.coerce.number().default(0),
   RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA: z.coerce.number().nonnegative().default(0.05),
   RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA: z.coerce.number().int().default(-5),
+  RL_ONLINE_LEARNING_MIN_EFFECT_SIZE: z.coerce.number().nonnegative().default(0),
+  RL_ONLINE_LEARNING_MIN_CONFIDENCE_Z: z.coerce.number().nonnegative().default(0),
+  RL_ONLINE_LEARNING_MIN_SAMPLE_SIZE: z.coerce.number().int().nonnegative().default(0),
+  RL_ONLINE_LEARNING_ROLLOUT_MODE: z.enum(["shadow", "canary", "full"]).default("canary"),
+  RL_ONLINE_LEARNING_CANARY_MIN_TRADE_COUNT: z.coerce.number().int().nonnegative().default(25),
+  RL_ONLINE_LEARNING_CANARY_MAX_DRAWDOWN: z.coerce.number().min(0).max(1).default(0.2),
   RL_PPO_LEVERAGE_DEFAULT: z.coerce.number().positive().default(3),
   RL_PPO_TAKER_FEE_BPS: z.coerce.number().nonnegative().default(4),
   RL_PPO_SLIPPAGE_BPS: z.coerce.number().nonnegative().default(1),
@@ -144,6 +153,7 @@ const envSchema = z.object({
   RL_FEATURE_OOD_ZSCORE_LIMIT: z.coerce.number().positive().default(6),
   RL_FEATURE_MAX_MISSING_CRITICAL: z.coerce.number().int().nonnegative().default(0),
   RL_FEATURE_MAX_FRESHNESS_SEC: z.coerce.number().int().positive().default(180),
+  ACCOUNT_RISK_MIN_LIQUIDATION_BUFFER_BPS: z.coerce.number().nonnegative().default(50),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -153,6 +163,29 @@ export function loadEnv(): Env {
   if (!parsed.success) {
     const message = parsed.error.issues.map((issue) => issue.message).join("; ");
     throw new Error(`Invalid environment configuration: ${message}`);
+  }
+
+  const nodeEnv = (process.env.NODE_ENV ?? "").trim().toLowerCase();
+  const isProduction = nodeEnv === "production";
+  const e2eEnabled = ["1", "true", "yes", "on"].includes((process.env.E2E_RUN ?? "").trim().toLowerCase());
+
+  if (isProduction && !parsed.data.DISABLE_TEST_DATA_IN_DB) {
+    throw new Error(
+      "Invalid environment configuration: DISABLE_TEST_DATA_IN_DB must be true when NODE_ENV=production.",
+    );
+  }
+
+  if (parsed.data.DISABLE_TEST_DATA_IN_DB || isProduction) {
+    const blocked: string[] = [];
+    if (e2eEnabled) blocked.push("E2E_RUN");
+    if (parsed.data.BINGX_MARKET_DATA_MOCK) blocked.push("BINGX_MARKET_DATA_MOCK");
+    if (parsed.data.TRADINGVIEW_USE_HTML || parsed.data.TRADINGVIEW_HTML_PATH) blocked.push("TRADINGVIEW fixture");
+    if (parsed.data.TELEGRAM_MESSAGES_PATH) blocked.push("TELEGRAM_MESSAGES_PATH");
+    if (blocked.length > 0) {
+      throw new Error(
+        `Invalid environment configuration: test/fixture sources disabled for DB writes (${blocked.join(", ")}).`,
+      );
+    }
   }
   return parsed.data;
 }

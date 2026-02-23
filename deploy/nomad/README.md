@@ -2,7 +2,7 @@
 
 This directory contains a full Nomad deployment for:
 - `gvfx-api`
-- `gvfx-frontend`
+- `gvfx-frontend` (optional; you can host frontend outside Nomad)
 - `gvfx-rl-service`
 - `gvfx-worker` (tailscale sidecar + fail-closed egress guard)
 - `gvfx-worker-egress-check` (batch preflight)
@@ -27,6 +27,17 @@ Market data storage split:
 
 Worker placement policy:
 - `gvfx-worker` and `gvfx-worker-egress-check` are constrained to `meta.egress_worker=true`.
+
+## External Frontend Hosting (Recommended)
+
+You can host the Next.js frontend on Vercel/Cloudflare/Netlify and keep Nomad for backend services only.
+
+1. Deploy `frontend/` to your hosting provider and set:
+   - `NEXT_PUBLIC_API_BASE_URL=https://<your-public-api-host>`
+2. Set API CORS for that frontend domain in Nomad vars (secrets path used by `gvfx-api`):
+   - Add `CORS_ORIGIN="https://<your-frontend-host>"` to the existing `nomad/jobs/gvfx/secrets` payload before writing it back.
+3. Run `nomad job plan` then `nomad job run` for `gvfx-api` (and worker/rl-service).
+4. Skip `gvfx-frontend` when using external hosting.
 
 ## Required Nomad Client Metadata
 
@@ -53,6 +64,36 @@ nomad node meta apply -address=http://100.100.5.40:4646 gpu=true rl_tier=seconda
    - Convex: `/var/lib/nomad/gvfx/convex`
 3. OCI images are built and pushed with immutable git-sha tags.
 4. Worker image includes `/app/scripts/tailscale/worker-egress-guard.sh` and runtime deps (`tailscale`, `jq`, and either `curl` or `wget`).
+
+## GHCR Push Reliability Notes
+
+We have repeatedly seen transient GHCR transport failures on large layers (`tls: bad record MAC`, `broken pipe`).
+
+Use this playbook to avoid long retries:
+
+1. Build + push backend and RL-service first (smallest/most stable push path).
+2. For frontend, prefer small delta/overlay builds when only app code changed.
+3. Use immutable image tags per deploy (`nomad-<date>-<sha>-<suffix>`), never reuse mutable tags for rollout jobs.
+4. If a push fails, retry `docker push` for the same tag first before rebuilding.
+5. Verify remote manifest exists before Nomad rollout:
+
+```bash
+docker build -t ghcr.io/<owner>/tv-goldviewfx-backend:<tag> -f deploy/docker/backend.Dockerfile .
+docker push ghcr.io/<owner>/tv-goldviewfx-backend:<tag>
+docker manifest inspect ghcr.io/<owner>/tv-goldviewfx-backend:<tag> >/dev/null
+```
+
+6. Only after all manifests exist, run Nomad deploy order.
+7. On Apple Silicon/macOS, force `linux/amd64` for Nomad-targeted images to avoid platform mismatch from GHCR manifests:
+
+```bash
+docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-backend:<tag> -f deploy/docker/backend-overlay.Dockerfile --push .
+docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-rl-service:<tag> -f deploy/docker/rl-service-overlay.Dockerfile --push .
+docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-frontend:<tag> -f deploy/docker/frontend-delta.Dockerfile --push .
+```
+
+8. Frontend `*-overlay-lite` images are runtime-only and do not include `next` for rebuilds. Use a full runtime base (for example `*-proxy-fix-overlay4`) for delta/overlay builds that run `npm run build`.
+9. If you need to pin a different base tag for overlays, pass `--build-arg BASE_IMAGE=<image:tag>` (backend/RL) or `--build-arg RUNNER_BASE_IMAGE=<image:tag>` (frontend delta).
 
 ## macOS Nomad Client (mbp-m3max)
 
@@ -82,6 +123,7 @@ The example defaults `TS_EXIT_NODE_PRIMARY` to your Vultr Tailnet node: `100.110
 For Timescale market-data storage, set:
 - config: `TIMESCALE_MARKET_DATA_ENABLED=true`
 - secrets: `TIMESCALE_URL=postgres://...`
+- secrets: `CORS_ORIGIN=https://<your-frontend-host>` when frontend is hosted outside Nomad
 
 For periodic full BingX backfills with gap/staleness gating, set:
 - `BINGX_FULL_BACKFILL_ENABLED=true`
@@ -103,7 +145,8 @@ nomad job run deploy/nomad/gvfx-convex.nomad.hcl
 ```bash
 nomad job run deploy/nomad/gvfx-rl-service.nomad.hcl
 nomad job run deploy/nomad/gvfx-api.nomad.hcl
-nomad job run deploy/nomad/gvfx-frontend.nomad.hcl
+# Optional only if frontend is hosted on Nomad:
+# nomad job run deploy/nomad/gvfx-frontend.nomad.hcl
 ```
 
 ### Phase 3: worker egress preflight + worker cutover
@@ -119,7 +162,8 @@ nomad job run deploy/nomad/gvfx-bingx-full-backfill.nomad.hcl
 
 ## Validation Checklist
 
-1. `nomad job status gvfx-api`, `gvfx-frontend`, `gvfx-rl-service`, `gvfx-worker`, `gvfx-convex` all healthy.
+1. `nomad job status gvfx-api`, `gvfx-rl-service`, `gvfx-worker`, `gvfx-convex` all healthy.
+   - If frontend is on Nomad, `nomad job status gvfx-frontend` must also be healthy.
 2. `gvfx-worker` has exactly one running allocation.
 3. `gvfx-worker-egress-check` exits successfully.
 4. `gvfx-bingx-full-backfill` shows successful periodic runs (`nomad job status gvfx-bingx-full-backfill`).

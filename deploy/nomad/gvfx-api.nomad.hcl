@@ -70,7 +70,7 @@ variable "rl_service_port" {
 
 variable "market_gold_pairs" {
   type    = string
-  default = "XAUTUSDT,PAXGUSDT,Gold-USDT"
+  default = "XAUTUSDT,PAXGUSDT"
 }
 
 variable "market_crypto_pairs" {
@@ -80,7 +80,7 @@ variable "market_crypto_pairs" {
 
 variable "bingx_market_data_pairs" {
   type    = string
-  default = "XAUTUSDT,PAXGUSDT,Gold-USDT,ALGO-USDT,BTC-USDT,ETH-USDT,SOL-USDT,XRP-USDT,BNB-USDT"
+  default = "XAUTUSDT,PAXGUSDT,ALGO-USDT,BTC-USDT,ETH-USDT,SOL-USDT,XRP-USDT,BNB-USDT"
 }
 
 variable "timescale_market_data_enabled" {
@@ -100,7 +100,7 @@ variable "rl_service_timeout_ms" {
 
 variable "rl_online_learning_decision_threshold" {
   type    = number
-  default = 0.2
+  default = 0.35
 }
 
 variable "rl_online_learning_interval_min" {
@@ -110,12 +110,17 @@ variable "rl_online_learning_interval_min" {
 
 variable "rl_online_learning_interval" {
   type    = string
-  default = "1m"
+  default = "5m"
 }
 
 variable "rl_online_learning_context_intervals" {
   type    = string
-  default = "5m,15m,1h,4h"
+  default = "15m,1h,4h"
+}
+
+variable "rl_online_learning_pairs" {
+  type    = string
+  default = "XAUTUSDT,PAXGUSDT,BTC-USDT,ETH-USDT,SOL-USDT,ALGO-USDT,XRP-USDT,BNB-USDT"
 }
 
 variable "rl_online_learning_min_win_rate" {
@@ -231,6 +236,7 @@ job "gvfx-api" {
       }
 
       env {
+        NODE_ENV                = "production"
         PORT                    = "${var.api_port}"
         MARKET_GOLD_PAIRS       = var.market_gold_pairs
         MARKET_CRYPTO_PAIRS     = var.market_crypto_pairs
@@ -240,12 +246,19 @@ job "gvfx-api" {
         RL_ONLINE_LEARNING_INTERVAL_MIN = "${var.rl_online_learning_interval_min}"
         RL_ONLINE_LEARNING_INTERVAL = var.rl_online_learning_interval
         RL_ONLINE_LEARNING_CONTEXT_INTERVALS = var.rl_online_learning_context_intervals
+        RL_ONLINE_LEARNING_PAIRS = var.rl_online_learning_pairs
         RL_ONLINE_LEARNING_MIN_WIN_RATE = "${var.rl_online_learning_min_win_rate}"
         RL_ONLINE_LEARNING_MIN_NET_PNL = "${var.rl_online_learning_min_net_pnl}"
         RL_ONLINE_LEARNING_MAX_DRAWDOWN = "${var.rl_online_learning_max_drawdown}"
         RL_ONLINE_LEARNING_MIN_TRADE_COUNT = "${var.rl_online_learning_min_trade_count}"
         RL_SERVICE_TIMEOUT_MS = "${var.rl_service_timeout_ms}"
         RL_ONLINE_LEARNING_DECISION_THRESHOLD = "${var.rl_online_learning_decision_threshold}"
+        DISABLE_TEST_DATA_IN_DB = "true"
+        E2E_RUN                 = "0"
+        BINGX_MARKET_DATA_MOCK  = "false"
+        TRADINGVIEW_USE_HTML    = "false"
+        TRADINGVIEW_HTML_PATH   = ""
+        TELEGRAM_MESSAGES_PATH  = ""
       }
 
       template {
@@ -265,6 +278,9 @@ OPENAI_BASE_URL={{ printf "%q" .OPENAI_BASE_URL }}
 OPENAI_MODEL={{ printf "%q" .OPENAI_MODEL }}
 OPENROUTER_REFERER={{ printf "%q" .OPENROUTER_REFERER }}
 OPENROUTER_TITLE={{ printf "%q" .OPENROUTER_TITLE }}
+{{- with .CORS_ORIGIN }}
+CORS_ORIGIN={{ printf "%q" . }}
+{{- end }}
 {{ $convexHost := "${var.convex_service_name}.service.nomad" -}}
 {{ $convexPort := "${var.convex_port}" -}}
 {{ with nomadService "${var.convex_service_name}" -}}

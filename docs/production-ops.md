@@ -38,11 +38,14 @@ Set these environment variables for Timescale-backed backend paths:
 - `TIMESCALE_URL` — Postgres/Timescale connection string.
 - `TIMESCALE_RL_OPS_ENABLED=true` — RL/ops state repositories use Postgres.
 - `TIMESCALE_MARKET_DATA_ENABLED=true` — BingX market-data repositories use Postgres.
+- `DISABLE_TEST_DATA_IN_DB=true` — block fixture/test-mode sources (`E2E_RUN`, mock feeds, HTML fixtures) from writing DB state.
+- `NODE_ENV=production` — production startup now hard-requires `DISABLE_TEST_DATA_IN_DB=true`.
 
 Notes:
 
 - Backend bootstrap no longer hard-requires `CONVEX_URL` when Timescale paths are enabled.
 - `CONVEX_URL` is still required for Convex-backed routes and E2E fixtures.
+- In production, startup fails if any fixture/mock flags are present (`E2E_RUN`, `BINGX_MARKET_DATA_MOCK`, `TRADINGVIEW_USE_HTML`, `TRADINGVIEW_HTML_PATH`, `TELEGRAM_MESSAGES_PATH`).
 
 ## Daemonize API + worker
 
@@ -67,6 +70,7 @@ Notes:
 - Market-data repositories can run on Postgres via `TIMESCALE_MARKET_DATA_ENABLED=true`.
 - Observability metrics are stored in `observability_metrics`, with alerts surfaced at `GET /ops/alerts`.
 - Retry queue visibility: `GET /ops/retry-queue` for pending retries.
+- Online learning multi-ticker runs: configure `RL_ONLINE_LEARNING_PAIRS` (CSV) and `RL_ONLINE_LEARNING_INTERVAL` (primary interval).
 - Disaster recovery runbook: `docs/disaster-recovery.md`.
 - Release checklist: `docs/release-checklist.md`.
 - On-call runbook: `docs/oncall-runbook.md`.
