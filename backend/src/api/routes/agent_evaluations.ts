@@ -27,6 +27,7 @@ agentEvaluationsRoutes.post("/:agentId/evaluations", requireOperatorRole, valida
       message.includes("Invalid evaluation period") ||
       message.includes("period_end must be after period_start") ||
       message.includes("No trades available") ||
+      message.includes("No walk-forward folds available") ||
       message.includes("dataset_features are required") ||
       message.includes("No features available for dataset window") ||
       message.includes("No evaluation windows generated")

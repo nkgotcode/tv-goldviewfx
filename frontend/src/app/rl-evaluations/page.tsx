@@ -75,6 +75,12 @@ function parseIntervalToMinutes(value: string) {
 }
 
 function toFriendlyEvaluationError(message: string) {
+  if (message.includes("No evaluation windows generated")) {
+    return "Evaluation failed because the requested window size is larger than available feature rows for this period. Expand the period range or reduce window size (or use Full Window with enough history).";
+  }
+  if (message.includes("No walk-forward folds available")) {
+    return "Evaluation failed because not enough windows were available to create walk-forward folds. Use a longer time range, smaller window size, or disable Walk Forward.";
+  }
   if (message.includes("No trades available for fold")) {
     return "Evaluation failed because one walk-forward fold had zero trades. Try a longer period (for example 7 days), use 5m/15m interval, or set Walk Forward to disabled in Advanced settings.";
   }

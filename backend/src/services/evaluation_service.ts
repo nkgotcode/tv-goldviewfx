@@ -196,6 +196,24 @@ function buildCostModelFingerprint(input: {
   return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
 
+function resolveEffectiveWindowSize(requestedWindowSize: number, featureRowCount: number) {
+  if (!Number.isFinite(requestedWindowSize) || requestedWindowSize <= 0) return 1;
+  if (!Number.isFinite(featureRowCount) || featureRowCount <= 0) return requestedWindowSize;
+  if (featureRowCount === 1) return 1;
+  const maxWindowSize = Math.max(1, featureRowCount - 1);
+  return Math.max(1, Math.min(Math.floor(requestedWindowSize), maxWindowSize));
+}
+
+function buildRelaxedWalkForward() {
+  return {
+    folds: 1,
+    purgeBars: 0,
+    embargoBars: 0,
+    minTrainBars: 1,
+    strict: false,
+  };
+}
+
 function assertFeatureSchemaCompatibility(params: {
   requestedFeatureSchemaFingerprint?: string | null;
   datasetFeatureSchemaFingerprint?: string | null;
@@ -418,7 +436,8 @@ export async function runEvaluation(request: EvaluationRequest) {
     }),
   );
   const featureKeyExtras = extractContextFeatureKeys(datasetFeatures as Array<Record<string, unknown>>);
-  const windowSize = request.windowSize ?? dataset.window_size ?? 30;
+  const requestedWindowSize = request.windowSize ?? dataset.window_size ?? 30;
+  let windowSize = resolveEffectiveWindowSize(requestedWindowSize, datasetFeatures.length);
   const stride = request.stride ?? dataset.stride ?? 1;
   const leverage = request.leverage ?? env.RL_PPO_LEVERAGE_DEFAULT;
   const takerFeeBps = request.takerFeeBps ?? env.RL_PPO_TAKER_FEE_BPS;
@@ -435,6 +454,9 @@ export async function runEvaluation(request: EvaluationRequest) {
   const costModelFingerprint = buildCostModelFingerprint(costModel);
   const exchangeMetadata = await getExchangeMetadata(request.pair as TradingPair).catch(() => null);
   const artifactUrl = version.artifact_uri ? await resolveArtifactUrl(version.artifact_uri) : null;
+  let effectiveWalkForward = request.walkForward ?? null;
+  let evaluationRetryReason: string | null = null;
+  let evaluationRetryApplied = false;
   let reportPayload: EvaluationReport | null = null;
   if (!rlConfig.mock) {
     const payload = {
@@ -470,7 +492,7 @@ export async function runEvaluation(request: EvaluationRequest) {
             quantityPrecision: exchangeMetadata.quantityPrecision,
           }
         : null,
-      walkForward: request.walkForward ?? null,
+      walkForward: effectiveWalkForward,
       featureSchemaFingerprint,
       featureKeyExtras,
       datasetFeatures,
@@ -514,6 +536,28 @@ export async function runEvaluation(request: EvaluationRequest) {
           return await rlServiceClient.evaluate(payload);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
+          if (message.includes("No evaluation windows generated")) {
+            const featureRowCount = payload.datasetFeatures?.length ?? 0;
+            const fallbackWindowSize = resolveEffectiveWindowSize(payload.windowSize ?? 30, featureRowCount);
+            const fallbackWalkForward = buildRelaxedWalkForward();
+            const canRetry =
+              featureRowCount > 1 &&
+              (fallbackWindowSize !== payload.windowSize || JSON.stringify(payload.walkForward) !== JSON.stringify(fallbackWalkForward));
+            if (canRetry) {
+              evaluationRetryApplied = true;
+              evaluationRetryReason = "auto_relaxed_window_and_walk_forward";
+              windowSize = fallbackWindowSize;
+              effectiveWalkForward = fallbackWalkForward;
+              return rlServiceClient.evaluate({
+                ...payload,
+                windowSize: fallbackWindowSize,
+                walkForward: fallbackWalkForward,
+              });
+            }
+            throw new Error(
+              `No evaluation windows generated: feature rows=${featureRowCount}, requested windowSize=${payload.windowSize}. Increase period range or use a smaller window size.`,
+            );
+          }
           if (E2E_RUN_ENABLED && message.includes("No trades available")) {
             return rlServiceClient.evaluate({
               ...payload,
@@ -529,7 +573,11 @@ export async function runEvaluation(request: EvaluationRequest) {
         pair: payload.pair,
         interval: payload.interval,
         context_intervals: payload.contextIntervals ?? [],
-        walk_forward: payload.walkForward ?? null,
+        walk_forward: effectiveWalkForward,
+        requested_window_size: requestedWindowSize,
+        effective_window_size: windowSize,
+        retry_applied: evaluationRetryApplied,
+        retry_reason: evaluationRetryReason,
         backtest_run_id:
           (result as Record<string, unknown>).backtest_run_id ??
           (result as Record<string, unknown>).backtestRunId ??
@@ -586,6 +634,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       featureSchemaFingerprint,
       decisionThreshold: request.decisionThreshold ?? null,
       windowSize,
+      requestedWindowSize,
       stride,
       leverage,
       takerFeeBps,
@@ -595,7 +644,9 @@ export async function runEvaluation(request: EvaluationRequest) {
       costModelFingerprint,
       costModel,
       exchangeMetadataFingerprint: exchangeMetadata?.fingerprint ?? null,
-      walkForward: request.walkForward ?? null,
+      walkForward: effectiveWalkForward,
+      evaluationRetryApplied,
+      evaluationRetryReason,
       featureKeyExtras,
     },
     dataFields: provenance.dataFields,

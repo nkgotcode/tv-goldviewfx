@@ -50,4 +50,12 @@ Dependencies: keep all libraries and runtimes on the latest stable releases.
 - Daemonize backend: use `./scripts/daemonize-backend.sh start` to keep the API and worker running with logs in `backend-api.log` and `backend-jobs.log`.
 - BingX trades use the recent-trades feed (max 1000 rows per call); history accumulates forward from first ingest, while funding uses backfilled `startTime`/`endTime` windows and OI/mark/index are snapshotted each run.
 - Development workflow: follow the Ralph loop architecture; create/verify `activity.md` before any session and append entries per `docs/development-workflow.md`.
+- Push workflow (main): `git status` -> `git add -A` -> `git commit -m "<message>"` -> `git push origin main`.
+- Nomad deploy workflow:
+  - Build/push immutable GHCR tags (linux/amd64): `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-backend:<tag> -f deploy/docker/backend-overlay.Dockerfile --push .`, `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-rl-service:<tag> -f deploy/docker/rl-service-overlay.Dockerfile --push .`, `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-frontend:<tag> -f deploy/docker/frontend-delta.Dockerfile --push .`.
+  - Verify manifest exists before rollout: `docker manifest inspect ghcr.io/<owner>/tv-goldviewfx-backend:<tag> >/dev/null` (repeat for each image).
+  - Always `nomad job plan` before `nomad job run` for each job.
+  - Stateless rollout order: `gvfx-rl-service` -> `gvfx-api` -> optional `gvfx-frontend` -> `gvfx-worker`.
+  - Worker deploy requires egress vars when running job plan/run: `-var ts_exit_node_primary=<tailnet-ip> -var ts_egress_expected_ips=<csv>`.
+  - Verify deployment image pin: `nomad job inspect -json <job> | jq -r '.TaskGroups[].Tasks[].Config.image'`.
 <!-- MANUAL ADDITIONS END -->
