@@ -18,6 +18,9 @@ import {
 import { fetchOnlineLearningStatus, type OnlineLearningStatus } from "../../services/rl_ops";
 
 const ALL_PAIRS_OPTION = "__all_pairs__";
+const MAX_DERIVED_WINDOW_SIZE = 4096;
+const MAX_PERIOD_DAYS = 365;
+type NautilusPreset = "quick" | "promotion" | "research";
 
 function toInputValue(date: Date) {
   return date.toISOString().slice(0, 16);
@@ -75,8 +78,11 @@ function parseIntervalToMinutes(value: string) {
 }
 
 function toFriendlyEvaluationError(message: string) {
+  if (message.includes("MAX_PARAMETERS_EXCEEDED")) {
+    return "Evaluation window was too large for a single run. Use a shorter period, or keep Auto window enabled so the system uses a safe capped window.";
+  }
   if (message.includes("No evaluation windows generated")) {
-    return "Evaluation failed because the requested window size is larger than available feature rows for this period. Expand the period range or reduce window size (or use Full Window with enough history).";
+    return "Evaluation failed because the requested window size is larger than available feature rows for this period. Expand the period range or reduce window size (or enable auto window sizing).";
   }
   if (message.includes("No walk-forward folds available")) {
     return "Evaluation failed because not enough windows were available to create walk-forward folds. Use a longer time range, smaller window size, or disable Walk Forward.";
@@ -189,28 +195,29 @@ export default function RlEvaluationsPage() {
   const [selectedReportId, setSelectedReportId] = useState<string>("");
   const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
   const [versionId, setVersionId] = useState<string>("");
-  const [periodStart, setPeriodStart] = useState(() => toInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000)));
+  const [periodStart, setPeriodStart] = useState(() => toInputValue(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
   const [periodEnd, setPeriodEnd] = useState(() => toInputValue(new Date()));
-  const [interval, setInterval] = useState("1m");
-  const [contextIntervals, setContextIntervals] = useState("5m,15m,1h");
+  const [interval, setInterval] = useState("5m");
+  const [contextIntervals, setContextIntervals] = useState("15m,1h,4h");
   const [datasetVersionId, setDatasetVersionId] = useState("");
   const [featureSetVersionId, setFeatureSetVersionId] = useState("");
-  const [decisionThreshold, setDecisionThreshold] = useState("");
-  const [windowSize, setWindowSize] = useState("");
-  const [stride, setStride] = useState("");
+  const [decisionThreshold, setDecisionThreshold] = useState("0.35");
+  const [windowSize, setWindowSize] = useState("240");
+  const [stride, setStride] = useState("1");
   const [leverage, setLeverage] = useState("");
   const [takerFeeBps, setTakerFeeBps] = useState("");
   const [slippageBps, setSlippageBps] = useState("");
   const [fundingWeight, setFundingWeight] = useState("");
   const [drawdownPenalty, setDrawdownPenalty] = useState("");
-  const [walkForwardMode, setWalkForwardMode] = useState<"default" | "enabled" | "disabled">("default");
+  const [walkForwardMode, setWalkForwardMode] = useState<"default" | "enabled" | "disabled">("disabled");
   const [walkForwardFolds, setWalkForwardFolds] = useState("4");
   const [walkForwardPurgeBars, setWalkForwardPurgeBars] = useState("0");
   const [walkForwardEmbargoBars, setWalkForwardEmbargoBars] = useState("0");
   const [walkForwardMinTrainBars, setWalkForwardMinTrainBars] = useState("");
-  const [walkForwardStrict, setWalkForwardStrict] = useState(true);
+  const [walkForwardStrict, setWalkForwardStrict] = useState(false);
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [useFullWindowSize, setUseFullWindowSize] = useState(false);
+  const [nautilusPreset, setNautilusPreset] = useState<NautilusPreset>("quick");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
@@ -287,6 +294,21 @@ export default function RlEvaluationsPage() {
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
     return Math.max(1, Math.floor((end - start) / (intervalMinutes * 60_000)));
   }, [interval, periodEnd, periodStart]);
+  const derivedWindowSize = useMemo(() => {
+    if (!fullWindowSizeEstimate) return null;
+    return Math.min(fullWindowSizeEstimate, MAX_DERIVED_WINDOW_SIZE);
+  }, [fullWindowSizeEstimate]);
+  const derivedWindowCapped = Boolean(
+    fullWindowSizeEstimate &&
+      derivedWindowSize &&
+      fullWindowSizeEstimate > derivedWindowSize,
+  );
+  const selectedPeriodDays = useMemo(() => {
+    const start = new Date(periodStart).getTime();
+    const end = new Date(periodEnd).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    return Math.floor((end - start) / (24 * 60 * 60 * 1000));
+  }, [periodEnd, periodStart]);
 
   const handleRunEvaluation = async () => {
     setActionLoading(true);
@@ -335,10 +357,10 @@ export default function RlEvaluationsPage() {
         }
 
         if (useFullWindowSize) {
-          if (!fullWindowSizeEstimate || fullWindowSizeEstimate <= 0) {
+          if (!derivedWindowSize || derivedWindowSize <= 0) {
             throw new Error("Unable to derive full window size. Check period start/end and interval.");
           }
-          payload.windowSize = fullWindowSizeEstimate;
+          payload.windowSize = derivedWindowSize;
         } else if (windowSize.trim()) {
           const parsedWindowSize = Number(windowSize);
           if (!Number.isFinite(parsedWindowSize) || parsedWindowSize <= 0) {
@@ -445,28 +467,35 @@ export default function RlEvaluationsPage() {
     }
   };
 
-  const applyQuickSetup = () => {
+  const applyNautilusPreset = (preset: NautilusPreset) => {
     const end = new Date();
-    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const start =
+      preset === "quick"
+        ? new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+        : preset === "promotion"
+          ? new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+          : new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
     setPeriodStart(toInputValue(start));
     setPeriodEnd(toInputValue(end));
-    setInterval("5m");
-    setContextIntervals("15m,1h,4h");
-    setDecisionThreshold("");
-    setWindowSize("");
-    setStride("");
+    setInterval(preset === "research" ? "15m" : "5m");
+    setContextIntervals(preset === "research" ? "1h,4h" : "15m,1h,4h");
+    setDecisionThreshold("0.35");
+    setWindowSize(preset === "quick" ? "240" : preset === "promotion" ? "720" : "1024");
+    setStride(preset === "research" ? "2" : "1");
     setLeverage("");
     setTakerFeeBps("");
     setSlippageBps("");
     setFundingWeight("");
     setDrawdownPenalty("");
-    setWalkForwardMode("default");
-    setWalkForwardFolds("4");
+    setWalkForwardMode(preset === "quick" ? "disabled" : "enabled");
+    setWalkForwardFolds(preset === "research" ? "6" : "4");
     setWalkForwardPurgeBars("0");
     setWalkForwardEmbargoBars("0");
-    setWalkForwardMinTrainBars("");
-    setWalkForwardStrict(true);
+    setWalkForwardMinTrainBars(preset === "research" ? "512" : preset === "promotion" ? "240" : "");
+    setWalkForwardStrict(false);
     setUseFullWindowSize(false);
+    setShowAdvancedConfig(preset !== "quick");
+    setNautilusPreset(preset);
   };
 
   return (
@@ -515,18 +544,46 @@ export default function RlEvaluationsPage() {
       <section className="rl-grid">
         <div className="table-card">
           <h3>Run Evaluation</h3>
-          <p>Basic mode is usually enough: pick pair/version and time window, then run. Advanced mode is for walk-forward and cost-model tuning.</p>
+          <p>Pick a Nautilus workflow preset first, then adjust pair/version and time window. Advanced mode is only for manual tuning.</p>
+          <div className="detail-grid" style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={() => applyNautilusPreset("quick")}
+              style={{ opacity: nautilusPreset === "quick" ? 1 : 0.72 }}
+            >
+              Nautilus quick run (7d)
+            </button>
+            <button
+              type="button"
+              onClick={() => applyNautilusPreset("promotion")}
+              style={{ opacity: nautilusPreset === "promotion" ? 1 : 0.72 }}
+            >
+              Promotion gate run (30d)
+            </button>
+            <button
+              type="button"
+              onClick={() => applyNautilusPreset("research")}
+              style={{ opacity: nautilusPreset === "research" ? 1 : 0.72 }}
+            >
+              Research run (90d)
+            </button>
+          </div>
           <div className="action-row" style={{ marginBottom: 10 }}>
-            <button type="button" onClick={applyQuickSetup}>
-              Quick setup (recommended)
+            <button type="button" onClick={() => applyNautilusPreset("quick")}>
+              Reset to quick preset
             </button>
             <button type="button" onClick={() => setShowAdvancedConfig((value) => !value)}>
               {showAdvancedConfig ? "Hide advanced" : "Show advanced"}
             </button>
           </div>
           <div className="empty" style={{ marginBottom: 12 }}>
-            If you hit "No trades available for fold 1", widen period to 7d+, use 5m/15m candles, or disable Walk Forward in advanced settings.
+            Nautilus-safe defaults avoid oversized windows and unstable fold splits. If you need multi-year analysis, run multiple regime windows instead of one giant run.
           </div>
+          {selectedPeriodDays !== null && selectedPeriodDays > MAX_PERIOD_DAYS ? (
+            <div className="empty" style={{ marginBottom: 12 }}>
+              Selected period is {selectedPeriodDays} days. This is a long research span; use Research preset and keep auto window capped for stable execution.
+            </div>
+          ) : null}
           <div className="form-grid">
             <label>
               Pair target
@@ -578,14 +635,19 @@ export default function RlEvaluationsPage() {
               />
             </label>
             <label className="toggle-row">
-              <span>Use full period as window size</span>
+              <span>Auto-size window from period (Nautilus-safe cap)</span>
               <input type="checkbox" checked={useFullWindowSize} onChange={(event) => setUseFullWindowSize(event.target.checked)} />
             </label>
             {useFullWindowSize ? (
               <label>
                 Derived window size
-                <input value={fullWindowSizeEstimate ?? ""} readOnly placeholder="Adjust period/interval to derive" />
+                <input value={derivedWindowSize ?? ""} readOnly placeholder="Adjust period/interval to derive" />
               </label>
+            ) : null}
+            {useFullWindowSize && derivedWindowCapped ? (
+              <div className="empty" style={{ marginBottom: 0 }}>
+                Auto window capped at {MAX_DERIVED_WINDOW_SIZE} bars (derived {fullWindowSizeEstimate ?? 0}) to prevent oversized parameter payloads.
+              </div>
             ) : null}
             {showAdvancedConfig ? (
               <>

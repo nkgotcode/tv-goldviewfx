@@ -80,6 +80,7 @@ export type RlFeatureSnapshotRow = {
 
 let sqlClient: postgres.Sql | null = null;
 let schemaReadyPromise: Promise<void> | null = null;
+const FEATURE_SNAPSHOT_UPSERT_CHUNK_SIZE = 4000;
 
 function toIsoString(value: unknown) {
   if (value === null || value === undefined) return null;
@@ -819,35 +820,38 @@ export async function upsertTimescaleFeatureSnapshots(rows: RlFeatureSnapshotRow
   if (rows.length === 0) return [];
   await ensureTimescaleMarketDataSchema();
   const sql = getSql();
-  await sql`
-    insert into rl_feature_snapshots ${sql(
-      rows.map((row) => ({
-        ...row,
-        features: JSON.stringify(row.features ?? {}),
-        source_window_start: row.source_window_start ?? null,
-        source_window_end: row.source_window_end ?? null,
-      })),
-      "pair",
-      "interval",
-      "feature_set_version_id",
-      "captured_at",
-      "schema_fingerprint",
-      "features",
-      "warmup",
-      "is_complete",
-      "source_window_start",
-      "source_window_end",
-    )}
-    on conflict (pair, interval, feature_set_version_id, captured_at)
-    do update set
-      schema_fingerprint = excluded.schema_fingerprint,
-      features = excluded.features,
-      warmup = excluded.warmup,
-      is_complete = excluded.is_complete,
-      source_window_start = excluded.source_window_start,
-      source_window_end = excluded.source_window_end,
-      updated_at = now()
-  `;
+  for (let start = 0; start < rows.length; start += FEATURE_SNAPSHOT_UPSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(start, start + FEATURE_SNAPSHOT_UPSERT_CHUNK_SIZE);
+    await sql`
+      insert into rl_feature_snapshots ${sql(
+        chunk.map((row) => ({
+          ...row,
+          features: JSON.stringify(row.features ?? {}),
+          source_window_start: row.source_window_start ?? null,
+          source_window_end: row.source_window_end ?? null,
+        })),
+        "pair",
+        "interval",
+        "feature_set_version_id",
+        "captured_at",
+        "schema_fingerprint",
+        "features",
+        "warmup",
+        "is_complete",
+        "source_window_start",
+        "source_window_end",
+      )}
+      on conflict (pair, interval, feature_set_version_id, captured_at)
+      do update set
+        schema_fingerprint = excluded.schema_fingerprint,
+        features = excluded.features,
+        warmup = excluded.warmup,
+        is_complete = excluded.is_complete,
+        source_window_start = excluded.source_window_start,
+        source_window_end = excluded.source_window_end,
+        updated_at = now()
+    `;
+  }
   return rows;
 }
 

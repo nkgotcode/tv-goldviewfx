@@ -67,6 +67,8 @@ const E2E_PROMOTION_CRITERIA: PromotionCriteria = {
   maxDrawdown: 10000,
   minTradeCount: 20,
 };
+const MAX_EVALUATION_FEATURE_ROWS = Number.parseInt(process.env.RL_EVAL_MAX_FEATURE_ROWS ?? "20000", 10);
+const MAX_EVALUATION_WINDOW_SIZE = Number.parseInt(process.env.RL_EVAL_MAX_WINDOW_SIZE ?? "4096", 10);
 
 function resolveStatus(metrics: EvaluationMetrics, criteria: PromotionCriteria) {
   if (metrics.win_rate < criteria.minWinRate) return "fail";
@@ -196,12 +198,50 @@ function buildCostModelFingerprint(input: {
   return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
 
+function resolvePositiveLimit(value: number, fallback: number) {
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.floor(value);
+}
+
+function downsampleFeatureRows<T>(rows: T[], requestedMaxRows: number) {
+  const maxRows = resolvePositiveLimit(requestedMaxRows, 20_000);
+  if (rows.length <= maxRows) {
+    return {
+      rows,
+      downsampled: false,
+      step: 1,
+      originalCount: rows.length,
+      usedCount: rows.length,
+    };
+  }
+  const step = Math.max(2, Math.ceil(rows.length / maxRows));
+  const sampled: T[] = [];
+  for (let index = 0; index < rows.length; index += step) {
+    sampled.push(rows[index]);
+  }
+  const last = rows[rows.length - 1];
+  if (sampled[sampled.length - 1] !== last) {
+    sampled.push(last);
+  }
+  return {
+    rows: sampled,
+    downsampled: true,
+    step,
+    originalCount: rows.length,
+    usedCount: sampled.length,
+  };
+}
+
 function resolveEffectiveWindowSize(requestedWindowSize: number, featureRowCount: number) {
-  if (!Number.isFinite(requestedWindowSize) || requestedWindowSize <= 0) return 1;
-  if (!Number.isFinite(featureRowCount) || featureRowCount <= 0) return requestedWindowSize;
+  const requested = Math.min(
+    resolvePositiveLimit(requestedWindowSize, 1),
+    resolvePositiveLimit(MAX_EVALUATION_WINDOW_SIZE, 4096),
+  );
+  if (!Number.isFinite(requested) || requested <= 0) return 1;
+  if (!Number.isFinite(featureRowCount) || featureRowCount <= 0) return requested;
   if (featureRowCount === 1) return 1;
   const maxWindowSize = Math.max(1, featureRowCount - 1);
-  return Math.max(1, Math.min(Math.floor(requestedWindowSize), maxWindowSize));
+  return Math.max(1, Math.min(requested, maxWindowSize));
 }
 
 function buildRelaxedWalkForward() {
@@ -411,33 +451,50 @@ export async function runEvaluation(request: EvaluationRequest) {
     requestedFeatureSetVersionId: request.featureSetVersionId ?? null,
     datasetFeatureSetVersionId,
   });
-  const { features: datasetFeatures, provenance } = await recordExecutionStep(
-    executionSteps,
-    "build_feature_dataset",
-    "Build feature dataset",
-    () =>
-      buildDatasetFeaturesWithProvenance({
-        pair: request.pair,
-        interval,
-        contextIntervals: request.contextIntervals ?? [],
-        startAt: dataset.start_at,
-        endAt: dataset.end_at,
-        windowSize: dataset.window_size ?? 30,
-        stride: dataset.stride ?? 1,
-        featureSetVersionId,
-        featureSchemaFingerprint,
-      }),
-    (result) => ({
-      feature_rows: result.features.length,
-      resolved_pair: result.provenance.resolvedPair,
-      resolved_bingx_symbol: result.provenance.resolvedBingxSymbol,
-      source_tables: result.provenance.dataSources.map((source) => source.source),
-      data_field_count: result.provenance.dataFields.length,
-    }),
+  const { features: datasetFeatures, provenance } = await (async () => {
+    try {
+      return await recordExecutionStep(
+        executionSteps,
+        "build_feature_dataset",
+        "Build feature dataset",
+        () =>
+          buildDatasetFeaturesWithProvenance({
+            pair: request.pair,
+            interval,
+            contextIntervals: request.contextIntervals ?? [],
+            startAt: dataset.start_at,
+            endAt: dataset.end_at,
+            windowSize: dataset.window_size ?? 30,
+            stride: dataset.stride ?? 1,
+            featureSetVersionId,
+            featureSchemaFingerprint,
+          }),
+        (result) => ({
+          feature_rows: result.features.length,
+          resolved_pair: result.provenance.resolvedPair,
+          resolved_bingx_symbol: result.provenance.resolvedBingxSymbol,
+          source_tables: result.provenance.dataSources.map((source) => source.source),
+          data_field_count: result.provenance.dataFields.length,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("MAX_PARAMETERS_EXCEEDED")) {
+        throw new Error(
+          "Dataset request exceeded database parameter limits for one batch. Reduce period range or keep auto window enabled with default presets.",
+        );
+      }
+      throw error;
+    }
+  })();
+  const featureRows = downsampleFeatureRows(
+    datasetFeatures as Array<Record<string, unknown>>,
+    MAX_EVALUATION_FEATURE_ROWS,
   );
-  const featureKeyExtras = extractContextFeatureKeys(datasetFeatures as Array<Record<string, unknown>>);
+  const effectiveDatasetFeatures = featureRows.rows;
+  const featureKeyExtras = extractContextFeatureKeys(effectiveDatasetFeatures as Array<Record<string, unknown>>);
   const requestedWindowSize = request.windowSize ?? dataset.window_size ?? 30;
-  let windowSize = resolveEffectiveWindowSize(requestedWindowSize, datasetFeatures.length);
+  let windowSize = resolveEffectiveWindowSize(requestedWindowSize, effectiveDatasetFeatures.length);
   const stride = request.stride ?? dataset.stride ?? 1;
   const leverage = request.leverage ?? env.RL_PPO_LEVERAGE_DEFAULT;
   const takerFeeBps = request.takerFeeBps ?? env.RL_PPO_TAKER_FEE_BPS;
@@ -495,7 +552,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       walkForward: effectiveWalkForward,
       featureSchemaFingerprint,
       featureKeyExtras,
-      datasetFeatures,
+      datasetFeatures: effectiveDatasetFeatures,
     };
     if (!payload.artifactDownloadUrl && E2E_RUN_ENABLED) {
       const trainingResponse = await rlServiceClient.train({
@@ -520,7 +577,7 @@ export async function runEvaluation(request: EvaluationRequest) {
         feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
         featureSchemaFingerprint,
         featureKeyExtras,
-        datasetFeatures,
+        datasetFeatures: effectiveDatasetFeatures,
       });
       payload.artifactBase64 =
         (trainingResponse as any).artifactBase64 ?? (trainingResponse as any).artifact_base64 ?? null;
@@ -576,6 +633,10 @@ export async function runEvaluation(request: EvaluationRequest) {
         walk_forward: effectiveWalkForward,
         requested_window_size: requestedWindowSize,
         effective_window_size: windowSize,
+        dataset_feature_rows_original: featureRows.originalCount,
+        dataset_feature_rows_used: featureRows.usedCount,
+        dataset_feature_downsampled: featureRows.downsampled,
+        dataset_feature_downsample_step: featureRows.step,
         retry_applied: evaluationRetryApplied,
         retry_reason: evaluationRetryReason,
         backtest_run_id:
@@ -635,6 +696,7 @@ export async function runEvaluation(request: EvaluationRequest) {
       decisionThreshold: request.decisionThreshold ?? null,
       windowSize,
       requestedWindowSize,
+      maxEvaluationWindowSize: resolvePositiveLimit(MAX_EVALUATION_WINDOW_SIZE, 4096),
       stride,
       leverage,
       takerFeeBps,
@@ -647,6 +709,11 @@ export async function runEvaluation(request: EvaluationRequest) {
       walkForward: effectiveWalkForward,
       evaluationRetryApplied,
       evaluationRetryReason,
+      datasetFeatureRowsOriginal: featureRows.originalCount,
+      datasetFeatureRowsUsed: featureRows.usedCount,
+      datasetFeatureDownsampled: featureRows.downsampled,
+      datasetFeatureDownsampleStep: featureRows.step,
+      maxEvaluationFeatureRows: resolvePositiveLimit(MAX_EVALUATION_FEATURE_ROWS, 20_000),
       featureKeyExtras,
     },
     dataFields: provenance.dataFields,
