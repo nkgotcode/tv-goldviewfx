@@ -4,7 +4,7 @@ import { loadEnv } from "../../config/env";
 import { resolveSupportedPair } from "../../config/market_catalog";
 import { loadRlServiceConfig } from "../../config/rl_service";
 import { getEvaluationReport, getLatestEvaluationReport } from "../../db/repositories/evaluation_reports";
-import { listRecentLearningUpdates } from "../../db/repositories/learning_updates";
+import { listLearningUpdatesHistory, listRecentLearningUpdates } from "../../db/repositories/learning_updates";
 import {
   resolveOnlineLearningPairs,
   runOnlineLearningBatch,
@@ -12,7 +12,9 @@ import {
 } from "../../services/online_learning_service";
 import { recordOpsAudit } from "../../services/ops_audit";
 import { logWarn } from "../../services/logger";
+import { rlServiceClient } from "../../rl/client";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
+import { parsePagination } from "../utils/pagination";
 import type { TradingPair } from "../../types/rl";
 
 export const opsLearningRoutes = new Hono();
@@ -137,6 +139,46 @@ function canonicalPair(value: unknown) {
   return resolveSupportedPair(value) ?? value;
 }
 
+type RlServiceHealthSnapshot = {
+  status: "ok" | "error" | "unavailable";
+  checkedAt: string;
+  environment?: string;
+  strictBacktest?: boolean;
+  strictModelInference?: boolean;
+  mlDependencies?: Record<string, boolean>;
+  error?: string | null;
+};
+
+async function loadRlServiceHealthSnapshot(mock: boolean): Promise<RlServiceHealthSnapshot> {
+  const checkedAt = new Date().toISOString();
+  if (mock) {
+    return {
+      status: "unavailable",
+      checkedAt,
+      error: "RL service mock mode enabled.",
+    };
+  }
+
+  try {
+    const health = await rlServiceClient.health();
+    return {
+      status: "ok",
+      checkedAt,
+      environment: health.environment,
+      strictBacktest: health.strict_backtest ?? undefined,
+      strictModelInference: health.strict_model_inference ?? undefined,
+      mlDependencies: health.ml_dependencies ?? {},
+      error: null,
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      checkedAt,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function formatEvaluation(report: any) {
   if (!report) return null;
   const metadata = (report.metadata ?? {}) as Record<string, unknown>;
@@ -166,43 +208,64 @@ function formatEvaluation(report: any) {
   };
 }
 
+async function enrichLearningUpdates(updates: any[]) {
+  const reportIds = new Set<string>();
+  for (const update of updates) {
+    if (typeof update.evaluation_report_id === "string" && update.evaluation_report_id) {
+      reportIds.add(update.evaluation_report_id);
+    }
+    if (typeof update.champion_evaluation_report_id === "string" && update.champion_evaluation_report_id) {
+      reportIds.add(update.champion_evaluation_report_id);
+    }
+  }
+
+  const reportEntries = await Promise.all(
+    [...reportIds].map(async (id) => {
+      try {
+        return [id, await getEvaluationReport(id)] as const;
+      } catch {
+        return [id, null] as const;
+      }
+    }),
+  );
+  const reportMap = new Map(reportEntries);
+
+  return updates.map((update) => {
+    const report = update.evaluation_report_id ? (reportMap.get(update.evaluation_report_id) ?? null) : null;
+    const championReport = update.champion_evaluation_report_id
+      ? (reportMap.get(update.champion_evaluation_report_id) ?? null)
+      : null;
+    return {
+      id: update.id,
+      agentVersionId: update.agent_version_id,
+      windowStart: update.window_start,
+      windowEnd: update.window_end,
+      status: update.status,
+      startedAt: update.started_at ?? null,
+      completedAt: update.completed_at ?? null,
+      evaluationReportId: update.evaluation_report_id ?? null,
+      championEvaluationReportId: update.champion_evaluation_report_id ?? null,
+      promoted: update.promoted ?? null,
+      decisionReasons: (update.decision_reasons ?? []) as string[],
+      metricDeltas: (update.metric_deltas ?? {}) as Record<string, number>,
+      pair: canonicalPair(report?.pair ?? championReport?.pair ?? null),
+      evaluationReport: formatEvaluation(report),
+      championEvaluationReport: formatEvaluation(championReport),
+    };
+  });
+}
+
 opsLearningRoutes.get("/status", async (c) => {
   const env = loadEnv();
   const rlConfig = loadRlServiceConfig();
   const limit = Number.parseInt(c.req.query("limit") ?? "5", 10);
   const configuredPairs = resolveOnlineLearningPairs();
   const pair = (c.req.query("pair") ?? configuredPairs[0] ?? env.RL_ONLINE_LEARNING_PAIR) as string;
+  const health = await loadRlServiceHealthSnapshot(rlConfig.mock);
 
   try {
     const updates = await listRecentLearningUpdates(Number.isFinite(limit) ? limit : 5);
-    const enriched = await Promise.all(
-      updates.map(async (update) => {
-        const reportPromise = update.evaluation_report_id
-          ? getEvaluationReport(update.evaluation_report_id).catch(() => null)
-          : Promise.resolve(null);
-        const championPromise = update.champion_evaluation_report_id
-          ? getEvaluationReport(update.champion_evaluation_report_id).catch(() => null)
-          : Promise.resolve(null);
-        const [report, championReport] = await Promise.all([reportPromise, championPromise]);
-        return {
-          id: update.id,
-          agentVersionId: update.agent_version_id,
-          windowStart: update.window_start,
-          windowEnd: update.window_end,
-          status: update.status,
-          startedAt: update.started_at ?? null,
-          completedAt: update.completed_at ?? null,
-          evaluationReportId: update.evaluation_report_id ?? null,
-          championEvaluationReportId: update.champion_evaluation_report_id ?? null,
-          promoted: update.promoted ?? null,
-          decisionReasons: (update.decision_reasons ?? []) as string[],
-          metricDeltas: (update.metric_deltas ?? {}) as Record<string, number>,
-          pair: canonicalPair(report?.pair ?? championReport?.pair ?? null),
-          evaluationReport: formatEvaluation(report),
-          championEvaluationReport: formatEvaluation(championReport),
-        };
-      }),
-    );
+    const enriched = await enrichLearningUpdates(updates);
 
     const latestReport = await getLatestEvaluationReport({ pair });
     const latestReportsByPair = await Promise.all(
@@ -218,6 +281,7 @@ opsLearningRoutes.get("/status", async (c) => {
       rlService: {
         url: rlConfig.url,
         mock: rlConfig.mock,
+        health,
       },
       latestUpdates: enriched,
       latestReport: formatEvaluation(latestReport),
@@ -231,11 +295,80 @@ opsLearningRoutes.get("/status", async (c) => {
       rlService: {
         url: rlConfig.url,
         mock: rlConfig.mock,
+        health,
       },
       latestUpdates: [],
       latestReport: null,
       latestReportsByPair: [],
     });
+  }
+});
+
+opsLearningRoutes.get("/history", async (c) => {
+  const { page, pageSize } = parsePagination(c);
+  const statusRaw = (c.req.query("status") ?? "").trim().toLowerCase();
+  const statusFilter =
+    statusRaw === "running" || statusRaw === "succeeded" || statusRaw === "failed"
+      ? (statusRaw as "running" | "succeeded" | "failed")
+      : undefined;
+  const pairRaw = (c.req.query("pair") ?? "").trim();
+  const pairFilter = pairRaw ? resolveSupportedPair(pairRaw) ?? pairRaw : "";
+  const search = (c.req.query("search") ?? "").trim().toLowerCase();
+  const scanLimitRaw = Number.parseInt(c.req.query("scan_limit") ?? "2000", 10);
+  const scanLimit = Math.max(100, Math.min(Number.isFinite(scanLimitRaw) ? scanLimitRaw : 2000, 10000));
+
+  try {
+    const updates = await listLearningUpdatesHistory({
+      status: statusFilter,
+      limit: scanLimit,
+    });
+    const enriched = await enrichLearningUpdates(updates);
+    const filtered = enriched.filter((update) => {
+      if (pairFilter && (update.pair ?? "") !== pairFilter) return false;
+      if (!search) return true;
+      const haystack = [
+        update.id,
+        update.agentVersionId,
+        update.status,
+        update.pair ?? "",
+        ...(update.decisionReasons ?? []),
+        update.evaluationReport?.status ?? "",
+        update.evaluationReport?.backtestRunId ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const from = (safePage - 1) * pageSize;
+    const to = from + pageSize;
+    const pageItems = filtered.slice(from, to);
+
+    return c.json({
+      generatedAt: new Date().toISOString(),
+      items: pageItems,
+      filters: {
+        search,
+        status: statusFilter ?? null,
+        pair: pairFilter || null,
+      },
+      pagination: {
+        page: safePage,
+        pageSize,
+        total,
+        totalPages,
+      },
+      scan: {
+        limit: scanLimit,
+        truncated: updates.length >= scanLimit,
+      },
+    });
+  } catch (error) {
+    logWarn("Failed to load online learning history", { error: String(error) });
+    return c.json({ error: "online_learning_history_failed" }, 500);
   }
 });
 

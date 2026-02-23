@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ALL_PAIRS } from "../../config/marketCatalog";
-import type { OnlineLearningRunRequest, OnlineLearningStatus, OnlineLearningUpdate } from "../../services/rl_ops";
+import PaginationControls from "../PaginationControls";
+import {
+  fetchOnlineLearningHistory,
+  type OnlineLearningRunRequest,
+  type OnlineLearningStatus,
+  type OnlineLearningUpdate,
+} from "../../services/rl_ops";
 import EvaluationExecutionTimeline, { type EvaluationExecutionInput } from "./EvaluationExecutionTimeline";
 
 function formatTimestamp(value?: string | null) {
@@ -17,6 +23,12 @@ function formatNumber(value?: number | null, digits = 2) {
   return value.toFixed(digits);
 }
 
+function formatBoolean(value?: boolean) {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "unknown";
+}
+
 function statusTone(status?: string | null) {
   if (!status) return "status-muted";
   if (status === "pass" || status === "succeeded") return "status-ok";
@@ -25,12 +37,30 @@ function statusTone(status?: string | null) {
   return "status-muted";
 }
 
-function renderUpdateRow(update: OnlineLearningUpdate) {
+function summarizeDecisionReason(update: OnlineLearningUpdate) {
+  if (update.decisionReasons && update.decisionReasons.length > 0) {
+    return update.decisionReasons.slice(0, 2).join(" · ");
+  }
+  if (update.status === "failed" && update.evaluationReport?.status === "fail") {
+    return "Evaluation failed promotion gates.";
+  }
+  if (update.status === "failed") {
+    return "Run failed. Open details for context.";
+  }
+  return "—";
+}
+
+function renderUpdateRow(
+  update: OnlineLearningUpdate,
+  selectedId: string | null,
+  onToggleDetails: (id: string) => void,
+) {
   const report = update.evaluationReport;
   const champion = update.championEvaluationReport;
   const netDelta = update.metricDeltas?.netPnlDelta;
   const winDelta = update.metricDeltas?.winRateDelta;
   const pair = update.pair ?? report?.pair ?? champion?.pair ?? "—";
+  const selected = selectedId === update.id;
   return (
     <tr key={update.id}>
       <td>{formatTimestamp(update.startedAt)}</td>
@@ -58,6 +88,12 @@ function renderUpdateRow(update: OnlineLearningUpdate) {
         <span className={`status-pill ${statusTone(update.promoted === null || update.promoted === undefined ? "running" : update.promoted ? "succeeded" : "failed")}`}>
           {update.promoted === null || update.promoted === undefined ? "pending" : update.promoted ? "promoted" : "rejected"}
         </span>
+      </td>
+      <td className="inline-muted">{summarizeDecisionReason(update)}</td>
+      <td>
+        <button type="button" onClick={() => onToggleDetails(update.id)}>
+          {selected ? "Hide" : "Details"}
+        </button>
       </td>
     </tr>
   );
@@ -117,6 +153,18 @@ export default function OnlineLearningPanel({
   const [minEffectSize, setMinEffectSize] = useState(String(config?.minEffectSize ?? 0));
   const [minConfidenceZ, setMinConfidenceZ] = useState(String(config?.minConfidenceZ ?? 0));
   const [minSampleSize, setMinSampleSize] = useState(String(config?.minSampleSize ?? 0));
+  const [historyRows, setHistoryRows] = useState<OnlineLearningUpdate[]>(updates);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(25);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historySearchInput, setHistorySearchInput] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<"" | "running" | "succeeded" | "failed">("");
+  const [historyPairFilter, setHistoryPairFilter] = useState("");
+  const [historyRefreshNonce, setHistoryRefreshNonce] = useState(0);
+  const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!config) return;
@@ -145,6 +193,71 @@ export default function OnlineLearningPanel({
     setMinConfidenceZ(String(config.minConfidenceZ ?? 0));
     setMinSampleSize(String(config.minSampleSize ?? 0));
   }, [config]);
+
+  useEffect(() => {
+    setHistoryRows(updates);
+  }, [updates]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setHistoryPage(1);
+      setHistorySearch(historySearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [historySearchInput]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory() {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const response = await fetchOnlineLearningHistory({
+          page: historyPage,
+          pageSize: historyPageSize,
+          search: historySearch || undefined,
+          status: historyStatusFilter || undefined,
+          pair: historyPairFilter || undefined,
+        });
+        if (cancelled) return;
+        setHistoryRows(response.items);
+        setHistoryTotal(response.pagination.total);
+        if (response.pagination.page !== historyPage) {
+          setHistoryPage(response.pagination.page);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setHistoryError(err instanceof Error ? err.message : "Failed to load learning history.");
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [historyPage, historyPageSize, historySearch, historyStatusFilter, historyPairFilter, historyRefreshNonce, status?.generatedAt]);
+
+  useEffect(() => {
+    if (!selectedUpdateId) return;
+    if (!historyRows.some((item) => item.id === selectedUpdateId)) {
+      setSelectedUpdateId(null);
+    }
+  }, [historyRows, selectedUpdateId]);
+
+  const selectedUpdate = useMemo(
+    () => historyRows.find((item) => item.id === selectedUpdateId) ?? null,
+    [historyRows, selectedUpdateId],
+  );
+
+  const historyPairOptions = useMemo(() => {
+    const configured = config?.pairs ?? [];
+    const fromRows = historyRows.map((item) => item.pair).filter((value): value is string => Boolean(value));
+    const options = new Set<string>([...configured, ...ALL_PAIRS, ...fromRows]);
+    return [...options];
+  }, [config?.pairs, historyRows]);
 
   const parseOptionalNumber = (value: string) => {
     if (value.trim() === "") return undefined;
@@ -245,7 +358,10 @@ export default function OnlineLearningPanel({
 
       <div className="inline-muted">
         Pairs {(config?.pairs ?? []).join(", ") || config?.pair || ALL_PAIRS[0] || "XAUTUSDT"} · Window size{" "}
-        {config?.windowSize ?? "—"} · Timesteps {config?.timesteps ?? "—"} · RL service {status?.rlService?.mock ? "mock" : "live"}
+        {config?.windowSize ?? "—"} · Timesteps {config?.timesteps ?? "—"} · RL service {status?.rlService?.mock ? "mock" : "live"} ·
+        Health {status?.rlService?.health?.status ?? "unknown"} · Nautilus{" "}
+        {formatBoolean(status?.rlService?.health?.mlDependencies?.nautilus_trader)} · Strict backtest{" "}
+        {formatBoolean(status?.rlService?.health?.strictBacktest)}
       </div>
       <div className="inline-muted">
         Context intervals: {(config?.contextIntervals ?? []).join(", ") || "none"} · Delta gates: Win Δ{" "}
@@ -455,44 +571,146 @@ export default function OnlineLearningPanel({
         </div>
       </div>
 
-      {updates.length === 0 ? (
-        <div className="empty">No learning updates recorded yet.</div>
-      ) : (
-        <table className="table compact">
-          <thead>
-            <tr>
-              <th>Started</th>
-              <th>Pair</th>
-              <th>Version</th>
-              <th>Eval start</th>
-              <th>Eval end</th>
-              <th>Status</th>
-              <th>Eval</th>
-              <th>Win</th>
-              <th>Net PnL</th>
-              <th>Trades</th>
-              <th>Champion PnL</th>
-              <th>PnL Δ</th>
-              <th>Win Δ</th>
-              <th>Decision</th>
-            </tr>
-          </thead>
-          <tbody>{updates.map(renderUpdateRow)}</tbody>
-        </table>
-      )}
-      {updates.some((update) => (update.decisionReasons ?? []).length > 0) ? (
-        <div>
-          <h5>Latest rejection reasons</h5>
-          {updates.slice(0, 3).map((update) => {
-            if (!update.decisionReasons || update.decisionReasons.length === 0) return null;
-            return (
-              <div key={`${update.id}-reasons`} className="inline-muted">
-                {formatTimestamp(update.startedAt)}: {update.decisionReasons.join(", ")}
-              </div>
-            );
-          })}
+      <div>
+        <h5>Learning history</h5>
+        <div className="learning-history-toolbar">
+          <input
+            value={historySearchInput}
+            onChange={(event) => setHistorySearchInput(event.target.value)}
+            placeholder="Search pair, status, version, decision reason..."
+          />
+          <select
+            value={historyStatusFilter}
+            onChange={(event) => {
+              setHistoryStatusFilter(event.target.value as "" | "running" | "succeeded" | "failed");
+              setHistoryPage(1);
+            }}
+          >
+            <option value="">All statuses</option>
+            <option value="running">Running</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select
+            value={historyPairFilter}
+            onChange={(event) => {
+              setHistoryPairFilter(event.target.value);
+              setHistoryPage(1);
+            }}
+          >
+            <option value="">All pairs</option>
+            {historyPairOptions.map((option) => (
+              <option key={`history-pair-${option}`} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setHistoryPage(1);
+              setHistoryPageSize(5);
+            }}
+          >
+            Latest 5
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setHistoryPage(1);
+              setHistoryPageSize(25);
+            }}
+          >
+            Full history
+          </button>
+          <button type="button" onClick={() => setHistoryRefreshNonce((value) => value + 1)}>
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setHistoryPage(1);
+              setHistorySearchInput("");
+              setHistoryStatusFilter("");
+              setHistoryPairFilter("");
+            }}
+          >
+            Reset filters
+          </button>
         </div>
-      ) : null}
+
+        {historyError ? <div className="empty">{historyError}</div> : null}
+        {historyLoading && historyRows.length === 0 ? (
+          <div className="empty">Loading learning history…</div>
+        ) : historyRows.length === 0 ? (
+          <div className="empty">No learning updates match the selected filters.</div>
+        ) : (
+          <>
+            <table className="table compact">
+              <thead>
+                <tr>
+                  <th>Started</th>
+                  <th>Pair</th>
+                  <th>Version</th>
+                  <th>Eval start</th>
+                  <th>Eval end</th>
+                  <th>Status</th>
+                  <th>Eval</th>
+                  <th>Win</th>
+                  <th>Net PnL</th>
+                  <th>Trades</th>
+                  <th>Champion PnL</th>
+                  <th>PnL Δ</th>
+                  <th>Win Δ</th>
+                  <th>Decision</th>
+                  <th>Why</th>
+                  <th>View</th>
+                </tr>
+              </thead>
+              <tbody>{historyRows.map((update) => renderUpdateRow(update, selectedUpdateId, setSelectedUpdateId))}</tbody>
+            </table>
+            <PaginationControls
+              page={historyPage}
+              pageSize={historyPageSize}
+              total={historyTotal}
+              onPageChange={setHistoryPage}
+              onPageSizeChange={(nextSize) => {
+                setHistoryPageSize(nextSize);
+                setHistoryPage(1);
+              }}
+            />
+          </>
+        )}
+
+        {selectedUpdate ? (
+          <div className="learning-history-details">
+            <h5>Run details · {selectedUpdate.id.slice(0, 8)}</h5>
+            <div className="inline-muted">Started {formatTimestamp(selectedUpdate.startedAt)}</div>
+            <div className="inline-muted">Completed {formatTimestamp(selectedUpdate.completedAt)}</div>
+            <div className="inline-muted">Status {selectedUpdate.status}</div>
+            <div className="inline-muted">
+              Decision{" "}
+              {selectedUpdate.promoted === null || selectedUpdate.promoted === undefined
+                ? "pending"
+                : selectedUpdate.promoted
+                  ? "promoted"
+                  : "rejected"}
+            </div>
+            <div className="inline-muted">
+              Reasons{" "}
+              {selectedUpdate.decisionReasons && selectedUpdate.decisionReasons.length > 0
+                ? selectedUpdate.decisionReasons.join(" · ")
+                : "No explicit decision reasons were recorded for this run."}
+            </div>
+            {selectedUpdate.evaluationReport ? (
+              <div style={{ marginTop: 12 }}>
+                <h5>Evaluation steps</h5>
+                <EvaluationExecutionTimeline report={toExecutionInput(selectedUpdate.evaluationReport)} compact />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

@@ -74,3 +74,26 @@ export async function listRecentLearningUpdates(limit = 5) {
     .limit(limit);
   return assertNoError(result, "list recent learning updates");
 }
+
+export async function listLearningUpdatesHistory(options: {
+  status?: "running" | "succeeded" | "failed";
+  limit?: number;
+} = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 1000, 10000));
+  if (rlOpsUsesTimescale()) {
+    const filters = options.status ? [{ field: "status", value: options.status }] : [];
+    return listRlOpsRows("learning_updates", {
+      filters,
+      orderBy: "started_at",
+      direction: "desc",
+      limit,
+    });
+  }
+
+  const query = convex.from("learning_updates").select("*").order("started_at", { ascending: false }).limit(limit);
+  if (options.status) {
+    query.eq("status", options.status);
+  }
+  const result = await query;
+  return assertNoError(result, "list learning updates history");
+}

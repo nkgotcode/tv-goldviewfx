@@ -567,3 +567,30 @@ Wrote /Users/itsnk/.codex/skills/binance-api/references/generated/binance-spot-c
 - Commands: `git add -A`; `git commit -m "Checkpoint remaining WIP changes"`; `git push origin main`.
 - Verification: Push succeeded (`origin/main` advanced to `359f12e`), working tree clean afterward.
 - Notes: Commit includes generated coverage artifacts and Ralph report files present in working tree at commit time.
+## 2026-02-23 00:42 CST
+- Task: Improve `/rl-ops` online learning UX with searchable paginated full history and clearer failed-run details.
+- Changes: Added backend endpoint `GET /ops/learning/history` with pagination (`page`, `page_size`), filters (`search`, `status`, `pair`), and enriched evaluation/champion report payloads; added repository helper `listLearningUpdatesHistory`; updated frontend `OnlineLearningPanel` with history toolbar (search/status/pair), buttons (`Latest 5`, `Full history`, `Refresh`, `Reset filters`), paginated table, and per-row details panel showing reasons + evaluation timeline; improved API error extraction in `frontend/src/services/rl_ops.ts`; added styling for history controls/details and added integration test `backend/tests/integration/ops_learning_history.test.ts`.
+- Commands: `bun test --preload ./tests/setup.ts ./tests/integration/ops_learning_history.test.ts`; `bun run test tests/api_service.test.ts`; `bun -e 'import "./src/api/routes/ops_learning"; ...'`; `bun run build` (frontend).
+- Verification: New backend route compiles; frontend API service tests pass; new backend integration test skipped in this env because DB connectivity unavailable; frontend build fails on pre-existing unrelated type issue in `frontend/src/app/library/page.tsx`.
+- Notes: Screenshot failures align with configured gates (`min win rate 0.62`, `min net pnl 0`, etc.); UI now exposes run-level reason strings and details panel to make this explicit.
+
+## 2026-02-23 00:47 CST
+- Task: Improve RL ops/evaluation/ingestion clarity, surface Nautilus backtest health, and make evaluation route discoverable.
+- Changes:
+  - Added RL service health snapshot (including Nautilus dependency + strict backtest flags) to `/ops/learning/status` responses.
+  - Added frontend health typing and a new `NautilusBacktestStatusPanel` used in `/rl-ops` and `/rl-evaluations`.
+  - Added `/rl-evaluation` alias route redirecting to `/rl-evaluations`.
+  - Added ingestion readiness checklist and explicit links to RL ops/evaluations.
+  - Improved ops control panel with per-source freshness context and clearer action group headings.
+- Commands:
+  - `bun run --cwd frontend test`
+  - `bun run --cwd frontend build` (fails on pre-existing type error in `frontend/src/app/library/page.tsx`)
+  - `bun --cwd backend test --preload ./tests/setup.ts tests/integration/rbac.test.ts`
+  - `bun --cwd backend -e "import('./src/api/routes/ops_learning.ts').then(() => console.log('ops_learning route compile ok'))"`
+- Verification:
+  - Frontend tests: passed (8 files, 10 tests).
+  - Backend targeted test: skipped due missing Convex in env.
+  - Backend route compile/import check: passed.
+  - Frontend production build blocked by existing unrelated type error in `frontend/src/app/library/page.tsx`.
+- Notes:
+  - Workspace already contained unrelated in-progress modifications; only targeted RL ops/evaluation/ingestion visibility changes were applied.

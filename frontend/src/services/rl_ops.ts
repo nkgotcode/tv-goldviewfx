@@ -11,7 +11,14 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) {
-    const message = await response.text();
+    const body = await response.text();
+    let parsed: { message?: string; error?: string } | null = null;
+    try {
+      parsed = JSON.parse(body) as { message?: string; error?: string };
+    } catch {
+      parsed = null;
+    }
+    const message = parsed?.message ?? parsed?.error ?? body;
     throw new Error(message || `API error: ${response.status}`);
   }
   return response.json() as Promise<T>;
@@ -138,6 +145,19 @@ export type OnlineLearningConfig = {
   feedbackRounds: number;
   feedbackTimesteps: number;
   feedbackHardRatio: number;
+  rolloutMode?: "shadow" | "canary" | "full";
+  canaryMinTradeCount?: number;
+  canaryMaxDrawdown?: number;
+};
+
+export type RlServiceHealthSnapshot = {
+  status: "ok" | "error" | "unavailable";
+  checkedAt: string;
+  environment?: string;
+  strictBacktest?: boolean;
+  strictModelInference?: boolean;
+  mlDependencies?: Record<string, boolean>;
+  error?: string | null;
 };
 
 export type OnlineLearningReport = {
@@ -198,7 +218,7 @@ export type OnlineLearningUpdate = {
 export type OnlineLearningStatus = {
   generatedAt: string;
   config: OnlineLearningConfig;
-  rlService: { url: string; mock: boolean };
+  rlService: { url: string; mock: boolean; health?: RlServiceHealthSnapshot | null };
   latestUpdates: OnlineLearningUpdate[];
   latestReport?: OnlineLearningReport | null;
   latestReportsByPair?: Array<{ pair: string; report: OnlineLearningReport | null }>;
@@ -214,6 +234,43 @@ export async function fetchOnlineLearningStatus(limit = 5): Promise<OnlineLearni
     }
     throw err;
   }
+}
+
+export type OnlineLearningHistoryResponse = {
+  generatedAt: string;
+  items: OnlineLearningUpdate[];
+  filters: {
+    search: string;
+    status: "running" | "succeeded" | "failed" | null;
+    pair: string | null;
+  };
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  scan: {
+    limit: number;
+    truncated: boolean;
+  };
+};
+
+export async function fetchOnlineLearningHistory(params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: "running" | "succeeded" | "failed" | "";
+  pair?: string;
+}): Promise<OnlineLearningHistoryResponse> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.pageSize) query.set("page_size", String(params.pageSize));
+  if (params?.search) query.set("search", params.search);
+  if (params?.status) query.set("status", params.status);
+  if (params?.pair) query.set("pair", params.pair);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson<OnlineLearningHistoryResponse>(`/ops/learning/history${suffix}`);
 }
 
 export async function runOnlineLearningNow() {

@@ -1183,6 +1183,25 @@ button.ghost:hover {
   color: var(--muted);
 }
 
+.learning-history-toolbar {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(260px, 1.6fr) repeat(2, minmax(160px, 1fr)) repeat(4, auto);
+  margin: 10px 0 12px;
+}
+
+.learning-history-toolbar button {
+  white-space: nowrap;
+}
+
+.learning-history-details {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+}
+
 .pnl-positive {
   color: #1c6e3d;
   font-weight: 600;
@@ -1560,6 +1579,10 @@ button.ghost:hover {
   .filters {
     position: static;
   }
+
+  .learning-history-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1569,5 +1592,9 @@ button.ghost:hover {
 
   .app-main {
     padding: 28px 20px 60px;
+  }
+
+  .learning-history-toolbar {
+    grid-template-columns: 1fr;
   }
 }
