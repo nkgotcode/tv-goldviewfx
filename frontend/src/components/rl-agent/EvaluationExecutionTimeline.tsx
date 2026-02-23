@@ -97,7 +97,7 @@ function statusClass(status: TimelineStepStatus) {
 function statusLabel(status: TimelineStepStatus) {
   if (status === "ok") return "Completed";
   if (status === "error") return "Failed";
-  return "Partial";
+  return "Partial/missing data";
 }
 
 function parseFoldMetrics(metadata: Record<string, unknown> | null): FoldMetric[] {
@@ -292,9 +292,15 @@ export default function EvaluationExecutionTimeline({
   const foldMetrics = parseFoldMetrics(metadata);
   const storedSteps = parseStoredExecutionSteps(metadata, foldMetrics);
   const steps = storedSteps.length > 0 ? storedSteps : buildFallbackSteps(report);
+  const hasPartialSteps = steps.some((step) => step.status === "warn");
 
   return (
     <div className={`execution-timeline${compact ? " compact" : ""}`}>
+      {hasPartialSteps ? (
+        <div className="inline-muted">
+          Partial steps usually mean missing execution metadata for this run, not necessarily a hard execution failure.
+        </div>
+      ) : null}
       <ol className="execution-steps">
         {steps.map((step, index) => (
           <li key={`${step.key}-${index}`} className="execution-step">

@@ -59,6 +59,31 @@ function parseIntervalCsv(value: string) {
   return unique;
 }
 
+function parseIntervalToMinutes(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+)(m|h|d)$/);
+  if (!match) return null;
+  const amount = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (match[2] === "m") return amount;
+  if (match[2] === "h") return amount * 60;
+  if (match[2] === "d") return amount * 24 * 60;
+  return null;
+}
+
+function toFriendlyEvaluationError(message: string) {
+  if (message.includes("No trades available for fold")) {
+    return "Evaluation failed because one walk-forward fold had zero trades. Try a longer period (for example 7 days), use 5m/15m interval, or set Walk Forward to disabled in Advanced settings.";
+  }
+  if (message.includes("No features available for dataset window")) {
+    return "Evaluation failed because no usable features were built for this window. Expand the time range and keep interval/context intervals aligned with available market data.";
+  }
+  if (message.includes("dataset_features are required")) {
+    return "Evaluation failed because feature inputs were empty. Use default feature settings or run with a wider period window.";
+  }
+  return message;
+}
+
 function toBingxSymbolToken(pair: string) {
   const token = normalizePairToken(pair);
   if (token === "GOLDUSDT" || token === "GOLD" || token === "XAUTUSDT") return "XAUTUSDT";
@@ -175,6 +200,8 @@ export default function RlEvaluationsPage() {
   const [walkForwardEmbargoBars, setWalkForwardEmbargoBars] = useState("0");
   const [walkForwardMinTrainBars, setWalkForwardMinTrainBars] = useState("");
   const [walkForwardStrict, setWalkForwardStrict] = useState(true);
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
+  const [useFullWindowSize, setUseFullWindowSize] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
@@ -243,6 +270,14 @@ export default function RlEvaluationsPage() {
       asRecord(selectedMetadata?.config),
     [selectedMetadata],
   );
+  const fullWindowSizeEstimate = useMemo(() => {
+    const intervalMinutes = parseIntervalToMinutes(interval);
+    if (!intervalMinutes) return null;
+    const start = new Date(periodStart).getTime();
+    const end = new Date(periodEnd).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    return Math.max(1, Math.floor((end - start) / (intervalMinutes * 60_000)));
+  }, [interval, periodEnd, periodStart]);
 
   const handleRunEvaluation = async () => {
     setActionLoading(true);
@@ -290,7 +325,12 @@ export default function RlEvaluationsPage() {
           payload.decisionThreshold = parsedThreshold;
         }
 
-        if (windowSize.trim()) {
+        if (useFullWindowSize) {
+          if (!fullWindowSizeEstimate || fullWindowSizeEstimate <= 0) {
+            throw new Error("Unable to derive full window size. Check period start/end and interval.");
+          }
+          payload.windowSize = fullWindowSizeEstimate;
+        } else if (windowSize.trim()) {
           const parsedWindowSize = Number(windowSize);
           if (!Number.isFinite(parsedWindowSize) || parsedWindowSize <= 0) {
             throw new Error("Window size must be a positive number.");
@@ -389,10 +429,35 @@ export default function RlEvaluationsPage() {
       setActionNote(`Completed ${targetPairs.length} evaluation run(s).`);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to run evaluation.");
+      const message = err instanceof Error ? err.message : "Failed to run evaluation.";
+      setError(toFriendlyEvaluationError(message));
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const applyQuickSetup = () => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    setPeriodStart(toInputValue(start));
+    setPeriodEnd(toInputValue(end));
+    setInterval("5m");
+    setContextIntervals("15m,1h,4h");
+    setDecisionThreshold("");
+    setWindowSize("");
+    setStride("");
+    setLeverage("");
+    setTakerFeeBps("");
+    setSlippageBps("");
+    setFundingWeight("");
+    setDrawdownPenalty("");
+    setWalkForwardMode("default");
+    setWalkForwardFolds("4");
+    setWalkForwardPurgeBars("0");
+    setWalkForwardEmbargoBars("0");
+    setWalkForwardMinTrainBars("");
+    setWalkForwardStrict(true);
+    setUseFullWindowSize(false);
   };
 
   return (
@@ -441,12 +506,21 @@ export default function RlEvaluationsPage() {
       <section className="rl-grid">
         <div className="table-card">
           <h3>Run Evaluation</h3>
-          <p>
-            Choose one pair or run all pairs, then tune Nautilus and reward settings for this evaluation window.
-          </p>
+          <p>Basic mode is usually enough: pick pair/version and time window, then run. Advanced mode is for walk-forward and cost-model tuning.</p>
+          <div className="action-row" style={{ marginBottom: 10 }}>
+            <button type="button" onClick={applyQuickSetup}>
+              Quick setup (recommended)
+            </button>
+            <button type="button" onClick={() => setShowAdvancedConfig((value) => !value)}>
+              {showAdvancedConfig ? "Hide advanced" : "Show advanced"}
+            </button>
+          </div>
+          <div className="empty" style={{ marginBottom: 12 }}>
+            If you hit "No trades available for fold 1", widen period to 7d+, use 5m/15m candles, or disable Walk Forward in advanced settings.
+          </div>
           <div className="form-grid">
             <label>
-              Pair
+              Pair target
               <select value={pair} onChange={(event) => setPair(event.target.value)}>
                 <option value={ALL_PAIRS_OPTION}>All pairs</option>
                 {ALL_PAIRS.map((option) => (
@@ -457,7 +531,7 @@ export default function RlEvaluationsPage() {
               </select>
             </label>
             <label>
-              Version
+              Model version
               <select value={versionId} onChange={(event) => setVersionId(event.target.value)}>
                 {versions.map((version) => (
                   <option key={version.id} value={version.id}>
@@ -485,33 +559,6 @@ export default function RlEvaluationsPage() {
               </select>
             </label>
             <label>
-              Context Intervals (CSV)
-              <input
-                type="text"
-                value={contextIntervals}
-                placeholder="5m,15m,1h"
-                onChange={(event) => setContextIntervals(event.target.value)}
-              />
-            </label>
-            <label>
-              Dataset Version (optional)
-              <input
-                type="text"
-                value={datasetVersionId}
-                placeholder="dataset version id"
-                onChange={(event) => setDatasetVersionId(event.target.value)}
-              />
-            </label>
-            <label>
-              Feature Set Version (optional)
-              <input
-                type="text"
-                value={featureSetVersionId}
-                placeholder="feature set version id"
-                onChange={(event) => setFeatureSetVersionId(event.target.value)}
-              />
-            </label>
-            <label>
               Decision Threshold (optional)
               <input
                 type="number"
@@ -521,123 +568,166 @@ export default function RlEvaluationsPage() {
                 onChange={(event) => setDecisionThreshold(event.target.value)}
               />
             </label>
-            <label>
-              Window Size (optional)
-              <input
-                type="number"
-                min={1}
-                value={windowSize}
-                placeholder="30"
-                onChange={(event) => setWindowSize(event.target.value)}
-              />
-            </label>
-            <label>
-              Stride (optional)
-              <input
-                type="number"
-                min={1}
-                value={stride}
-                placeholder="1"
-                onChange={(event) => setStride(event.target.value)}
-              />
-            </label>
-            <label>
-              Walk Forward
-              <select value={walkForwardMode} onChange={(event) => setWalkForwardMode(event.target.value as typeof walkForwardMode)}>
-                <option value="default">Use backend default</option>
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </label>
-            <label>
-              Leverage (optional)
-              <input type="number" min={0.01} step="0.01" value={leverage} onChange={(event) => setLeverage(event.target.value)} />
-            </label>
-            <label>
-              Taker Fee Bps (optional)
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={takerFeeBps}
-                onChange={(event) => setTakerFeeBps(event.target.value)}
-              />
-            </label>
-            <label>
-              Slippage Bps (optional)
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={slippageBps}
-                onChange={(event) => setSlippageBps(event.target.value)}
-              />
-            </label>
-            <label>
-              Funding Weight (optional)
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={fundingWeight}
-                onChange={(event) => setFundingWeight(event.target.value)}
-              />
-            </label>
-            <label>
-              Drawdown Penalty (optional)
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={drawdownPenalty}
-                onChange={(event) => setDrawdownPenalty(event.target.value)}
-              />
-            </label>
-            <label>
-              WF Folds
-              <input
-                type="number"
-                min={1}
-                max={24}
-                value={walkForwardFolds}
-                onChange={(event) => setWalkForwardFolds(event.target.value)}
-              />
-            </label>
-            <label>
-              WF Purge Bars
-              <input
-                type="number"
-                min={0}
-                value={walkForwardPurgeBars}
-                onChange={(event) => setWalkForwardPurgeBars(event.target.value)}
-              />
-            </label>
-            <label>
-              WF Embargo Bars
-              <input
-                type="number"
-                min={0}
-                value={walkForwardEmbargoBars}
-                onChange={(event) => setWalkForwardEmbargoBars(event.target.value)}
-              />
-            </label>
-            <label>
-              WF Min Train Bars (optional)
-              <input
-                type="number"
-                min={1}
-                value={walkForwardMinTrainBars}
-                onChange={(event) => setWalkForwardMinTrainBars(event.target.value)}
-              />
-            </label>
             <label className="toggle-row">
-              <span>WF Strict Mode</span>
-              <input
-                type="checkbox"
-                checked={walkForwardStrict}
-                onChange={(event) => setWalkForwardStrict(event.target.checked)}
-              />
+              <span>Use full period as window size</span>
+              <input type="checkbox" checked={useFullWindowSize} onChange={(event) => setUseFullWindowSize(event.target.checked)} />
             </label>
+            {useFullWindowSize ? (
+              <label>
+                Derived window size
+                <input value={fullWindowSizeEstimate ?? ""} readOnly placeholder="Adjust period/interval to derive" />
+              </label>
+            ) : null}
+            {showAdvancedConfig ? (
+              <>
+                <label>
+                  Context Intervals (CSV)
+                  <input
+                    type="text"
+                    value={contextIntervals}
+                    placeholder="15m,1h,4h"
+                    onChange={(event) => setContextIntervals(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Dataset Version (optional)
+                  <input
+                    type="text"
+                    value={datasetVersionId}
+                    placeholder="dataset version id"
+                    onChange={(event) => setDatasetVersionId(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Feature Set Version (optional)
+                  <input
+                    type="text"
+                    value={featureSetVersionId}
+                    placeholder="feature set version id"
+                    onChange={(event) => setFeatureSetVersionId(event.target.value)}
+                  />
+                </label>
+                {!useFullWindowSize ? (
+                  <label>
+                    Window Size (optional)
+                    <input
+                      type="number"
+                      min={1}
+                      value={windowSize}
+                      placeholder="30"
+                      onChange={(event) => setWindowSize(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                <label>
+                  Stride (optional)
+                  <input
+                    type="number"
+                    min={1}
+                    value={stride}
+                    placeholder="1"
+                    onChange={(event) => setStride(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Walk Forward
+                  <select value={walkForwardMode} onChange={(event) => setWalkForwardMode(event.target.value as typeof walkForwardMode)}>
+                    <option value="default">Use backend default</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </label>
+                <label>
+                  Leverage (optional)
+                  <input type="number" min={0.01} step="0.01" value={leverage} onChange={(event) => setLeverage(event.target.value)} />
+                </label>
+                <label>
+                  Taker Fee Bps (optional)
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={takerFeeBps}
+                    onChange={(event) => setTakerFeeBps(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Slippage Bps (optional)
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={slippageBps}
+                    onChange={(event) => setSlippageBps(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Funding Weight (optional)
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={fundingWeight}
+                    onChange={(event) => setFundingWeight(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Drawdown Penalty (optional)
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={drawdownPenalty}
+                    onChange={(event) => setDrawdownPenalty(event.target.value)}
+                  />
+                </label>
+                <label>
+                  WF Folds
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={walkForwardFolds}
+                    onChange={(event) => setWalkForwardFolds(event.target.value)}
+                  />
+                </label>
+                <label>
+                  WF Purge Bars
+                  <input
+                    type="number"
+                    min={0}
+                    value={walkForwardPurgeBars}
+                    onChange={(event) => setWalkForwardPurgeBars(event.target.value)}
+                  />
+                </label>
+                <label>
+                  WF Embargo Bars
+                  <input
+                    type="number"
+                    min={0}
+                    value={walkForwardEmbargoBars}
+                    onChange={(event) => setWalkForwardEmbargoBars(event.target.value)}
+                  />
+                </label>
+                <label>
+                  WF Min Train Bars (optional)
+                  <input
+                    type="number"
+                    min={1}
+                    value={walkForwardMinTrainBars}
+                    onChange={(event) => setWalkForwardMinTrainBars(event.target.value)}
+                  />
+                </label>
+                <label className="toggle-row">
+                  <span>WF Strict Mode</span>
+                  <input
+                    type="checkbox"
+                    checked={walkForwardStrict}
+                    onChange={(event) => setWalkForwardStrict(event.target.checked)}
+                  />
+                </label>
+              </>
+            ) : null}
           </div>
           <div className="action-row">
             <button type="button" onClick={handleRunEvaluation} disabled={actionLoading || loading}>
@@ -657,7 +747,9 @@ export default function RlEvaluationsPage() {
         <h3>Evaluation History</h3>
         <p>Most recent evaluation runs for the selected agent version. Select any row to inspect full run details.</p>
         {reports.length === 0 ? (
-          <div className="empty">No evaluation reports available.</div>
+          <div className="empty">
+            No evaluation reports available yet. Run one evaluation from the panel above. If it fails, the error banner explains what to adjust.
+          </div>
         ) : (
           <table className="table compact">
             <thead>

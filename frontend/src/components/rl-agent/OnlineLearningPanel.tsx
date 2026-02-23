@@ -29,6 +29,18 @@ function formatBoolean(value?: boolean) {
   return "unknown";
 }
 
+function parseIntervalToMinutes(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+)(m|h|d)$/);
+  if (!match) return null;
+  const amount = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (match[2] === "m") return amount;
+  if (match[2] === "h") return amount * 60;
+  if (match[2] === "d") return amount * 24 * 60;
+  return null;
+}
+
 function statusTone(status?: string | null) {
   if (!status) return "status-muted";
   if (status === "pass" || status === "succeeded") return "status-ok";
@@ -50,17 +62,12 @@ function summarizeDecisionReason(update: OnlineLearningUpdate) {
   return "—";
 }
 
-function renderUpdateRow(
-  update: OnlineLearningUpdate,
-  selectedId: string | null,
-  onToggleDetails: (id: string) => void,
-) {
+function renderUpdateRow(update: OnlineLearningUpdate, onOpenDetails: (id: string) => void) {
   const report = update.evaluationReport;
   const champion = update.championEvaluationReport;
   const netDelta = update.metricDeltas?.netPnlDelta;
   const winDelta = update.metricDeltas?.winRateDelta;
   const pair = update.pair ?? report?.pair ?? champion?.pair ?? "—";
-  const selected = selectedId === update.id;
   return (
     <tr key={update.id}>
       <td>{formatTimestamp(update.startedAt)}</td>
@@ -91,12 +98,25 @@ function renderUpdateRow(
       </td>
       <td className="inline-muted">{summarizeDecisionReason(update)}</td>
       <td>
-        <button type="button" onClick={() => onToggleDetails(update.id)}>
-          {selected ? "Hide" : "Details"}
+        <button type="button" onClick={() => onOpenDetails(update.id)}>
+          Details
         </button>
       </td>
     </tr>
   );
+}
+
+function hasExecutionMetadata(report: OnlineLearningUpdate["evaluationReport"]) {
+  const metadata = report?.metadata;
+  if (!metadata || typeof metadata !== "object") return false;
+  const execution = (metadata as Record<string, unknown>).execution;
+  const executionSteps = (metadata as Record<string, unknown>).execution_steps;
+  if (Array.isArray(executionSteps) && executionSteps.length > 0) return true;
+  if (execution && typeof execution === "object") {
+    const executionRecord = execution as Record<string, unknown>;
+    return Array.isArray(executionRecord.steps) && executionRecord.steps.length > 0;
+  }
+  return false;
 }
 
 function toExecutionInput(report: NonNullable<OnlineLearningUpdate["evaluationReport"]>): EvaluationExecutionInput {
@@ -153,6 +173,8 @@ export default function OnlineLearningPanel({
   const [minEffectSize, setMinEffectSize] = useState(String(config?.minEffectSize ?? 0));
   const [minConfidenceZ, setMinConfidenceZ] = useState(String(config?.minConfidenceZ ?? 0));
   const [minSampleSize, setMinSampleSize] = useState(String(config?.minSampleSize ?? 0));
+  const [showAdvancedOverrides, setShowAdvancedOverrides] = useState(false);
+  const [useFullTrainWindow, setUseFullTrainWindow] = useState(false);
   const [historyRows, setHistoryRows] = useState<OnlineLearningUpdate[]>(updates);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -166,32 +188,36 @@ export default function OnlineLearningPanel({
   const [historyRefreshNonce, setHistoryRefreshNonce] = useState(0);
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
 
+  const applyConfigToForm = (nextConfig: NonNullable<typeof config>) => {
+    setRunAllConfiguredPairs(true);
+    setPair(nextConfig.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT");
+    setPairsCsv((nextConfig.pairs ?? []).join(","));
+    setInterval(nextConfig.interval ?? "5m");
+    setContextIntervalsCsv((nextConfig.contextIntervals ?? []).join(","));
+    setTrainWindowMin(String(nextConfig.trainWindowMin ?? 360));
+    setEvalWindowMin(String(nextConfig.evalWindowMin ?? 120));
+    setEvalLagMin(String(nextConfig.evalLagMin ?? 1));
+    setWindowSize(String(nextConfig.windowSize ?? 30));
+    setStride(String(nextConfig.stride ?? 1));
+    setTimesteps(String(nextConfig.timesteps ?? 500));
+    setDecisionThreshold(String(nextConfig.decisionThreshold ?? 0.35));
+    setAutoRollForward(Boolean(nextConfig.autoRollForward ?? true));
+    setMinWinRate(String(nextConfig.minWinRate ?? 0.55));
+    setMinNetPnl(String(nextConfig.minNetPnl ?? 0));
+    setMaxDrawdown(String(nextConfig.maxDrawdown ?? 0.25));
+    setMinTradeCount(String(nextConfig.minTradeCount ?? 20));
+    setMinWinRateDelta(String(nextConfig.minWinRateDelta ?? 0));
+    setMinNetPnlDelta(String(nextConfig.minNetPnlDelta ?? 0));
+    setMaxDrawdownDelta(String(nextConfig.maxDrawdownDelta ?? 0.05));
+    setMinTradeCountDelta(String(nextConfig.minTradeCountDelta ?? -5));
+    setMinEffectSize(String(nextConfig.minEffectSize ?? 0));
+    setMinConfidenceZ(String(nextConfig.minConfidenceZ ?? 0));
+    setMinSampleSize(String(nextConfig.minSampleSize ?? 0));
+  };
+
   useEffect(() => {
     if (!config) return;
-    setRunAllConfiguredPairs(true);
-    setPair(config.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT");
-    setPairsCsv((config.pairs ?? []).join(","));
-    setInterval(config.interval ?? "5m");
-    setContextIntervalsCsv((config.contextIntervals ?? []).join(","));
-    setTrainWindowMin(String(config.trainWindowMin ?? 360));
-    setEvalWindowMin(String(config.evalWindowMin ?? 120));
-    setEvalLagMin(String(config.evalLagMin ?? 1));
-    setWindowSize(String(config.windowSize ?? 30));
-    setStride(String(config.stride ?? 1));
-    setTimesteps(String(config.timesteps ?? 500));
-    setDecisionThreshold(String(config.decisionThreshold ?? 0.35));
-    setAutoRollForward(Boolean(config.autoRollForward ?? true));
-    setMinWinRate(String(config.minWinRate ?? 0.55));
-    setMinNetPnl(String(config.minNetPnl ?? 0));
-    setMaxDrawdown(String(config.maxDrawdown ?? 0.25));
-    setMinTradeCount(String(config.minTradeCount ?? 20));
-    setMinWinRateDelta(String(config.minWinRateDelta ?? 0));
-    setMinNetPnlDelta(String(config.minNetPnlDelta ?? 0));
-    setMaxDrawdownDelta(String(config.maxDrawdownDelta ?? 0.05));
-    setMinTradeCountDelta(String(config.minTradeCountDelta ?? -5));
-    setMinEffectSize(String(config.minEffectSize ?? 0));
-    setMinConfidenceZ(String(config.minConfidenceZ ?? 0));
-    setMinSampleSize(String(config.minSampleSize ?? 0));
+    applyConfigToForm(config);
   }, [config]);
 
   useEffect(() => {
@@ -252,6 +278,13 @@ export default function OnlineLearningPanel({
     [historyRows, selectedUpdateId],
   );
 
+  const intervalMinutes = useMemo(() => parseIntervalToMinutes(interval), [interval]);
+  const fullWindowSizeEstimate = useMemo(() => {
+    const parsedTrainWindow = Number.parseInt(trainWindowMin.trim(), 10);
+    if (!intervalMinutes || !Number.isFinite(parsedTrainWindow) || parsedTrainWindow <= 0) return null;
+    return Math.max(1, Math.floor(parsedTrainWindow / intervalMinutes));
+  }, [intervalMinutes, trainWindowMin]);
+
   const historyPairOptions = useMemo(() => {
     const configured = config?.pairs ?? [];
     const fromRows = historyRows.map((item) => item.pair).filter((value): value is string => Boolean(value));
@@ -276,6 +309,7 @@ export default function OnlineLearningPanel({
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean);
+    const computedWindowSize = useFullTrainWindow ? fullWindowSizeEstimate ?? undefined : parseOptionalInt(windowSize);
     const payload: OnlineLearningRunRequest = {
       useConfiguredPairs: runAllConfiguredPairs,
       pair: runAllConfiguredPairs ? undefined : pair,
@@ -285,7 +319,7 @@ export default function OnlineLearningPanel({
       trainWindowMin: parseOptionalInt(trainWindowMin),
       evalWindowMin: parseOptionalInt(evalWindowMin),
       evalLagMin: parseOptionalInt(evalLagMin),
-      windowSize: parseOptionalInt(windowSize),
+      windowSize: computedWindowSize,
       stride: parseOptionalInt(stride),
       timesteps: parseOptionalInt(timesteps),
       decisionThreshold: parseOptionalNumber(decisionThreshold),
@@ -381,6 +415,24 @@ export default function OnlineLearningPanel({
 
       <div>
         <h5>Run with overrides</h5>
+        <div className="inline-muted" style={{ marginBottom: 10 }}>
+          Basic mode is enough for most runs: choose scope, interval, and train/eval windows. Advanced mode exposes gating and SB3 tuning.
+        </div>
+        <div className="action-row" style={{ marginBottom: 10 }}>
+          <button type="button" onClick={() => setShowAdvancedOverrides((value) => !value)}>
+            {showAdvancedOverrides ? "Hide advanced" : "Show advanced"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!config) return;
+              applyConfigToForm(config);
+              setUseFullTrainWindow(false);
+            }}
+          >
+            Reset to configured defaults
+          </button>
+        </div>
         <div className="form-grid">
           <label>
             Pair (single run)
@@ -398,7 +450,7 @@ export default function OnlineLearningPanel({
               value={runAllConfiguredPairs ? "configured" : "custom"}
               onChange={(event) => setRunAllConfiguredPairs(event.target.value === "configured")}
             >
-              <option value="configured">All configured pairs</option>
+              <option value="configured">All configured pairs (recommended)</option>
               <option value="custom">Single/custom pairs</option>
             </select>
           </label>
@@ -426,14 +478,20 @@ export default function OnlineLearningPanel({
               ))}
             </datalist>
           </label>
-          <label>
-            Context intervals CSV
+          <label className="toggle-row">
+            <span>Use full train window for feature window</span>
             <input
-              value={contextIntervalsCsv}
-              onChange={(event) => setContextIntervalsCsv(event.target.value)}
-              placeholder="5m,15m,1h"
+              type="checkbox"
+              checked={useFullTrainWindow}
+              onChange={(event) => setUseFullTrainWindow(event.target.checked)}
             />
           </label>
+          {useFullTrainWindow ? (
+            <label>
+              Derived window size
+              <input value={fullWindowSizeEstimate ?? ""} readOnly placeholder="Adjust interval/train window to derive" />
+            </label>
+          ) : null}
           <label>
             Train window (min)
             <input value={trainWindowMin} onChange={(event) => setTrainWindowMin(event.target.value)} />
@@ -447,18 +505,6 @@ export default function OnlineLearningPanel({
             <input value={evalLagMin} onChange={(event) => setEvalLagMin(event.target.value)} />
           </label>
           <label>
-            Window size
-            <input value={windowSize} onChange={(event) => setWindowSize(event.target.value)} />
-          </label>
-          <label>
-            Stride
-            <input value={stride} onChange={(event) => setStride(event.target.value)} />
-          </label>
-          <label>
-            Timesteps
-            <input value={timesteps} onChange={(event) => setTimesteps(event.target.value)} />
-          </label>
-          <label>
             Decision threshold
             <input value={decisionThreshold} onChange={(event) => setDecisionThreshold(event.target.value)} />
           </label>
@@ -469,50 +515,76 @@ export default function OnlineLearningPanel({
               <option value="false">Disabled</option>
             </select>
           </label>
-          <label>
-            Min win rate
-            <input value={minWinRate} onChange={(event) => setMinWinRate(event.target.value)} />
-          </label>
-          <label>
-            Min net PnL
-            <input value={minNetPnl} onChange={(event) => setMinNetPnl(event.target.value)} />
-          </label>
-          <label>
-            Max drawdown
-            <input value={maxDrawdown} onChange={(event) => setMaxDrawdown(event.target.value)} />
-          </label>
-          <label>
-            Min trades
-            <input value={minTradeCount} onChange={(event) => setMinTradeCount(event.target.value)} />
-          </label>
-          <label>
-            Min win delta
-            <input value={minWinRateDelta} onChange={(event) => setMinWinRateDelta(event.target.value)} />
-          </label>
-          <label>
-            Min net PnL delta
-            <input value={minNetPnlDelta} onChange={(event) => setMinNetPnlDelta(event.target.value)} />
-          </label>
-          <label>
-            Max drawdown delta
-            <input value={maxDrawdownDelta} onChange={(event) => setMaxDrawdownDelta(event.target.value)} />
-          </label>
-          <label>
-            Min trade delta
-            <input value={minTradeCountDelta} onChange={(event) => setMinTradeCountDelta(event.target.value)} />
-          </label>
-          <label>
-            Min effect size
-            <input value={minEffectSize} onChange={(event) => setMinEffectSize(event.target.value)} />
-          </label>
-          <label>
-            Min confidence Z
-            <input value={minConfidenceZ} onChange={(event) => setMinConfidenceZ(event.target.value)} />
-          </label>
-          <label>
-            Min sample size
-            <input value={minSampleSize} onChange={(event) => setMinSampleSize(event.target.value)} />
-          </label>
+          {showAdvancedOverrides ? (
+            <>
+              <label>
+                Context intervals CSV
+                <input
+                  value={contextIntervalsCsv}
+                  onChange={(event) => setContextIntervalsCsv(event.target.value)}
+                  placeholder="15m,1h,4h"
+                />
+              </label>
+              {!useFullTrainWindow ? (
+                <label>
+                  Window size
+                  <input value={windowSize} onChange={(event) => setWindowSize(event.target.value)} />
+                </label>
+              ) : null}
+              <label>
+                Stride
+                <input value={stride} onChange={(event) => setStride(event.target.value)} />
+              </label>
+              <label>
+                Timesteps
+                <input value={timesteps} onChange={(event) => setTimesteps(event.target.value)} />
+              </label>
+              <label>
+                Min win rate
+                <input value={minWinRate} onChange={(event) => setMinWinRate(event.target.value)} />
+              </label>
+              <label>
+                Min net PnL
+                <input value={minNetPnl} onChange={(event) => setMinNetPnl(event.target.value)} />
+              </label>
+              <label>
+                Max drawdown
+                <input value={maxDrawdown} onChange={(event) => setMaxDrawdown(event.target.value)} />
+              </label>
+              <label>
+                Min trades
+                <input value={minTradeCount} onChange={(event) => setMinTradeCount(event.target.value)} />
+              </label>
+              <label>
+                Min win delta
+                <input value={minWinRateDelta} onChange={(event) => setMinWinRateDelta(event.target.value)} />
+              </label>
+              <label>
+                Min net PnL delta
+                <input value={minNetPnlDelta} onChange={(event) => setMinNetPnlDelta(event.target.value)} />
+              </label>
+              <label>
+                Max drawdown delta
+                <input value={maxDrawdownDelta} onChange={(event) => setMaxDrawdownDelta(event.target.value)} />
+              </label>
+              <label>
+                Min trade delta
+                <input value={minTradeCountDelta} onChange={(event) => setMinTradeCountDelta(event.target.value)} />
+              </label>
+              <label>
+                Min effect size
+                <input value={minEffectSize} onChange={(event) => setMinEffectSize(event.target.value)} />
+              </label>
+              <label>
+                Min confidence Z
+                <input value={minConfidenceZ} onChange={(event) => setMinConfidenceZ(event.target.value)} />
+              </label>
+              <label>
+                Min sample size
+                <input value={minSampleSize} onChange={(event) => setMinSampleSize(event.target.value)} />
+              </label>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -537,7 +609,9 @@ export default function OnlineLearningPanel({
             </div>
           </div>
         ) : (
-          <div className="empty">No evaluation reports yet.</div>
+          <div className="empty">
+            No evaluation reports yet. Runs are being attempted, but failed runs before report creation will not appear here.
+          </div>
         )}
         {status?.latestReportsByPair && status.latestReportsByPair.length > 0 ? (
           <table className="table compact">
@@ -667,7 +741,7 @@ export default function OnlineLearningPanel({
                   <th>View</th>
                 </tr>
               </thead>
-              <tbody>{historyRows.map((update) => renderUpdateRow(update, selectedUpdateId, setSelectedUpdateId))}</tbody>
+              <tbody>{historyRows.map((update) => renderUpdateRow(update, setSelectedUpdateId))}</tbody>
             </table>
             <PaginationControls
               page={historyPage}
@@ -683,31 +757,49 @@ export default function OnlineLearningPanel({
         )}
 
         {selectedUpdate ? (
-          <div className="learning-history-details">
-            <h5>Run details · {selectedUpdate.id.slice(0, 8)}</h5>
-            <div className="inline-muted">Started {formatTimestamp(selectedUpdate.startedAt)}</div>
-            <div className="inline-muted">Completed {formatTimestamp(selectedUpdate.completedAt)}</div>
-            <div className="inline-muted">Status {selectedUpdate.status}</div>
-            <div className="inline-muted">
-              Decision{" "}
-              {selectedUpdate.promoted === null || selectedUpdate.promoted === undefined
-                ? "pending"
-                : selectedUpdate.promoted
-                  ? "promoted"
-                  : "rejected"}
-            </div>
-            <div className="inline-muted">
-              Reasons{" "}
-              {selectedUpdate.decisionReasons && selectedUpdate.decisionReasons.length > 0
-                ? selectedUpdate.decisionReasons.join(" · ")
-                : "No explicit decision reasons were recorded for this run."}
-            </div>
-            {selectedUpdate.evaluationReport ? (
-              <div style={{ marginTop: 12 }}>
-                <h5>Evaluation steps</h5>
-                <EvaluationExecutionTimeline report={toExecutionInput(selectedUpdate.evaluationReport)} compact />
+          <div className="modal-backdrop" onClick={() => setSelectedUpdateId(null)}>
+            <div className="modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-header">
+                <h4>Run details · {selectedUpdate.id.slice(0, 8)}</h4>
+                <button type="button" onClick={() => setSelectedUpdateId(null)}>
+                  Close
+                </button>
               </div>
-            ) : null}
+              <div className="modal-meta">
+                <span>Started {formatTimestamp(selectedUpdate.startedAt)}</span>
+                <span>Completed {formatTimestamp(selectedUpdate.completedAt)}</span>
+                <span>Status {selectedUpdate.status}</span>
+              </div>
+              <div className="modal-body">
+                <div className="inline-muted">
+                  Decision{" "}
+                  {selectedUpdate.promoted === null || selectedUpdate.promoted === undefined
+                    ? "pending"
+                    : selectedUpdate.promoted
+                      ? "promoted"
+                      : "rejected"}
+                </div>
+                <div className="inline-muted">
+                  Reasons{" "}
+                  {selectedUpdate.decisionReasons && selectedUpdate.decisionReasons.length > 0
+                    ? selectedUpdate.decisionReasons.join(" · ")
+                    : "No explicit decision reasons were recorded for this run."}
+                </div>
+                {selectedUpdate.evaluationReport && !hasExecutionMetadata(selectedUpdate.evaluationReport) ? (
+                  <div className="empty">
+                    Some steps are marked partial because execution telemetry was not fully recorded for this run.
+                  </div>
+                ) : null}
+                {selectedUpdate.evaluationReport ? (
+                  <div style={{ marginTop: 12 }}>
+                    <h5>Evaluation steps</h5>
+                    <EvaluationExecutionTimeline report={toExecutionInput(selectedUpdate.evaluationReport)} compact />
+                  </div>
+                ) : (
+                  <div className="empty">No evaluation report was attached to this learning update.</div>
+                )}
+              </div>
+            </div>
           </div>
         ) : null}
       </div>

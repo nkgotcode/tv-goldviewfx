@@ -57,7 +57,14 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) {
-    const message = await response.text();
+    const body = await response.text();
+    let parsed: { message?: string; error?: string; detail?: string } | null = null;
+    try {
+      parsed = JSON.parse(body) as { message?: string; error?: string; detail?: string };
+    } catch {
+      parsed = null;
+    }
+    const message = parsed?.message ?? parsed?.error ?? parsed?.detail ?? body;
     throw new Error(message || `API error: ${response.status}`);
   }
   return response.json() as Promise<T>;
