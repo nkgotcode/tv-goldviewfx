@@ -32,12 +32,20 @@ Worker placement policy:
 
 You can host the Next.js frontend on Vercel/Cloudflare/Netlify and keep Nomad for backend services only.
 
-1. Deploy `frontend/` to your hosting provider and set:
-   - `NEXT_PUBLIC_API_BASE_URL=https://<your-public-api-host>`
-2. Set API CORS for that frontend domain in Nomad vars (secrets path used by `gvfx-api`):
-   - Add `CORS_ORIGIN="https://<your-frontend-host>"` to the existing `nomad/jobs/gvfx/secrets` payload before writing it back.
-3. Run `nomad job plan` then `nomad job run` for `gvfx-api` (and worker/rl-service).
-4. Skip `gvfx-frontend` when using external hosting.
+Cloudflare Workers (OpenNext) flow in this repo:
+
+1. Authenticate Wrangler:
+   - `cd frontend && npx wrangler login`
+2. Deploy frontend worker:
+   - `./scripts/deploy-frontend-cloudflare.sh`
+3. Optional cutover helper (deploy + stop Nomad frontend):
+   - `CLOUDFLARE_FRONTEND_URL=https://<frontend-host> ./scripts/cutover-frontend-to-cloudflare.sh`
+4. Keep Nomad deploys for `gvfx-api`, `gvfx-rl-service`, and `gvfx-worker`.
+
+Notes:
+- Cloudflare frontend uses server-side `/api/backend` proxy; set Worker secrets `API_BASE_URL` and `API_TOKEN`.
+- `API_BASE_URL` must be a public HTTPS upstream reachable from Cloudflare Workers (not a private Nomad/LAN IP). Tailscale Funnel URL is supported.
+- Set `CORS_ORIGIN` only if clients call API cross-origin directly (not needed for proxy mode).
 
 ## Required Nomad Client Metadata
 

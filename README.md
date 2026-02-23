@@ -57,11 +57,20 @@ Market tape panels use KLineChart overlays to annotate trades and backtests.
 
 ### Host frontend outside Nomad
 
-You can run only backend/worker services on Nomad and host `frontend/` on another platform (for example Vercel, Cloudflare Pages, or Netlify).
+You can run backend/worker services on Nomad and host `frontend/` on Cloudflare Workers (OpenNext), so UI deploys are independent from GHCR frontend image pushes.
 
-- Frontend env: set `NEXT_PUBLIC_API_BASE_URL` to your public API URL.
-- Backend env: set `CORS_ORIGIN` to the frontend origin so browser requests are allowed.
-- Nomad: skip `deploy/nomad/gvfx-frontend.nomad.hcl` and deploy `gvfx-api`, `gvfx-rl-service`, and `gvfx-worker`.
+1. Authenticate Wrangler once:
+   - `cd frontend && npx wrangler login`
+2. Deploy frontend to Cloudflare (auto-syncs `API_BASE_URL` and `API_TOKEN` from Nomad vars when available):
+   - `./scripts/deploy-frontend-cloudflare.sh`
+3. Optional one-step cutover (deploy + stop Nomad frontend job):
+   - `CLOUDFLARE_FRONTEND_URL=https://<your-worker-or-custom-domain> ./scripts/cutover-frontend-to-cloudflare.sh`
+4. Keep Nomad for `gvfx-api`, `gvfx-rl-service`, and `gvfx-worker`.
+
+Notes:
+- Cloudflare frontend keeps using `/api/backend` proxy route. Set Worker secrets `API_BASE_URL` and `API_TOKEN`.
+- `API_BASE_URL` must be publicly reachable from Cloudflare. The deploy script prefers active Tailscale Funnel URL and refuses private-only upstreams.
+- `CORS_ORIGIN` is only required if browsers call API directly cross-origin; it is not required for the server-side proxy path.
 
 ## RL service (Python 3.12+ + uv)
 

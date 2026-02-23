@@ -1,0 +1,8 @@
+# Cloudflare local preview secrets for frontend worker proxy.
+# Copy to `.dev.vars` and set real values before `bun run preview:cloudflare`.
+
+# Backend API endpoint reachable from your local machine / Worker dev runtime.
+API_BASE_URL=http://10.0.0.112:8787
+
+# Optional: backend bearer token if API auth is enabled.
+# API_TOKEN=replace-me

@@ -52,10 +52,14 @@ Dependencies: keep all libraries and runtimes on the latest stable releases.
 - Development workflow: follow the Ralph loop architecture; create/verify `activity.md` before any session and append entries per `docs/development-workflow.md`.
 - Push workflow (main): `git status` -> `git add -A` -> `git commit -m "<message>"` -> `git push origin main`.
 - Nomad deploy workflow:
-  - Build/push immutable GHCR tags (linux/amd64): `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-backend:<tag> -f deploy/docker/backend-overlay.Dockerfile --push .`, `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-rl-service:<tag> -f deploy/docker/rl-service-overlay.Dockerfile --push .`, `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-frontend:<tag> -f deploy/docker/frontend-delta.Dockerfile --push .`.
+  - Build/push immutable GHCR tags (linux/amd64) for backend + RL only: `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-backend:<tag> -f deploy/docker/backend-overlay.Dockerfile --push .`, `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-rl-service:<tag> -f deploy/docker/rl-service-overlay.Dockerfile --push .`.
   - Verify manifest exists before rollout: `docker manifest inspect ghcr.io/<owner>/tv-goldviewfx-backend:<tag> >/dev/null` (repeat for each image).
   - Always `nomad job plan` before `nomad job run` for each job.
-  - Stateless rollout order: `gvfx-rl-service` -> `gvfx-api` -> optional `gvfx-frontend` -> `gvfx-worker`.
+  - Stateless rollout order: `gvfx-rl-service` -> `gvfx-api` -> `gvfx-worker` (frontend now hosted on Cloudflare Workers by default).
   - Worker deploy requires egress vars when running job plan/run: `-var ts_exit_node_primary=<tailnet-ip> -var ts_egress_expected_ips=<csv>`.
   - Verify deployment image pin: `nomad job inspect -json <job> | jq -r '.TaskGroups[].Tasks[].Config.image'`.
+- Cloudflare frontend deploy workflow:
+  - One-time auth: `cd frontend && npx wrangler login`.
+  - Deploy worker: `./scripts/deploy-frontend-cloudflare.sh` (reads `API_BASE_URL`/`API_TOKEN` from env, prefers active Tailscale Funnel URL, and rejects private-only upstreams).
+  - Cutover helper: `CLOUDFLARE_FRONTEND_URL=https://<frontend-host> ./scripts/cutover-frontend-to-cloudflare.sh` (deploys frontend then stops `gvfx-frontend` Nomad job).
 <!-- MANUAL ADDITIONS END -->
