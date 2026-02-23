@@ -555,3 +555,9 @@ Wrote /Users/itsnk/.codex/skills/binance-api/references/generated/binance-spot-c
 - Commands: `set -a && source ./.env.local && set +a && NODE_ENV=production DISABLE_TEST_DATA_IN_DB=true DRY_RUN=true bun run /tmp/gvfx_cleanup_seed_test.ts`; `... DRY_RUN=false bun run /tmp/gvfx_cleanup_seed_test.ts`; `... DRY_RUN=true bun run /tmp/gvfx_cleanup_seed_test.ts`.
 - Verification: Dry-run before execute reported `matchedRows=13`; execute reported `deletedRows=13`; post-run dry-run reported `matchedRows=0` and `errorCount=0`.
 - Notes: Convex `ops_alerts` seed-scan rules were explicitly skipped in-script due non-indexed full-scan limits on a large table; Timescale `ops_alerts` rule matched 0. Cleanup scope remained explicit and non-destructive (no truncates/reset).
+## 2026-02-23 00:15 CST
+- Task: Commit and push production hardening updates, then deploy updated Nomad API/worker jobs.
+- Changes: Committed and pushed `baf5f04` (env hardening + external frontend hosting + no-test-data guard docs/tests).
+- Commands: `git commit -m "Harden prod runtime and support external frontend hosting"`; `git push origin main`; `nomad job plan ... deploy/nomad/gvfx-api.nomad.hcl`; `nomad job run -check-index 142283 ... deploy/nomad/gvfx-api.nomad.hcl`; `nomad job plan ... deploy/nomad/gvfx-worker.nomad.hcl`; `nomad job run -check-index 142309 ... deploy/nomad/gvfx-worker.nomad.hcl`.
+- Verification: `gvfx-api` deployment `1ec40a05` successful (job version 30 healthy); `gvfx-worker` deployment `8a99f56f` successful (job version 20 healthy).
+- Notes: Worker deploy preserved existing egress vars (`ts_exit_node_primary`, `ts_egress_expected_ips`) to avoid drift.
