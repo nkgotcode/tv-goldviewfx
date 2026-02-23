@@ -5,7 +5,11 @@ import { resolveSupportedPair } from "../../config/market_catalog";
 import { loadRlServiceConfig } from "../../config/rl_service";
 import { getEvaluationReport, getLatestEvaluationReport } from "../../db/repositories/evaluation_reports";
 import { listRecentLearningUpdates } from "../../db/repositories/learning_updates";
-import { runOnlineLearningCycle, type OnlineLearningRunOverrides } from "../../services/online_learning_service";
+import {
+  resolveOnlineLearningPairs,
+  runOnlineLearningBatch,
+  type OnlineLearningRunOverrides,
+} from "../../services/online_learning_service";
 import { recordOpsAudit } from "../../services/ops_audit";
 import { logWarn } from "../../services/logger";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
@@ -19,6 +23,8 @@ const intervalRegex = /^\d+(m|h|d|w|M)$/;
 
 const manualRunPayloadSchema = z.object({
   pair: z.string().min(1).optional(),
+  pairs: z.array(z.string().min(1)).optional(),
+  useConfiguredPairs: z.boolean().optional(),
   interval: z.string().regex(intervalRegex).optional(),
   contextIntervals: z.array(z.string().regex(intervalRegex)).optional(),
   contextIntervalsCsv: z.string().optional(),
@@ -40,6 +46,16 @@ const manualRunPayloadSchema = z.object({
       minNetPnlDelta: z.number().optional(),
       maxDrawdownDelta: z.number().nonnegative().optional(),
       minTradeCountDelta: z.number().int().optional(),
+      minEffectSize: z.number().nonnegative().optional(),
+      minConfidenceZ: z.number().nonnegative().optional(),
+      minSampleSize: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
+  rolloutPolicy: z
+    .object({
+      mode: z.enum(["shadow", "canary", "full"]).optional(),
+      canaryMinTradeCount: z.number().int().nonnegative().optional(),
+      canaryMaxDrawdown: z.number().min(0).max(1).optional(),
     })
     .optional(),
 });
@@ -77,6 +93,7 @@ function buildOnlineLearningConfig(env: ReturnType<typeof loadEnv>) {
       parseContextIntervals(env.RL_ONLINE_LEARNING_CONTEXT_INTERVALS),
     ),
     pair: env.RL_ONLINE_LEARNING_PAIR,
+    pairs: resolveOnlineLearningPairs(),
     trainWindowMin: env.RL_ONLINE_LEARNING_TRAIN_WINDOW_MIN,
     evalWindowMin: env.RL_ONLINE_LEARNING_EVAL_WINDOW_MIN,
     evalLagMin: env.RL_ONLINE_LEARNING_EVAL_LAG_MIN,
@@ -93,6 +110,12 @@ function buildOnlineLearningConfig(env: ReturnType<typeof loadEnv>) {
     minNetPnlDelta: env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
     maxDrawdownDelta: env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
     minTradeCountDelta: env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
+    minEffectSize: env.RL_ONLINE_LEARNING_MIN_EFFECT_SIZE,
+    minConfidenceZ: env.RL_ONLINE_LEARNING_MIN_CONFIDENCE_Z,
+    minSampleSize: env.RL_ONLINE_LEARNING_MIN_SAMPLE_SIZE,
+    rolloutMode: env.RL_ONLINE_LEARNING_ROLLOUT_MODE,
+    canaryMinTradeCount: env.RL_ONLINE_LEARNING_CANARY_MIN_TRADE_COUNT,
+    canaryMaxDrawdown: env.RL_ONLINE_LEARNING_CANARY_MAX_DRAWDOWN,
     leverageDefault: env.RL_PPO_LEVERAGE_DEFAULT,
     takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
     slippageBps: env.RL_PPO_SLIPPAGE_BPS,
@@ -109,13 +132,18 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function canonicalPair(value: unknown) {
+  if (typeof value !== "string") return null;
+  return resolveSupportedPair(value) ?? value;
+}
+
 function formatEvaluation(report: any) {
   if (!report) return null;
   const metadata = (report.metadata ?? {}) as Record<string, unknown>;
   return {
     id: report.id,
     agentVersionId: report.agent_version_id,
-    pair: report.pair,
+    pair: canonicalPair(report.pair),
     periodStart: report.period_start,
     periodEnd: report.period_end,
     winRate: toNumber(report.win_rate),
@@ -142,7 +170,8 @@ opsLearningRoutes.get("/status", async (c) => {
   const env = loadEnv();
   const rlConfig = loadRlServiceConfig();
   const limit = Number.parseInt(c.req.query("limit") ?? "5", 10);
-  const pair = (c.req.query("pair") ?? env.RL_ONLINE_LEARNING_PAIR) as string;
+  const configuredPairs = resolveOnlineLearningPairs();
+  const pair = (c.req.query("pair") ?? configuredPairs[0] ?? env.RL_ONLINE_LEARNING_PAIR) as string;
 
   try {
     const updates = await listRecentLearningUpdates(Number.isFinite(limit) ? limit : 5);
@@ -168,6 +197,7 @@ opsLearningRoutes.get("/status", async (c) => {
           promoted: update.promoted ?? null,
           decisionReasons: (update.decision_reasons ?? []) as string[],
           metricDeltas: (update.metric_deltas ?? {}) as Record<string, number>,
+          pair: canonicalPair(report?.pair ?? championReport?.pair ?? null),
           evaluationReport: formatEvaluation(report),
           championEvaluationReport: formatEvaluation(championReport),
         };
@@ -175,6 +205,12 @@ opsLearningRoutes.get("/status", async (c) => {
     );
 
     const latestReport = await getLatestEvaluationReport({ pair });
+    const latestReportsByPair = await Promise.all(
+      configuredPairs.map(async (configuredPair) => ({
+        pair: configuredPair,
+        report: formatEvaluation(await getLatestEvaluationReport({ pair: configuredPair })),
+      })),
+    );
 
     return c.json({
       generatedAt: new Date().toISOString(),
@@ -185,6 +221,7 @@ opsLearningRoutes.get("/status", async (c) => {
       },
       latestUpdates: enriched,
       latestReport: formatEvaluation(latestReport),
+      latestReportsByPair,
     });
   } catch (error) {
     logWarn("Failed to load online learning status", { error: String(error) });
@@ -197,6 +234,7 @@ opsLearningRoutes.get("/status", async (c) => {
       },
       latestUpdates: [],
       latestReport: null,
+      latestReportsByPair: [],
     });
   }
 });
@@ -214,6 +252,13 @@ opsLearningRoutes.post("/run", requireOperatorRole, async (c) => {
     if (payload.pair && !resolvedPair) {
       return c.json({ error: "unsupported_pair", pair: payload.pair }, 400);
     }
+    const resolvedPairs = (payload.pairs ?? [])
+      .map((entry) => resolveSupportedPair(entry))
+      .filter((entry): entry is string => Boolean(entry));
+    if ((payload.pairs?.length ?? 0) > 0 && resolvedPairs.length !== payload.pairs!.length) {
+      const invalidPairs = payload.pairs!.filter((entry) => !resolveSupportedPair(entry));
+      return c.json({ error: "unsupported_pairs", pairs: invalidPairs }, 400);
+    }
     const interval = payload.interval ?? env.RL_ONLINE_LEARNING_INTERVAL;
     const hasContextOverride = payload.contextIntervals !== undefined || payload.contextIntervalsCsv !== undefined;
     const mergedContextIntervals = normalizeContextIntervals(interval, [
@@ -222,6 +267,7 @@ opsLearningRoutes.post("/run", requireOperatorRole, async (c) => {
     ]);
     const overrides: OnlineLearningRunOverrides = {
       pair: (resolvedPair ?? undefined) as TradingPair | undefined,
+      pairs: payload.useConfiguredPairs ? undefined : ((resolvedPairs.length > 0 ? resolvedPairs : undefined) as TradingPair[] | undefined),
       interval: payload.interval,
       contextIntervals: hasContextOverride ? mergedContextIntervals : undefined,
       trainWindowMin: payload.trainWindowMin,
@@ -233,14 +279,15 @@ opsLearningRoutes.post("/run", requireOperatorRole, async (c) => {
       decisionThreshold: payload.decisionThreshold,
       autoRollForward: payload.autoRollForward,
       promotionGates: payload.promotionGates ?? null,
+      rolloutPolicy: payload.rolloutPolicy ?? null,
     };
-    const result = await runOnlineLearningCycle("manual", overrides);
+    const result = await runOnlineLearningBatch("manual", overrides);
     await recordOpsAudit({
       actor: c.get("opsActor") ?? "system",
       action: "online_learning.run",
       resource_type: "learning_update",
       metadata: {
-        ...result,
+        result,
         overrides,
       },
     });

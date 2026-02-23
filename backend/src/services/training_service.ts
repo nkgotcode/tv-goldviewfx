@@ -73,6 +73,16 @@ function decodeArtifact(base64Payload: string, expectedChecksum?: string | null)
   return { buffer, checksum };
 }
 
+function buildCostModelFingerprint(input: {
+  leverage: number;
+  takerFeeBps: number;
+  slippageBps: number;
+  fundingWeight: number;
+  drawdownPenalty: number;
+}) {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
+
 export async function runTraining(input: TrainingRunInput): Promise<TrainingRunResult> {
   const env = loadEnv();
   const windowSize = input.windowSize ?? 30;
@@ -143,13 +153,21 @@ export async function runTraining(input: TrainingRunInput): Promise<TrainingRunR
   const rawResponse = config.mock ? buildMockTrainingResponse(timesteps) : await rlServiceClient.train(trainingRequest);
   const trainingResponse = normalizeTrainingResponse(rawResponse as TrainingResponse & Record<string, unknown>);
   const artifact = decodeArtifact(trainingResponse.artifactBase64, trainingResponse.artifactChecksum);
+  const costModel = {
+    leverage: env.RL_PPO_LEVERAGE_DEFAULT,
+    takerFeeBps: env.RL_PPO_TAKER_FEE_BPS,
+    slippageBps: env.RL_PPO_SLIPPAGE_BPS,
+    fundingWeight: env.RL_PPO_FUNDING_WEIGHT,
+    drawdownPenalty: env.RL_PPO_DRAWDOWN_PENALTY,
+  };
+  const costModelFingerprint = buildCostModelFingerprint(costModel);
 
   const version = await insertAgentVersion({
     name: `RL ${input.pair} ${randomUUID().slice(0, 8)}`,
     training_window_start: input.periodStart,
     training_window_end: input.periodEnd,
     algorithm_label: trainingResponse.algorithmLabel,
-    hyperparameter_summary: trainingResponse.hyperparameterSummary,
+    hyperparameter_summary: `${trainingResponse.hyperparameterSummary};cost_model=${costModelFingerprint};taker_fee_bps=${costModel.takerFeeBps};slippage_bps=${costModel.slippageBps};funding_weight=${costModel.fundingWeight};drawdown_penalty=${costModel.drawdownPenalty}`,
     dataset_version_id: dataset.id,
     dataset_hash: dataset.dataset_hash ?? dataset.checksum ?? null,
     feature_set_version_id: featureSetVersionId,

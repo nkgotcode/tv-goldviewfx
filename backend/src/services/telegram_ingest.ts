@@ -4,7 +4,7 @@ import { loadEnv } from "../config/env";
 import { getSupportedPairs } from "../config/market_catalog";
 import { getSourceById } from "../db/repositories/sources";
 import { createSyncRun, completeSyncRun } from "../db/repositories/sync_runs";
-import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
+import { startIngestionRunIfIdle, completeIngestionRun } from "../db/repositories/ingestion_runs";
 import {
   findTelegramPostByContentHash,
   findTelegramPostByExternalId,
@@ -39,14 +39,28 @@ export async function runTelegramIngest(options: { sourceId: string; trigger: Te
     return { runId: null, newCount: 0, updatedCount: 0, errorCount: 0, skipped: true };
   }
 
-  const syncRun = await createSyncRun(source.id);
-  const ingestionRun = await createIngestionRun({
-    source_type: "telegram",
-    source_id: source.id,
+  const ingestionLease = await startIngestionRunIfIdle({
+    sourceType: "telegram",
+    sourceId: source.id,
     feed: null,
     trigger: options.trigger,
-    status: "running",
+    timeoutMinutes: env.INGESTION_RUN_TIMEOUT_MIN,
   });
+  if (!ingestionLease.created || !ingestionLease.run?.id) {
+    logInfo("Telegram ingest lease unavailable", {
+      source: source.identifier,
+      reason: ingestionLease.reason,
+    });
+    return { runId: null, newCount: 0, updatedCount: 0, errorCount: 0, skipped: true };
+  }
+  const ingestionRunId = ingestionLease.run.id;
+  if (ingestionLease.timed_out_run_id) {
+    logWarn("Telegram ingest lease timed out prior run", {
+      source: source.identifier,
+      timedOutRunId: ingestionLease.timed_out_run_id,
+    });
+  }
+  const syncRun = await createSyncRun(source.id);
   let newCount = 0;
   let updatedCount = 0;
   let errorCount = 0;
@@ -126,7 +140,7 @@ export async function runTelegramIngest(options: { sourceId: string; trigger: Te
       missingFieldsCount: runQuality.missing_fields_count,
       parseConfidence: runQuality.parse_confidence,
     });
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "succeeded",
       newCount,
       updatedCount,
@@ -160,7 +174,7 @@ export async function runTelegramIngest(options: { sourceId: string; trigger: Te
       errorCount,
       errorSummary: message,
     });
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "failed",
       newCount,
       updatedCount,

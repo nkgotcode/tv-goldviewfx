@@ -6,7 +6,7 @@ export type MarketInstrument = {
   section: MarketSection;
 };
 
-const DEFAULT_GOLD_PAIRS = ["XAUTUSDT", "PAXGUSDT", "Gold-USDT"];
+const DEFAULT_GOLD_PAIRS = ["XAUTUSDT", "PAXGUSDT"];
 const DEFAULT_CRYPTO_PAIRS = ["ALGO-USDT", "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT"];
 
 function unique(values: string[]) {
@@ -59,7 +59,10 @@ export function listPairsBySection(section: MarketSection, env: Record<string, s
 }
 
 export function resolveSupportedPair(pair: string, env: Record<string, string | undefined> = process.env) {
-  const token = normalizePairToken(pair);
+  let token = normalizePairToken(pair);
+  if (token === "GOLDUSDT" || token === "GOLD") {
+    token = "XAUTUSDT";
+  }
   return getSupportedPairs(env).find((candidate) => normalizePairToken(candidate) === token) ?? null;
 }
 

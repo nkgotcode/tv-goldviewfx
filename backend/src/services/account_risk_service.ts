@@ -8,8 +8,11 @@ import {
   insertAccountRiskState,
   updateAccountRiskState,
 } from "../db/repositories/account_risk_state";
+import { getLatestMarkIndexSnapshot } from "../db/repositories/bingx_market_data/mark_index_prices";
 import { listTrades, listTradesByStatuses } from "../db/repositories/trades";
 import { updateAgentConfig, getAgentConfig } from "../db/repositories/agent_config";
+import { loadEnv } from "../config/env";
+import { fromBingxSymbol, getSupportedPairs, normalizePairToken, resolveSupportedPair, toBingxSymbol } from "../config/market_catalog";
 import { recordOpsAudit } from "./ops_audit";
 
 type AccountRiskPolicy = AccountRiskPolicyInsert & { id: string };
@@ -31,6 +34,7 @@ export type AccountRiskSnapshot = {
 export type AccountRiskInput = {
   instrument: string;
   quantity: number;
+  referencePrice?: number | null;
   leverage?: number | null;
 };
 
@@ -40,6 +44,18 @@ export type AccountRiskEvaluation = {
   snapshot: AccountRiskSnapshot;
   policy: AccountRiskPolicy;
   state: AccountRiskState;
+};
+
+export type MarginFeasibilityResult = {
+  allowed: boolean;
+  reasons: string[];
+  metrics: {
+    effectiveLeverage: number;
+    liquidationBufferBps: number;
+    projectedMarginUsage: number;
+    maxMarginBudget: number;
+    remainingMarginBudget: number;
+  };
 };
 
 const DEFAULT_POLICY: AccountRiskPolicyInsert = {
@@ -85,6 +101,39 @@ function startOfUtcDay() {
   return start.toISOString();
 }
 
+function resolveCandidatePairs(instrument: string) {
+  const resolved = resolveSupportedPair(instrument) ?? fromBingxSymbol(instrument) ?? instrument;
+  const target = normalizePairToken(toBingxSymbol(resolved));
+  return getSupportedPairs().filter((pair) => normalizePairToken(toBingxSymbol(pair)) === target);
+}
+
+async function resolveReferencePrice(instrument: string, fallback?: number | null) {
+  if (typeof fallback === "number" && Number.isFinite(fallback) && fallback > 0) {
+    return fallback;
+  }
+  const candidates = resolveCandidatePairs(instrument);
+  const snapshots = await Promise.all(
+    candidates.map(async (pair) => {
+      try {
+        const snapshot = await getLatestMarkIndexSnapshot(pair);
+        if (!snapshot) return null;
+        const capturedAt = Date.parse(snapshot.captured_at ?? "");
+        const markPrice = Number(snapshot.mark_price ?? 0);
+        const indexPrice = Number(snapshot.index_price ?? 0);
+        const price = markPrice > 0 ? markPrice : indexPrice > 0 ? indexPrice : 0;
+        if (!Number.isFinite(capturedAt) || !Number.isFinite(price) || price <= 0) return null;
+        return { capturedAt, price };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const latest = snapshots
+    .filter((item): item is { capturedAt: number; price: number } => Boolean(item))
+    .sort((left, right) => right.capturedAt - left.capturedAt)[0];
+  return latest?.price ?? null;
+}
+
 async function computeSnapshot(input: AccountRiskInput): Promise<AccountRiskSnapshot> {
   const openTrades = (await listTradesByStatuses(["placed", "partial", "filled"])).filter((trade) => {
     if (trade.closed_at) return false;
@@ -94,12 +143,24 @@ async function computeSnapshot(input: AccountRiskInput): Promise<AccountRiskSnap
   });
   const exposureByInstrument: Record<string, number> = {};
   let totalExposure = 0;
+  const instrumentPrices = new Map<string, number>();
 
   for (const trade of openTrades) {
     const rawSize = Number(trade.position_size ?? trade.quantity ?? 0);
     const size = Number.isFinite(rawSize) ? rawSize : 0;
-    exposureByInstrument[trade.instrument] = (exposureByInstrument[trade.instrument] ?? 0) + size;
-    totalExposure += size;
+    if (size <= 0) continue;
+    let price = instrumentPrices.get(trade.instrument);
+    if (!price) {
+      const resolved = await resolveReferencePrice(trade.instrument, Number(trade.avg_fill_price ?? 0));
+      price = resolved ?? Number(trade.avg_fill_price ?? 0);
+      if (!Number.isFinite(price) || price <= 0) {
+        price = 1;
+      }
+      instrumentPrices.set(trade.instrument, price);
+    }
+    const notional = size * price;
+    exposureByInstrument[trade.instrument] = (exposureByInstrument[trade.instrument] ?? 0) + notional;
+    totalExposure += notional;
   }
 
   const start = startOfUtcDay();
@@ -167,19 +228,74 @@ async function triggerCircuitBreaker(state: AccountRiskState, policy: AccountRis
   return updated as AccountRiskState;
 }
 
+export function evaluateMarginFeasibility(input: {
+  projectedNotional: number;
+  totalExposure: number;
+  leverage?: number | null;
+  policyMaxTotalExposure: number;
+  policyMaxLeverage: number;
+  minLiquidationBufferBps: number;
+}): MarginFeasibilityResult {
+  const effectiveLeverage =
+    typeof input.leverage === "number" && Number.isFinite(input.leverage) && input.leverage > 0 ? input.leverage : 1;
+  const policyLeverage =
+    Number.isFinite(input.policyMaxLeverage) && input.policyMaxLeverage > 0 ? input.policyMaxLeverage : 1;
+  const projectedNotional = Math.max(0, Number(input.projectedNotional) || 0);
+  const totalExposure = Math.max(0, Number(input.totalExposure) || 0);
+  const maxTotalExposure = Math.max(0, Number(input.policyMaxTotalExposure) || 0);
+
+  const maxMarginBudget = maxTotalExposure / policyLeverage;
+  const projectedMarginUsage = (totalExposure + projectedNotional) / effectiveLeverage;
+  const usedMarginBudget = totalExposure / policyLeverage;
+  const remainingMarginBudget = Math.max(0, maxMarginBudget - usedMarginBudget);
+  const liquidationBufferBps = 10_000 / effectiveLeverage;
+
+  const reasons: string[] = [];
+  if (projectedMarginUsage > maxMarginBudget + 1e-9) {
+    reasons.push("insufficient_margin_headroom");
+  }
+  if (liquidationBufferBps < Math.max(0, input.minLiquidationBufferBps)) {
+    reasons.push("liquidation_buffer_too_low");
+  }
+
+  return {
+    allowed: reasons.length === 0,
+    reasons,
+    metrics: {
+      effectiveLeverage,
+      liquidationBufferBps,
+      projectedMarginUsage,
+      maxMarginBudget,
+      remainingMarginBudget,
+    },
+  };
+}
+
 export async function evaluateAccountRisk(input: AccountRiskInput): Promise<AccountRiskEvaluation> {
+  const env = loadEnv();
   const policy = await ensurePolicy();
   let state = await ensureState();
   state = await clearCooldownIfExpired(state);
 
   const snapshot = await computeSnapshot(input);
   const exposureByInstrument = snapshot.exposureByInstrument[input.instrument] ?? 0;
+  const referencePrice = await resolveReferencePrice(input.instrument, input.referencePrice ?? null);
+  if (input.quantity > 0 && (!referencePrice || !Number.isFinite(referencePrice) || referencePrice <= 0)) {
+    return {
+      allowed: false,
+      reasons: ["missing_price_reference"],
+      snapshot,
+      policy,
+      state,
+    };
+  }
+  const projectedNotional = Math.abs(input.quantity) * (referencePrice ?? 1);
 
   const reasons: string[] = [];
-  if (snapshot.totalExposure + input.quantity > policy.max_total_exposure) {
+  if (snapshot.totalExposure + projectedNotional > policy.max_total_exposure) {
     reasons.push("max_total_exposure");
   }
-  if (exposureByInstrument + input.quantity > policy.max_instrument_exposure) {
+  if (exposureByInstrument + projectedNotional > policy.max_instrument_exposure) {
     reasons.push("max_instrument_exposure");
   }
   if (snapshot.openPositions + 1 > policy.max_open_positions) {
@@ -191,6 +307,15 @@ export async function evaluateAccountRisk(input: AccountRiskInput): Promise<Acco
   if (policy.max_leverage && input.leverage && input.leverage > policy.max_leverage) {
     reasons.push("max_leverage");
   }
+  const marginFeasibility = evaluateMarginFeasibility({
+    projectedNotional,
+    totalExposure: snapshot.totalExposure,
+    leverage: input.leverage ?? null,
+    policyMaxTotalExposure: policy.max_total_exposure,
+    policyMaxLeverage: policy.max_leverage,
+    minLiquidationBufferBps: env.ACCOUNT_RISK_MIN_LIQUIDATION_BUFFER_BPS,
+  });
+  reasons.push(...marginFeasibility.reasons);
 
   if (snapshot.dailyLoss >= policy.circuit_breaker_loss) {
     state = await triggerCircuitBreaker(state, policy, "daily_loss_limit");

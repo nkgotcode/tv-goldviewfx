@@ -126,6 +126,7 @@ class EvaluationRequest(BaseModel):
     slippage_bps: float = 1.0
     funding_weight: float = 1.0
     drawdown_penalty: float = 0.0
+    instrument_meta: dict[str, Any] | None = None
     walk_forward: WalkForwardConfig | None = None
     feature_schema_fingerprint: str | None = None
     feature_key_extras: list[str] | None = None

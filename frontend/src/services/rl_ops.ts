@@ -110,6 +110,7 @@ export type OnlineLearningConfig = {
   interval: string;
   contextIntervals: string[];
   pair: string;
+  pairs: string[];
   trainWindowMin: number;
   evalWindowMin: number;
   evalLagMin: number;
@@ -126,6 +127,9 @@ export type OnlineLearningConfig = {
   minNetPnlDelta: number;
   maxDrawdownDelta: number;
   minTradeCountDelta: number;
+  minEffectSize: number;
+  minConfidenceZ: number;
+  minSampleSize: number;
   leverageDefault: number;
   takerFeeBps: number;
   slippageBps: number;
@@ -175,6 +179,7 @@ export type OnlineLearningReport = {
 
 export type OnlineLearningUpdate = {
   id: string;
+  pair?: string | null;
   agentVersionId: string;
   windowStart: string;
   windowEnd: string;
@@ -196,6 +201,7 @@ export type OnlineLearningStatus = {
   rlService: { url: string; mock: boolean };
   latestUpdates: OnlineLearningUpdate[];
   latestReport?: OnlineLearningReport | null;
+  latestReportsByPair?: Array<{ pair: string; report: OnlineLearningReport | null }>;
 };
 
 export async function fetchOnlineLearningStatus(limit = 5): Promise<OnlineLearningStatus | null> {
@@ -218,6 +224,8 @@ export async function runOnlineLearningNow() {
 
 export type OnlineLearningRunRequest = {
   pair?: string;
+  pairs?: string[];
+  useConfiguredPairs?: boolean;
   interval?: string;
   contextIntervals?: string[];
   contextIntervalsCsv?: string;
@@ -238,11 +246,14 @@ export type OnlineLearningRunRequest = {
     minNetPnlDelta?: number;
     maxDrawdownDelta?: number;
     minTradeCountDelta?: number;
+    minEffectSize?: number;
+    minConfidenceZ?: number;
+    minSampleSize?: number;
   };
 };
 
 export async function runOnlineLearningWithSettings(payload: OnlineLearningRunRequest) {
-  return fetchJson<{ status: string }>(`/ops/learning/run`, {
+  return fetchJson(`/ops/learning/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

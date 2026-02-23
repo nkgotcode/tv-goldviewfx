@@ -10,6 +10,7 @@ import {
   insertOrderBookSnapshot,
   getLatestMarkIndexSnapshot,
 } from "../db/repositories/bingx_market_data";
+import { insertOpsAlert } from "../db/repositories/ops_alerts";
 import { getDefaultThreshold, recordDataSourceStatus } from "./data_source_status_service";
 import { logInfo, logWarn } from "./logger";
 import type { DataSourceType, TradingPair } from "../types/rl";
@@ -101,6 +102,13 @@ type PendingBuffers = {
 
 type IndexPriceCache = Map<TradingPair, { indexPrice: number; updatedAt: number }>;
 
+export type WsSequenceAnomaly = {
+  kind: "out_of_order" | "gap";
+  deltaMs: number;
+  expectedIntervalMs: number | null;
+  missingEvents: number | null;
+};
+
 let wsController: BingxWsController | null = null;
 
 function parseIntervals(value: string | undefined) {
@@ -174,6 +182,39 @@ function decodeWsMessage(data: unknown) {
       return null;
     }
   }
+}
+
+export function detectWsSequenceAnomaly(params: {
+  previousEventMs?: number | null;
+  currentEventMs: number;
+  expectedIntervalMs?: number | null;
+  toleranceRatio?: number;
+}): WsSequenceAnomaly | null {
+  const previous = params.previousEventMs ?? null;
+  if (!previous || !Number.isFinite(previous)) return null;
+  if (!Number.isFinite(params.currentEventMs)) return null;
+  const deltaMs = params.currentEventMs - previous;
+  const expected = params.expectedIntervalMs ?? null;
+  const toleranceRatio = params.toleranceRatio ?? 0.2;
+
+  if (deltaMs < 0) {
+    return {
+      kind: "out_of_order",
+      deltaMs,
+      expectedIntervalMs: expected,
+      missingEvents: null,
+    };
+  }
+  if (expected && expected > 0 && deltaMs > expected * (1 + toleranceRatio)) {
+    const missing = Math.max(1, Math.floor(deltaMs / expected) - 1);
+    return {
+      kind: "gap",
+      deltaMs,
+      expectedIntervalMs: expected,
+      missingEvents: missing,
+    };
+  }
+  return null;
 }
 
 export function buildBingxWsTopics(options: BingxWsTopicOptions) {
@@ -428,6 +469,8 @@ export function startBingxMarketDataWs(): BingxWsController | null {
     markPrices: new Map(),
   };
   const lastSeenBySource = new Map<string, { pair: TradingPair; sourceType: DataSourceType; lastSeenAt: string }>();
+  const lastSequenceEventMs = new Map<string, number>();
+  const lastSequenceAlertMs = new Map<string, number>();
   const indexPriceCache: IndexPriceCache = new Map();
   void Promise.all(pairs.map((pair) => refreshIndexPrice(pair, indexPriceCache, 0)));
 
@@ -448,6 +491,56 @@ export function startBingxMarketDataWs(): BingxWsController | null {
 
   const flushIntervalMs = env.BINGX_WS_FLUSH_INTERVAL_MS;
   const indexPriceMaxAgeMs = env.BINGX_WS_INDEX_CACHE_MAX_AGE_MS;
+  const sequenceAlertCooldownMs = 60_000;
+
+  const sequenceKeyForEvent = (eventItem: BingxWsEvent) => {
+    if (eventItem.kind === "kline") return `${eventItem.kind}:${eventItem.pair}:${eventItem.interval}`;
+    return `${eventItem.kind}:${eventItem.pair}`;
+  };
+  const eventTimeMs = (eventItem: BingxWsEvent) => {
+    if (eventItem.kind === "trade") return Date.parse(eventItem.executed_at);
+    if (eventItem.kind === "kline") return Date.parse(eventItem.close_time);
+    if (eventItem.kind === "orderbook") return Date.parse(eventItem.captured_at);
+    if (eventItem.kind === "ticker") return Date.parse(eventItem.captured_at);
+    return Date.parse(eventItem.captured_at);
+  };
+  const expectedIntervalMs = (eventItem: BingxWsEvent) => {
+    if (eventItem.kind === "kline") {
+      return intervalMsByKey.get(eventItem.interval) ?? null;
+    }
+    return null;
+  };
+  const emitSequenceAlert = async (eventItem: BingxWsEvent, anomaly: WsSequenceAnomaly) => {
+    const key = sequenceKeyForEvent(eventItem);
+    const now = Date.now();
+    const last = lastSequenceAlertMs.get(`${key}:${anomaly.kind}`) ?? 0;
+    if (now - last < sequenceAlertCooldownMs) return;
+    lastSequenceAlertMs.set(`${key}:${anomaly.kind}`, now);
+    logWarn("BingX WS sequence anomaly detected", {
+      key,
+      pair: eventItem.pair,
+      kind: eventItem.kind,
+      anomaly: anomaly.kind,
+      delta_ms: anomaly.deltaMs,
+      expected_interval_ms: anomaly.expectedIntervalMs,
+      missing_events: anomaly.missingEvents,
+    });
+    await insertOpsAlert({
+      category: "ops",
+      severity: "medium",
+      metric: "bingx_ws_sequence_anomaly",
+      value: Math.abs(anomaly.deltaMs),
+      metadata: {
+        key,
+        pair: eventItem.pair,
+        stream_kind: eventItem.kind,
+        anomaly: anomaly.kind,
+        delta_ms: anomaly.deltaMs,
+        expected_interval_ms: anomaly.expectedIntervalMs,
+        missing_events: anomaly.missingEvents,
+      },
+    }).catch(() => {});
+  };
 
   const flushTimer = setInterval(async () => {
     if (flushInFlight) return;
@@ -638,6 +731,22 @@ export function startBingxMarketDataWs(): BingxWsController | null {
       const events = parseBingxWsMessage(decoded, intervalMsByKey);
       if (events.length === 0) return;
       for (const eventItem of events) {
+        const seqKey = sequenceKeyForEvent(eventItem);
+        const currentEventMs = eventTimeMs(eventItem);
+        if (Number.isFinite(currentEventMs)) {
+          const anomaly = detectWsSequenceAnomaly({
+            previousEventMs: lastSequenceEventMs.get(seqKey) ?? null,
+            currentEventMs,
+            expectedIntervalMs: expectedIntervalMs(eventItem),
+          });
+          if (anomaly) {
+            void emitSequenceAlert(eventItem, anomaly);
+          }
+          const previous = lastSequenceEventMs.get(seqKey) ?? 0;
+          if (currentEventMs >= previous) {
+            lastSequenceEventMs.set(seqKey, currentEventMs);
+          }
+        }
         if (eventItem.kind === "trade") {
           pending.trades.set(`${eventItem.pair}:${eventItem.trade_id}`, eventItem);
           lastSeenBySource.set(`${eventItem.pair}:bingx_trades`, {

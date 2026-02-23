@@ -21,7 +21,7 @@ class RLSb3StrategyConfig(StrategyConfig, frozen=True):
     bar_type: str
     trade_size: Decimal
     model_path: str
-    decision_threshold: float = 0.2
+    decision_threshold: float = 0.35
     window_size: int = 30
     technical_config: dict | None = None
 
@@ -98,11 +98,11 @@ class RLSb3Strategy(Strategy):
         value = str(self._instrument_id).upper()
         symbol = value.split(".")[0]
         if symbol.startswith("GOLDUSDT"):
-            return "Gold-USDT"
+            return "XAUTUSDT"
         if symbol.startswith("XAUTUSDT"):
             return "XAUTUSDT"
         if symbol.startswith("PAXGUSDT"):
             return "PAXGUSDT"
         if symbol.endswith("USDT") and len(symbol) > 4:
             return f"{symbol[:-4]}-USDT"
-        return "Gold-USDT"
+        return "XAUTUSDT"

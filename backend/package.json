@@ -7,6 +7,9 @@
     "jobs": "bun run src/jobs/worker.ts",
     "test": "bun test --preload ./tests/setup.ts",
     "test:ci": "bun test --preload ./tests/setup.ts --timeout=20000",
+    "test:coverage:critical": "DISABLE_TEST_DATA_IN_DB=false bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage-critical --preload ./tests/setup.ts tests/unit/evaluation_service.test.ts tests/integration/exchange_metadata_contract.test.ts tests/integration/ws_sequence_replay.test.ts tests/unit/risk_limits_service.test.ts tests/unit/rl_decision_pipeline.test.ts tests/unit/learning_updates_gates.test.ts tests/unit/account_risk_margin.test.ts",
+    "coverage:critical:check": "node ./scripts/check_critical_coverage.mjs ./coverage-critical/lcov.info ./scripts/critical_coverage_thresholds.json",
+    "test:coverage:gate": "bun run test:coverage:critical && bun run coverage:critical:check",
     "bingx:full-backfill": "bun run scripts/bingx-full-backfill.ts",
     "tradingview:login": "bun run scripts/tradingview-login.ts",
     "telegram:session": "bun run scripts/telegram-session.ts"

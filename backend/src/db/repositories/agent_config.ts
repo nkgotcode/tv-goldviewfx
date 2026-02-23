@@ -25,7 +25,7 @@ const DEFAULT_CONFIG = {
   mode: "paper" as const,
   max_position_size: 1,
   daily_loss_limit: 0,
-  allowed_instruments: ["GOLD-USDT"],
+  allowed_instruments: ["XAUTUSDT"],
   kill_switch: false,
   kill_switch_reason: null,
   min_confidence_score: 0,

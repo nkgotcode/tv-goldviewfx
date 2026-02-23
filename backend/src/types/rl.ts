@@ -292,6 +292,15 @@ export type EvaluationRequest = {
   slippageBps?: number | null;
   fundingWeight?: number | null;
   drawdownPenalty?: number | null;
+  instrumentMeta?: {
+    bingxSymbol: string;
+    priceStep: number;
+    quantityStep: number;
+    minQuantity: number;
+    minNotional?: number | null;
+    pricePrecision: number;
+    quantityPrecision: number;
+  } | null;
   walkForward?: WalkForwardFoldConfig | null;
   featureSchemaFingerprint?: string | null;
   featureKeyExtras?: string[] | null;

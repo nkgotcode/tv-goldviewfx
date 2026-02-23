@@ -15,6 +15,9 @@ export type RiskLimitSetRecord = {
 
 export type RiskLimitEvaluationInput = {
   positionSize: number;
+  referencePrice?: number;
+  positionNotional?: number;
+  portfolioExposure?: number;
   leverage?: number;
   dailyLoss?: number;
   drawdown?: number;
@@ -28,8 +31,21 @@ export type RiskLimitEvaluation = {
 
 export function evaluateRiskLimits(limit: RiskLimitSetRecord, input: RiskLimitEvaluationInput): RiskLimitEvaluation {
   const reasons: string[] = [];
-  if (input.positionSize > limit.max_position_size) {
-    reasons.push("max_position_size");
+  const referencePrice = Number.isFinite(input.referencePrice ?? NaN) && (input.referencePrice ?? 0) > 0
+    ? Number(input.referencePrice)
+    : 1;
+  const positionNotional = Number.isFinite(input.positionNotional ?? NaN)
+    ? Math.abs(Number(input.positionNotional))
+    : Math.abs(input.positionSize) * referencePrice;
+  const portfolioExposure = Number.isFinite(input.portfolioExposure ?? NaN)
+    ? Math.abs(Number(input.portfolioExposure))
+    : positionNotional;
+
+  if (positionNotional > limit.max_position_size) {
+    reasons.push("max_position_notional");
+  }
+  if (portfolioExposure > limit.max_position_size * Math.max(1, limit.max_open_positions)) {
+    reasons.push("max_portfolio_exposure");
   }
   if (input.leverage !== undefined && input.leverage > limit.leverage_cap) {
     reasons.push("leverage_cap");

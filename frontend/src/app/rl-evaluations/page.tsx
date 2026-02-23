@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ALL_PAIRS } from "../../config/marketCatalog";
 import Layout from "../../components/Layout";
 import EvaluationReportPanel from "../../components/rl-agent/EvaluationReportPanel";
+import EvaluationExecutionTimeline, {
+  type EvaluationExecutionInput,
+} from "../../components/rl-agent/EvaluationExecutionTimeline";
 import { listAgentVersions, type AgentVersion } from "../../services/rl_agent";
 import {
   listEvaluationReports,
@@ -212,6 +215,21 @@ export default function RlEvaluationsPage() {
   const selectedRunParams = useMemo(() => buildRunParams(selectedReport), [selectedReport]);
   const selectedDataFields = useMemo(() => extractDataFields(selectedMetadata), [selectedMetadata]);
   const selectedDataSources = useMemo(() => extractDataSources(selectedMetadata), [selectedMetadata]);
+  const selectedExecutionInput = useMemo<EvaluationExecutionInput | null>(() => {
+    if (!selectedReport) return null;
+    return {
+      pair: selectedReport.pair,
+      periodStart: selectedReport.period_start,
+      periodEnd: selectedReport.period_end,
+      status: selectedReport.status,
+      winRate: selectedReport.win_rate,
+      netPnlAfterFees: selectedReport.net_pnl_after_fees,
+      maxDrawdown: selectedReport.max_drawdown,
+      tradeCount: selectedReport.trade_count,
+      backtestRunId: selectedReport.backtest_run_id,
+      metadata: selectedReport.metadata ?? null,
+    };
+  }, [selectedReport]);
   const selectedParameters = useMemo(
     () =>
       asRecord(selectedMetadata?.parameters) ??
@@ -784,6 +802,12 @@ export default function RlEvaluationsPage() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="table-card">
+        <h3>Execution Timeline</h3>
+        <p>Step-by-step trace of dataset preparation, walk-forward scoring, Nautilus backtest execution, and promotion gating.</p>
+        <EvaluationExecutionTimeline report={selectedExecutionInput} />
       </section>
 
       {loading && reports.length === 0 ? <div className="empty">Loading evaluation reports…</div> : null}

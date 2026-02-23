@@ -1,6 +1,6 @@
 export type MarketSection = "gold" | "crypto";
 
-const DEFAULT_GOLD_PAIRS = ["XAUTUSDT", "PAXGUSDT", "Gold-USDT"];
+const DEFAULT_GOLD_PAIRS = ["XAUTUSDT", "PAXGUSDT"];
 const DEFAULT_CRYPTO_PAIRS = ["ALGO-USDT", "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT"];
 
 function normalizePairToken(value: string) {

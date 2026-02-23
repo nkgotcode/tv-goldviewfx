@@ -18,6 +18,8 @@ import { transitionExecutionStatus, transitionTradeStatus } from "./trade_state_
 import { enforceAccountRisk } from "./account_risk_service";
 import { recordExecutionSlippage } from "./observability_service";
 import { assertInstrumentAllowed } from "./instrument_policy";
+import { getExchangeMetadataForInstrument } from "./exchange_metadata_service";
+import { quantizeOrderInput } from "./order_quantization";
 import type { TradingPair } from "../types/rl";
 import type { OrderDetail } from "../integrations/exchange/adapter";
 
@@ -36,6 +38,11 @@ type TradeExecutionInput = {
 };
 
 type ExecutionStatus = "submitted" | "partial" | "filled" | "failed" | "cancelled";
+type SubmissionOrderInput = {
+  quantity: number;
+  tpPrice: number | null;
+  slPrice: number | null;
+};
 
 const MAX_ORDER_ID_RECOVERY_ATTEMPTS = 3;
 
@@ -183,6 +190,42 @@ function assertReplaySafe(existing: any, trade: TradeExecutionInput) {
   }
 }
 
+async function resolveSubmissionOrderInput(
+  trade: TradeExecutionInput,
+  referencePrice?: number | null,
+): Promise<SubmissionOrderInput> {
+  try {
+    const metadata = await getExchangeMetadataForInstrument(trade.instrument);
+    const quantized = quantizeOrderInput(
+      {
+        quantity: trade.quantity,
+        tpPrice: trade.tp_price ?? null,
+        slPrice: trade.sl_price ?? null,
+        referencePrice: referencePrice ?? null,
+      },
+      metadata,
+    );
+    return {
+      quantity: quantized.quantity,
+      tpPrice: quantized.tpPrice,
+      slPrice: quantized.slPrice,
+    };
+  } catch (error) {
+    if (trade.mode === "live") {
+      throw error;
+    }
+    logWarn("Trade quantization metadata unavailable; using unquantized paper values", {
+      instrument: trade.instrument,
+      error: String(error),
+    });
+    return {
+      quantity: trade.quantity,
+      tpPrice: trade.tp_price ?? null,
+      slPrice: trade.sl_price ?? null,
+    };
+  }
+}
+
 export async function executeTrade(trade: TradeExecutionInput) {
   const config = await getAgentConfig();
   const killSwitch = config.kill_switch ?? false;
@@ -231,24 +274,31 @@ export async function executeTrade(trade: TradeExecutionInput) {
   }
 
   assertInstrumentAllowed(trade.instrument, config.allowed_instruments ?? []);
+  const tradeRecord = await getTradeById(trade.id);
+  const orderInput = await resolveSubmissionOrderInput(trade, tradeRecord.avg_fill_price ?? null);
 
   if (trade.mode === "paper") {
-    return executePaperTrade(trade, idempotencyKey, traceId);
+    return executePaperTrade(trade, idempotencyKey, traceId, orderInput);
   }
-  const tradeRecord = await getTradeById(trade.id);
   await enforceAccountRisk({
     instrument: trade.instrument,
-    quantity: trade.quantity,
+    quantity: orderInput.quantity,
+    referencePrice: tradeRecord.avg_fill_price ?? null,
     leverage: tradeRecord.leverage ?? null,
   });
   const env = loadEnv();
   if (env.ALLOW_LIVE_SIMULATION && (!env.BINGX_API_KEY || !env.BINGX_SECRET_KEY)) {
-    return executePaperTrade(trade, idempotencyKey, traceId);
+    return executePaperTrade(trade, idempotencyKey, traceId, orderInput);
   }
-  return executeLiveTrade(trade, idempotencyKey, traceId);
+  return executeLiveTrade(trade, idempotencyKey, traceId, orderInput);
 }
 
-export async function executePaperTrade(trade: TradeExecutionInput, idempotencyKey: string, traceId: string) {
+export async function executePaperTrade(
+  trade: TradeExecutionInput,
+  idempotencyKey: string,
+  traceId: string,
+  orderInput: SubmissionOrderInput,
+) {
   const adapter = new PaperExchangeAdapter();
   const submitted = await insertTradeExecution({
     trade_id: trade.id,
@@ -275,10 +325,10 @@ export async function executePaperTrade(trade: TradeExecutionInput, idempotencyK
     result = await adapter.placeOrder({
       instrument: trade.instrument,
       side: trade.side,
-      quantity: trade.quantity,
+      quantity: orderInput.quantity,
       clientOrderId: trade.client_order_id ?? undefined,
-      tpPrice: trade.tp_price ?? undefined,
-      slPrice: trade.sl_price ?? undefined,
+      tpPrice: orderInput.tpPrice ?? undefined,
+      slPrice: orderInput.slPrice ?? undefined,
     });
   } catch (error) {
     await transitionExecutionStatus(submitted.id, "failed", {
@@ -291,7 +341,7 @@ export async function executePaperTrade(trade: TradeExecutionInput, idempotencyK
   const execution = await transitionExecutionStatus(submitted.id, "filled", {
     patch: {
       exchange_order_id: result.orderId,
-      filled_quantity: trade.quantity,
+      filled_quantity: orderInput.quantity,
       average_price: 0,
       reconciliation_status: "ok",
       reconciled_at: new Date().toISOString(),
@@ -299,9 +349,9 @@ export async function executePaperTrade(trade: TradeExecutionInput, idempotencyK
   });
 
   await updateTradeMetrics(trade.id, {
-    position_size: trade.quantity,
-    tp_price: trade.tp_price ?? null,
-    sl_price: trade.sl_price ?? null,
+    position_size: orderInput.quantity,
+    tp_price: orderInput.tpPrice,
+    sl_price: orderInput.slPrice,
   });
   await recordTradeSourceStatus(trade.instrument);
   if (execution.status === "filled") {
@@ -317,7 +367,12 @@ export async function executePaperTrade(trade: TradeExecutionInput, idempotencyK
   return execution;
 }
 
-async function executeLiveTrade(trade: TradeExecutionInput, idempotencyKey: string, traceId: string) {
+async function executeLiveTrade(
+  trade: TradeExecutionInput,
+  idempotencyKey: string,
+  traceId: string,
+  orderInput: SubmissionOrderInput,
+) {
   if (!trade.client_order_id) {
     throw new Error("Missing client order id for live trade.");
   }
@@ -349,10 +404,10 @@ async function executeLiveTrade(trade: TradeExecutionInput, idempotencyKey: stri
     result = await adapter.placeOrder({
       instrument: trade.instrument,
       side: trade.side,
-      quantity: trade.quantity,
+      quantity: orderInput.quantity,
       clientOrderId: trade.client_order_id ?? undefined,
-      tpPrice: trade.tp_price ?? undefined,
-      slPrice: trade.sl_price ?? undefined,
+      tpPrice: orderInput.tpPrice ?? undefined,
+      slPrice: orderInput.slPrice ?? undefined,
     });
   } catch (error) {
     await transitionExecutionStatus(submitted.id, "failed", {
@@ -366,8 +421,8 @@ async function executeLiveTrade(trade: TradeExecutionInput, idempotencyKey: stri
   let filledQuantity = 0;
   let averagePrice = 0;
   let pnl: number | null = null;
-  let tpPrice: number | null = trade.tp_price ?? null;
-  let slPrice: number | null = trade.sl_price ?? null;
+  let tpPrice: number | null = orderInput.tpPrice;
+  let slPrice: number | null = orderInput.slPrice;
   let pnlPct: number | null = null;
 
   try {
@@ -515,6 +570,18 @@ export async function closeTradePosition(params: {
   const closeSide = trade.side === "long" ? "short" : "long";
   const clientOrderId = params.clientOrderId ?? buildClientOrderId("gvfx-close");
   const traceId = buildClientOrderId("trace");
+  const orderInput = await resolveSubmissionOrderInput(
+    {
+      id: trade.id,
+      instrument: trade.instrument,
+      side: closeSide,
+      quantity: closeQuantity,
+      mode: trade.mode as "paper" | "live",
+      tp_price: null,
+      sl_price: null,
+    },
+    trade.avg_fill_price ?? null,
+  );
 
   const submitted = await insertTradeExecution({
     trade_id: trade.id,
@@ -541,13 +608,13 @@ export async function closeTradePosition(params: {
       reason,
       patch: {
         exchange_order_id: `paper-close-${Date.now()}`,
-        filled_quantity: closeQuantity,
+        filled_quantity: orderInput.quantity,
         average_price: 0,
         reconciliation_status: "ok",
         reconciled_at: new Date().toISOString(),
       },
     });
-    const nextSize = Math.max(0, currentSize - closeQuantity);
+    const nextSize = Math.max(0, currentSize - orderInput.quantity);
     await updateTradeMetrics(trade.id, {
       position_size: nextSize,
       closed_at: nextSize <= 0 ? new Date().toISOString() : null,
@@ -561,7 +628,7 @@ export async function closeTradePosition(params: {
     result = await adapter.placeOrder({
       instrument: trade.instrument,
       side: closeSide,
-      quantity: closeQuantity,
+      quantity: orderInput.quantity,
       clientOrderId,
       reduceOnly: true,
     });

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ALL_PAIRS } from "../../config/marketCatalog";
 import type { OnlineLearningRunRequest, OnlineLearningStatus, OnlineLearningUpdate } from "../../services/rl_ops";
+import EvaluationExecutionTimeline, { type EvaluationExecutionInput } from "./EvaluationExecutionTimeline";
 
 function formatTimestamp(value?: string | null) {
   if (!value) return "—";
@@ -29,9 +30,11 @@ function renderUpdateRow(update: OnlineLearningUpdate) {
   const champion = update.championEvaluationReport;
   const netDelta = update.metricDeltas?.netPnlDelta;
   const winDelta = update.metricDeltas?.winRateDelta;
+  const pair = update.pair ?? report?.pair ?? champion?.pair ?? "—";
   return (
     <tr key={update.id}>
       <td>{formatTimestamp(update.startedAt)}</td>
+      <td>{pair}</td>
       <td className="mono">{update.agentVersionId ? update.agentVersionId.slice(0, 8) : "—"}</td>
       <td>{formatTimestamp(update.windowStart)}</td>
       <td>{formatTimestamp(update.windowEnd)}</td>
@@ -60,6 +63,21 @@ function renderUpdateRow(update: OnlineLearningUpdate) {
   );
 }
 
+function toExecutionInput(report: NonNullable<OnlineLearningUpdate["evaluationReport"]>): EvaluationExecutionInput {
+  return {
+    pair: report.pair,
+    periodStart: report.periodStart,
+    periodEnd: report.periodEnd,
+    status: report.status,
+    winRate: report.winRate,
+    netPnlAfterFees: report.netPnlAfterFees,
+    maxDrawdown: report.maxDrawdown,
+    tradeCount: report.tradeCount,
+    backtestRunId: report.backtestRunId ?? null,
+    metadata: report.metadata ?? null,
+  };
+}
+
 export default function OnlineLearningPanel({
   status,
   onRunNow,
@@ -74,8 +92,11 @@ export default function OnlineLearningPanel({
   const config = status?.config;
   const updates = status?.latestUpdates ?? [];
   const latestReport = status?.latestReport ?? null;
+  const latestExecutionReport = latestReport ? toExecutionInput(latestReport) : null;
   const [pair, setPair] = useState(config?.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT");
-  const [interval, setInterval] = useState(config?.interval ?? "1m");
+  const [runAllConfiguredPairs, setRunAllConfiguredPairs] = useState(true);
+  const [pairsCsv, setPairsCsv] = useState((config?.pairs ?? []).join(","));
+  const [interval, setInterval] = useState(config?.interval ?? "5m");
   const [contextIntervalsCsv, setContextIntervalsCsv] = useState((config?.contextIntervals ?? []).join(","));
   const [trainWindowMin, setTrainWindowMin] = useState(String(config?.trainWindowMin ?? 360));
   const [evalWindowMin, setEvalWindowMin] = useState(String(config?.evalWindowMin ?? 120));
@@ -83,7 +104,7 @@ export default function OnlineLearningPanel({
   const [windowSize, setWindowSize] = useState(String(config?.windowSize ?? 30));
   const [stride, setStride] = useState(String(config?.stride ?? 1));
   const [timesteps, setTimesteps] = useState(String(config?.timesteps ?? 500));
-  const [decisionThreshold, setDecisionThreshold] = useState(String(config?.decisionThreshold ?? 0.2));
+  const [decisionThreshold, setDecisionThreshold] = useState(String(config?.decisionThreshold ?? 0.35));
   const [autoRollForward, setAutoRollForward] = useState(Boolean(config?.autoRollForward ?? true));
   const [minWinRate, setMinWinRate] = useState(String(config?.minWinRate ?? 0.55));
   const [minNetPnl, setMinNetPnl] = useState(String(config?.minNetPnl ?? 0));
@@ -93,11 +114,16 @@ export default function OnlineLearningPanel({
   const [minNetPnlDelta, setMinNetPnlDelta] = useState(String(config?.minNetPnlDelta ?? 0));
   const [maxDrawdownDelta, setMaxDrawdownDelta] = useState(String(config?.maxDrawdownDelta ?? 0.05));
   const [minTradeCountDelta, setMinTradeCountDelta] = useState(String(config?.minTradeCountDelta ?? -5));
+  const [minEffectSize, setMinEffectSize] = useState(String(config?.minEffectSize ?? 0));
+  const [minConfidenceZ, setMinConfidenceZ] = useState(String(config?.minConfidenceZ ?? 0));
+  const [minSampleSize, setMinSampleSize] = useState(String(config?.minSampleSize ?? 0));
 
   useEffect(() => {
     if (!config) return;
+    setRunAllConfiguredPairs(true);
     setPair(config.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT");
-    setInterval(config.interval ?? "1m");
+    setPairsCsv((config.pairs ?? []).join(","));
+    setInterval(config.interval ?? "5m");
     setContextIntervalsCsv((config.contextIntervals ?? []).join(","));
     setTrainWindowMin(String(config.trainWindowMin ?? 360));
     setEvalWindowMin(String(config.evalWindowMin ?? 120));
@@ -105,7 +131,7 @@ export default function OnlineLearningPanel({
     setWindowSize(String(config.windowSize ?? 30));
     setStride(String(config.stride ?? 1));
     setTimesteps(String(config.timesteps ?? 500));
-    setDecisionThreshold(String(config.decisionThreshold ?? 0.2));
+    setDecisionThreshold(String(config.decisionThreshold ?? 0.35));
     setAutoRollForward(Boolean(config.autoRollForward ?? true));
     setMinWinRate(String(config.minWinRate ?? 0.55));
     setMinNetPnl(String(config.minNetPnl ?? 0));
@@ -115,6 +141,9 @@ export default function OnlineLearningPanel({
     setMinNetPnlDelta(String(config.minNetPnlDelta ?? 0));
     setMaxDrawdownDelta(String(config.maxDrawdownDelta ?? 0.05));
     setMinTradeCountDelta(String(config.minTradeCountDelta ?? -5));
+    setMinEffectSize(String(config.minEffectSize ?? 0));
+    setMinConfidenceZ(String(config.minConfidenceZ ?? 0));
+    setMinSampleSize(String(config.minSampleSize ?? 0));
   }, [config]);
 
   const parseOptionalNumber = (value: string) => {
@@ -130,8 +159,14 @@ export default function OnlineLearningPanel({
   };
 
   const handleRun = async () => {
+    const parsedPairs = pairsCsv
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
     const payload: OnlineLearningRunRequest = {
-      pair,
+      useConfiguredPairs: runAllConfiguredPairs,
+      pair: runAllConfiguredPairs ? undefined : pair,
+      pairs: runAllConfiguredPairs ? undefined : parsedPairs.length > 0 ? parsedPairs : undefined,
       interval: interval.trim() || undefined,
       contextIntervalsCsv: contextIntervalsCsv.trim() || undefined,
       trainWindowMin: parseOptionalInt(trainWindowMin),
@@ -151,6 +186,9 @@ export default function OnlineLearningPanel({
         minNetPnlDelta: parseOptionalNumber(minNetPnlDelta),
         maxDrawdownDelta: parseOptionalNumber(maxDrawdownDelta),
         minTradeCountDelta: parseOptionalInt(minTradeCountDelta),
+        minEffectSize: parseOptionalNumber(minEffectSize),
+        minConfidenceZ: parseOptionalNumber(minConfidenceZ),
+        minSampleSize: parseOptionalInt(minSampleSize),
       },
     };
     await onRunNow(payload);
@@ -206,13 +244,17 @@ export default function OnlineLearningPanel({
       </div>
 
       <div className="inline-muted">
-        Pair {config?.pair ?? ALL_PAIRS[0] ?? "XAUTUSDT"} · Window size {config?.windowSize ?? "—"} · Timesteps{" "}
-        {config?.timesteps ?? "—"} · RL service {status?.rlService?.mock ? "mock" : "live"}
+        Pairs {(config?.pairs ?? []).join(", ") || config?.pair || ALL_PAIRS[0] || "XAUTUSDT"} · Window size{" "}
+        {config?.windowSize ?? "—"} · Timesteps {config?.timesteps ?? "—"} · RL service {status?.rlService?.mock ? "mock" : "live"}
       </div>
       <div className="inline-muted">
         Context intervals: {(config?.contextIntervals ?? []).join(", ") || "none"} · Delta gates: Win Δ{" "}
         {formatNumber(config?.minWinRateDelta, 3)} · PnL Δ {formatNumber(config?.minNetPnlDelta, 2)} · Drawdown Δ{" "}
         {formatNumber(config?.maxDrawdownDelta, 3)}
+      </div>
+      <div className="inline-muted">
+        Statistical gates: Effect size {formatNumber(config?.minEffectSize, 3)} · Confidence Z{" "}
+        {formatNumber(config?.minConfidenceZ, 2)} · Min sample {formatNumber(config?.minSampleSize, 0)}
       </div>
       <div className="inline-muted">
         Leverage x{formatNumber(config?.leverageDefault, 2)} · Fees {formatNumber(config?.takerFeeBps, 2)} bps ·
@@ -225,7 +267,7 @@ export default function OnlineLearningPanel({
         <h5>Run with overrides</h5>
         <div className="form-grid">
           <label>
-            Pair
+            Pair (single run)
             <select value={pair} onChange={(event) => setPair(event.target.value)}>
               {ALL_PAIRS.map((option) => (
                 <option key={option} value={option}>
@@ -235,8 +277,38 @@ export default function OnlineLearningPanel({
             </select>
           </label>
           <label>
+            Target mode
+            <select
+              value={runAllConfiguredPairs ? "configured" : "custom"}
+              onChange={(event) => setRunAllConfiguredPairs(event.target.value === "configured")}
+            >
+              <option value="configured">All configured pairs</option>
+              <option value="custom">Single/custom pairs</option>
+            </select>
+          </label>
+          {!runAllConfiguredPairs ? (
+            <label>
+              Pairs CSV
+              <input
+                value={pairsCsv}
+                onChange={(event) => setPairsCsv(event.target.value)}
+                placeholder="XAUTUSDT,BTC-USDT,ETH-USDT"
+              />
+            </label>
+          ) : null}
+          <label>
             Primary interval
-            <input value={interval} onChange={(event) => setInterval(event.target.value)} placeholder="1m" />
+            <input
+              list="interval-options"
+              value={interval}
+              onChange={(event) => setInterval(event.target.value)}
+              placeholder="5m"
+            />
+            <datalist id="interval-options">
+              {["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"].map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
           </label>
           <label>
             Context intervals CSV
@@ -313,6 +385,18 @@ export default function OnlineLearningPanel({
             Min trade delta
             <input value={minTradeCountDelta} onChange={(event) => setMinTradeCountDelta(event.target.value)} />
           </label>
+          <label>
+            Min effect size
+            <input value={minEffectSize} onChange={(event) => setMinEffectSize(event.target.value)} />
+          </label>
+          <label>
+            Min confidence Z
+            <input value={minConfidenceZ} onChange={(event) => setMinConfidenceZ(event.target.value)} />
+          </label>
+          <label>
+            Min sample size
+            <input value={minSampleSize} onChange={(event) => setMinSampleSize(event.target.value)} />
+          </label>
         </div>
       </div>
 
@@ -339,6 +423,36 @@ export default function OnlineLearningPanel({
         ) : (
           <div className="empty">No evaluation reports yet.</div>
         )}
+        {status?.latestReportsByPair && status.latestReportsByPair.length > 0 ? (
+          <table className="table compact">
+            <thead>
+              <tr>
+                <th>Pair</th>
+                <th>Status</th>
+                <th>Win</th>
+                <th>Net PnL</th>
+                <th>Trades</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.latestReportsByPair.map((entry) => (
+                <tr key={`latest-${entry.pair}`}>
+                  <td>{entry.pair}</td>
+                  <td>{entry.report?.status ?? "—"}</td>
+                  <td>{entry.report ? formatNumber(entry.report.winRate, 3) : "—"}</td>
+                  <td>{entry.report ? formatNumber(entry.report.netPnlAfterFees, 2) : "—"}</td>
+                  <td>{entry.report?.tradeCount ?? "—"}</td>
+                  <td>{formatTimestamp(entry.report?.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+        <div style={{ marginTop: 12 }}>
+          <h5>Latest run steps</h5>
+          <EvaluationExecutionTimeline report={latestExecutionReport} compact />
+        </div>
       </div>
 
       {updates.length === 0 ? (
@@ -348,6 +462,7 @@ export default function OnlineLearningPanel({
           <thead>
             <tr>
               <th>Started</th>
+              <th>Pair</th>
               <th>Version</th>
               <th>Eval start</th>
               <th>Eval end</th>

@@ -45,7 +45,7 @@ variable "next_public_api_base_url" {
 
 variable "next_public_market_gold_pairs" {
   type    = string
-  default = "XAUTUSDT,PAXGUSDT,Gold-USDT"
+  default = "XAUTUSDT,PAXGUSDT"
 }
 
 variable "next_public_market_crypto_pairs" {

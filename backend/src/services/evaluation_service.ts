@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { listAgentVersions, getAgentVersion } from "../db/repositories/agent_versions";
 import { insertEvaluationReport, listEvaluationReports } from "../db/repositories/evaluation_reports";
 import { getAgentConfig } from "../db/repositories/agent_config";
@@ -12,6 +13,8 @@ import { getDatasetVersion } from "../db/repositories/dataset_versions";
 import { evaluateDriftForLatestReport } from "./drift_monitoring_service";
 import { resolveArtifactUrl } from "./model_artifact_service";
 import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
+import { getExchangeMetadata } from "./exchange_metadata_service";
+import type { TradingPair } from "../types/rl";
 
 type EvaluationMetrics = {
   win_rate: number;
@@ -24,6 +27,24 @@ type EvaluationMetrics = {
   artifact_uri?: string | null;
   backtest_run_id?: string | null;
   metadata?: Record<string, unknown> | null;
+};
+
+type EvaluationExecutionStep = {
+  key: string;
+  label: string;
+  status: "ok" | "error";
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  details?: Record<string, unknown>;
+  error?: string;
+};
+
+type EvaluationExecutionTrace = {
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  steps: EvaluationExecutionStep[];
 };
 
 type PromotionCriteria = {
@@ -92,6 +113,7 @@ function mergeEvaluationMetadata(
     parameters: Record<string, unknown>;
     dataFields: string[];
     provenance: Record<string, unknown>;
+    execution: EvaluationExecutionTrace;
   },
 ) {
   const metadata = { ...(existing ?? {}) };
@@ -110,7 +132,45 @@ function mergeEvaluationMetadata(
     stride: additions.parameters.stride,
     decision_threshold: additions.parameters.decisionThreshold,
   };
+  metadata.execution = additions.execution;
+  metadata.execution_steps = additions.execution.steps;
   return metadata;
+}
+
+async function recordExecutionStep<T>(
+  steps: EvaluationExecutionStep[],
+  key: string,
+  label: string,
+  runner: () => Promise<T> | T,
+  details?: (result: T) => Record<string, unknown>,
+) {
+  const startedAt = new Date();
+  try {
+    const result = await runner();
+    const completedAt = new Date();
+    steps.push({
+      key,
+      label,
+      status: "ok",
+      started_at: startedAt.toISOString(),
+      completed_at: completedAt.toISOString(),
+      duration_ms: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+      details: details?.(result),
+    });
+    return result;
+  } catch (error) {
+    const completedAt = new Date();
+    steps.push({
+      key,
+      label,
+      status: "error",
+      started_at: startedAt.toISOString(),
+      completed_at: completedAt.toISOString(),
+      duration_ms: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 function extractContextFeatureKeys(rows: Array<Record<string, unknown>>) {
@@ -124,6 +184,51 @@ function extractContextFeatureKeys(rows: Array<Record<string, unknown>>) {
     }
   }
   return Array.from(keys).sort();
+}
+
+function buildCostModelFingerprint(input: {
+  leverage: number;
+  takerFeeBps: number;
+  slippageBps: number;
+  fundingWeight: number;
+  drawdownPenalty: number;
+}) {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
+
+function assertFeatureSchemaCompatibility(params: {
+  requestedFeatureSchemaFingerprint?: string | null;
+  datasetFeatureSchemaFingerprint?: string | null;
+  resolvedFeatureSchemaFingerprint: string;
+  requestedFeatureSetVersionId?: string | null;
+  datasetFeatureSetVersionId?: string | null;
+}) {
+  if (
+    params.requestedFeatureSetVersionId &&
+    params.datasetFeatureSetVersionId &&
+    params.requestedFeatureSetVersionId !== params.datasetFeatureSetVersionId
+  ) {
+    throw new Error(
+      `Dataset feature-set version (${params.datasetFeatureSetVersionId}) does not match requested version (${params.requestedFeatureSetVersionId})`,
+    );
+  }
+  if (
+    params.requestedFeatureSchemaFingerprint &&
+    params.datasetFeatureSchemaFingerprint &&
+    params.requestedFeatureSchemaFingerprint !== params.datasetFeatureSchemaFingerprint
+  ) {
+    throw new Error(
+      `Dataset feature schema fingerprint (${params.datasetFeatureSchemaFingerprint}) does not match requested fingerprint (${params.requestedFeatureSchemaFingerprint})`,
+    );
+  }
+  if (
+    params.datasetFeatureSchemaFingerprint &&
+    params.datasetFeatureSchemaFingerprint !== params.resolvedFeatureSchemaFingerprint
+  ) {
+    throw new Error(
+      `Dataset feature schema fingerprint (${params.datasetFeatureSchemaFingerprint}) is incompatible with resolved feature set (${params.resolvedFeatureSchemaFingerprint})`,
+    );
+  }
 }
 
 export function normalizeEvaluationReport(
@@ -225,44 +330,93 @@ async function resolveAgentVersionId(agentVersionId?: string | null) {
 }
 
 export async function runEvaluation(request: EvaluationRequest) {
+  const executionStartedAt = new Date();
+  const executionSteps: EvaluationExecutionStep[] = [];
   const env = loadEnv();
-  const versionId = await resolveAgentVersionId(request.agentVersionId ?? undefined);
+  const versionId = await recordExecutionStep(
+    executionSteps,
+    "resolve_version",
+    "Resolve agent version",
+    () => resolveAgentVersionId(request.agentVersionId ?? undefined),
+    (resolvedVersionId) => ({
+      requested_agent_version_id: request.agentVersionId ?? null,
+      resolved_agent_version_id: resolvedVersionId,
+    }),
+  );
   const version = await getAgentVersion(versionId);
   const agentConfig = await getAgentConfig();
   const criteria = resolveCriteria(agentConfig);
   const rlConfig = loadRlServiceConfig();
   const requestedInterval = request.interval ?? "1m";
-  const dataset = request.datasetVersionId
-    ? await getDatasetVersion(request.datasetVersionId)
-    : await createDatasetVersion({
-        pair: request.pair,
-        interval: requestedInterval,
-        contextIntervals: request.contextIntervals ?? [],
-        startAt: request.periodStart,
-        endAt: request.periodEnd,
-        featureSetVersionId: request.featureSetVersionId ?? null,
-      });
+  const dataset = await recordExecutionStep(
+    executionSteps,
+    "resolve_dataset",
+    "Resolve dataset window",
+    () =>
+      request.datasetVersionId
+        ? getDatasetVersion(request.datasetVersionId)
+        : createDatasetVersion({
+            pair: request.pair,
+            interval: requestedInterval,
+            contextIntervals: request.contextIntervals ?? [],
+            startAt: request.periodStart,
+            endAt: request.periodEnd,
+            featureSetVersionId: request.featureSetVersionId ?? null,
+          }),
+    (resolvedDataset) => ({
+      requested_dataset_version_id: request.datasetVersionId ?? null,
+      dataset_version_id: resolvedDataset.id,
+      interval: resolvedDataset.interval,
+      start_at: resolvedDataset.start_at,
+      end_at: resolvedDataset.end_at,
+      created_from_window: request.datasetVersionId ? false : true,
+    }),
+  );
   if (request.interval && dataset.interval !== request.interval) {
     throw new Error(`Dataset interval (${dataset.interval}) does not match requested interval (${request.interval})`);
   }
   const interval = request.interval ?? dataset.interval ?? "1m";
-  const featureSetVersionId = request.featureSetVersionId ?? dataset.feature_set_version_id ?? null;
+  const datasetFeatureSetVersionId = (dataset as Record<string, unknown>).feature_set_version_id as string | null;
+  const datasetFeatureSchemaFingerprint = (dataset as Record<string, unknown>).feature_schema_fingerprint as
+    | string
+    | null;
+  const featureSetVersionId = request.featureSetVersionId ?? datasetFeatureSetVersionId ?? null;
   const featureConfig = await getFeatureSetConfigById(featureSetVersionId);
   const featureSchemaFingerprint =
     request.featureSchemaFingerprint ??
-    (dataset as Record<string, unknown>).feature_schema_fingerprint ??
+    datasetFeatureSchemaFingerprint ??
     getFeatureSchemaFingerprint(featureConfig);
-  const { features: datasetFeatures, provenance } = await buildDatasetFeaturesWithProvenance({
-    pair: request.pair,
-    interval,
-    contextIntervals: request.contextIntervals ?? [],
-    startAt: dataset.start_at,
-    endAt: dataset.end_at,
-    windowSize: dataset.window_size ?? 30,
-    stride: dataset.stride ?? 1,
-    featureSetVersionId,
-    featureSchemaFingerprint,
+  assertFeatureSchemaCompatibility({
+    requestedFeatureSchemaFingerprint: request.featureSchemaFingerprint ?? null,
+    datasetFeatureSchemaFingerprint,
+    resolvedFeatureSchemaFingerprint: featureSchemaFingerprint,
+    requestedFeatureSetVersionId: request.featureSetVersionId ?? null,
+    datasetFeatureSetVersionId,
   });
+  const { features: datasetFeatures, provenance } = await recordExecutionStep(
+    executionSteps,
+    "build_feature_dataset",
+    "Build feature dataset",
+    () =>
+      buildDatasetFeaturesWithProvenance({
+        pair: request.pair,
+        interval,
+        contextIntervals: request.contextIntervals ?? [],
+        startAt: dataset.start_at,
+        endAt: dataset.end_at,
+        windowSize: dataset.window_size ?? 30,
+        stride: dataset.stride ?? 1,
+        featureSetVersionId,
+        featureSchemaFingerprint,
+      }),
+    (result) => ({
+      feature_rows: result.features.length,
+      resolved_pair: result.provenance.resolvedPair,
+      resolved_bingx_symbol: result.provenance.resolvedBingxSymbol,
+      source_tables: result.provenance.dataSources.map((source) => source.source),
+      data_field_count: result.provenance.dataFields.length,
+    }),
+  );
   const featureKeyExtras = extractContextFeatureKeys(datasetFeatures as Array<Record<string, unknown>>);
   const windowSize = request.windowSize ?? dataset.window_size ?? 30;
   const stride = request.stride ?? dataset.stride ?? 1;
@@ -271,6 +425,15 @@ export async function runEvaluation(request: EvaluationRequest) {
   const slippageBps = request.slippageBps ?? env.RL_PPO_SLIPPAGE_BPS;
   const fundingWeight = request.fundingWeight ?? env.RL_PPO_FUNDING_WEIGHT;
   const drawdownPenalty = request.drawdownPenalty ?? env.RL_PPO_DRAWDOWN_PENALTY;
+  const costModel = {
+    leverage,
+    takerFeeBps,
+    slippageBps,
+    fundingWeight,
+    drawdownPenalty,
+  };
+  const costModelFingerprint = buildCostModelFingerprint(costModel);
+  const exchangeMetadata = await getExchangeMetadata(request.pair as TradingPair).catch(() => null);
   const artifactUrl = version.artifact_uri ? await resolveArtifactUrl(version.artifact_uri) : null;
   let reportPayload: EvaluationReport | null = null;
   if (!rlConfig.mock) {
@@ -296,6 +459,17 @@ export async function runEvaluation(request: EvaluationRequest) {
       slippageBps,
       fundingWeight,
       drawdownPenalty,
+      instrumentMeta: exchangeMetadata
+        ? {
+            bingxSymbol: exchangeMetadata.bingxSymbol,
+            priceStep: exchangeMetadata.priceStep,
+            quantityStep: exchangeMetadata.quantityStep,
+            minQuantity: exchangeMetadata.minQuantity,
+            minNotional: exchangeMetadata.minNotional,
+            pricePrecision: exchangeMetadata.pricePrecision,
+            quantityPrecision: exchangeMetadata.quantityPrecision,
+          }
+        : null,
       walkForward: request.walkForward ?? null,
       featureSchemaFingerprint,
       featureKeyExtras,
@@ -331,24 +505,55 @@ export async function runEvaluation(request: EvaluationRequest) {
       payload.artifactChecksum =
         (trainingResponse as any).artifactChecksum ?? (trainingResponse as any).artifact_checksum ?? payload.artifactChecksum;
     }
-    try {
-      reportPayload = await rlServiceClient.evaluate(payload);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (E2E_RUN_ENABLED && message.includes("No trades available")) {
-        reportPayload = await rlServiceClient.evaluate({
-          ...payload,
-          decisionThreshold: 0.01,
-        });
-      } else {
-        throw error;
-      }
-    }
+    reportPayload = await recordExecutionStep(
+      executionSteps,
+      "run_rl_evaluation",
+      "Run RL evaluation service",
+      async () => {
+        try {
+          return await rlServiceClient.evaluate(payload);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (E2E_RUN_ENABLED && message.includes("No trades available")) {
+            return rlServiceClient.evaluate({
+              ...payload,
+              decisionThreshold: 0.01,
+            });
+          }
+          throw error;
+        }
+      },
+      (result) => ({
+        provider: "rl_service",
+        mock: false,
+        pair: payload.pair,
+        interval: payload.interval,
+        context_intervals: payload.contextIntervals ?? [],
+        walk_forward: payload.walkForward ?? null,
+        backtest_run_id:
+          (result as Record<string, unknown>).backtest_run_id ??
+          (result as Record<string, unknown>).backtestRunId ??
+          null,
+      }),
+    );
   }
 
-  const report = rlConfig.mock
-    ? buildMockEvaluation(request, criteria)
-    : normalizeEvaluationReport(reportPayload ?? {}, criteria);
+  const report = await recordExecutionStep(
+    executionSteps,
+    "normalize_report",
+    "Normalize metrics and apply gates",
+    () => (rlConfig.mock ? buildMockEvaluation(request, criteria) : normalizeEvaluationReport(reportPayload ?? {}, criteria)),
+    (normalized) => ({
+      provider: rlConfig.mock ? "mock" : "rl_service",
+      mock: rlConfig.mock,
+      status: normalized.status,
+      win_rate: normalized.win_rate,
+      net_pnl_after_fees: normalized.net_pnl_after_fees,
+      max_drawdown: normalized.max_drawdown,
+      trade_count: normalized.trade_count,
+      backtest_run_id: normalized.backtest_run_id ?? null,
+    }),
+  );
   if (E2E_RUN_ENABLED) {
     const start = new Date(request.periodStart).getTime();
     const end = new Date(request.periodEnd).getTime();
@@ -356,6 +561,13 @@ export async function runEvaluation(request: EvaluationRequest) {
       report.status = "fail";
     }
   }
+  const executionCompletedAt = new Date();
+  const executionTrace: EvaluationExecutionTrace = {
+    started_at: executionStartedAt.toISOString(),
+    completed_at: executionCompletedAt.toISOString(),
+    duration_ms: Math.max(0, executionCompletedAt.getTime() - executionStartedAt.getTime()),
+    steps: executionSteps,
+  };
   const reportMetadata = mergeEvaluationMetadata(asRecord(report.metadata), {
     parameters: {
       pair: request.pair,
@@ -380,11 +592,15 @@ export async function runEvaluation(request: EvaluationRequest) {
       slippageBps,
       fundingWeight,
       drawdownPenalty,
+      costModelFingerprint,
+      costModel,
+      exchangeMetadataFingerprint: exchangeMetadata?.fingerprint ?? null,
       walkForward: request.walkForward ?? null,
       featureKeyExtras,
     },
     dataFields: provenance.dataFields,
     provenance: provenance as unknown as Record<string, unknown>,
+    execution: executionTrace,
   });
   report.metadata = reportMetadata;
 

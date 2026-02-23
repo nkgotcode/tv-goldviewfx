@@ -50,7 +50,7 @@ variable "convex_port" {
 
 variable "market_gold_pairs" {
   type    = string
-  default = "XAUTUSDT,PAXGUSDT,Gold-USDT"
+  default = "XAUTUSDT,PAXGUSDT"
 }
 
 variable "market_crypto_pairs" {
@@ -60,7 +60,7 @@ variable "market_crypto_pairs" {
 
 variable "bingx_market_data_pairs" {
   type    = string
-  default = "XAUTUSDT,PAXGUSDT,Gold-USDT,ALGO-USDT,BTC-USDT,ETH-USDT,SOL-USDT,XRP-USDT,BNB-USDT"
+  default = "XAUTUSDT,PAXGUSDT,ALGO-USDT,BTC-USDT,ETH-USDT,SOL-USDT,XRP-USDT,BNB-USDT"
 }
 
 variable "timescale_market_data_enabled" {

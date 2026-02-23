@@ -1285,6 +1285,78 @@ button.ghost:hover {
   grid-column: 1 / -1;
 }
 
+.execution-timeline {
+  display: grid;
+  gap: 12px;
+}
+
+.execution-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.execution-step {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-bg);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.execution-step-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.execution-step-title {
+  display: grid;
+  gap: 4px;
+}
+
+.execution-step-title span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.execution-step-title strong {
+  font-size: 0.96rem;
+}
+
+.execution-step-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.execution-details {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.execution-timeline.compact .execution-step {
+  padding: 10px;
+}
+
+.execution-timeline.compact .execution-step-title strong {
+  font-size: 0.9rem;
+}
+
+.execution-timeline.compact .execution-details {
+  font-size: 0.8rem;
+}
+
 .modal-body {
   display: grid;
   gap: 12px;

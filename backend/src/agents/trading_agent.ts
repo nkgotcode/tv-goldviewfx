@@ -8,7 +8,7 @@ import { evaluateSourcePolicy } from "../services/source_policy_service";
 import { getPromotionMetrics } from "../services/trade_analytics";
 import { transitionTradeStatus } from "../services/trade_state_machine";
 
-const DEFAULT_INSTRUMENT = "GOLD-USDT";
+const DEFAULT_INSTRUMENT = "XAUTUSDT";
 
 export async function runTradingAgentOnce() {
   const config = await getAgentConfig();

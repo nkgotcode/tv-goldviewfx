@@ -1,0 +1,55 @@
+name: Test Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/**
+  schedule:
+    - cron: "0 3 * * *"
+    - cron: "0 4 * * 1"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Backend critical coverage gate
+        run: cd backend && bun run test:coverage:gate
+
+  rl-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: astral-sh/setup-uv@v6
+      - run: bun install --frozen-lockfile
+      - name: Install RL service dependencies
+        run: cd backend/rl-service && uv sync --all-extras
+      - name: RL service critical coverage gate
+        run: |
+          cd backend/rl-service
+          uv run pytest tests/unit/test_market_env.py tests/unit/test_nautilus_backtest_errors.py tests/unit/test_promotion_gating.py tests/unit/test_feature_parity.py tests/integration/test_walk_forward_regression.py tests/integration/test_evaluations_api.py --cov=src --cov-branch --cov-report=xml:coverage-critical.xml --cov-report=term-missing
+          uv run python scripts/check_critical_coverage.py coverage-critical.xml scripts/critical_coverage_thresholds.json
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Frontend coverage
+        run: cd frontend && bun run test:coverage
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps
+      - name: E2E smoke suite
+        run: bunx playwright test tests/e2e/rl_ops_critical_flow.spec.ts

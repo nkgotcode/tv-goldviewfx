@@ -31,6 +31,15 @@ export type PromotionGates = {
   minNetPnlDelta: number;
   maxDrawdownDelta: number;
   minTradeCountDelta: number;
+  minEffectSize: number;
+  minConfidenceZ: number;
+  minSampleSize: number;
+};
+
+export type RolloutPolicy = {
+  mode: "shadow" | "canary" | "full";
+  canaryMinTradeCount: number;
+  canaryMaxDrawdown: number;
 };
 
 function resolvePromotionGates(overrides?: Partial<PromotionGates> | null): PromotionGates {
@@ -44,6 +53,18 @@ function resolvePromotionGates(overrides?: Partial<PromotionGates> | null): Prom
     minNetPnlDelta: overrides?.minNetPnlDelta ?? env.RL_ONLINE_LEARNING_MIN_NET_PNL_DELTA,
     maxDrawdownDelta: overrides?.maxDrawdownDelta ?? env.RL_ONLINE_LEARNING_MAX_DRAWDOWN_DELTA,
     minTradeCountDelta: overrides?.minTradeCountDelta ?? env.RL_ONLINE_LEARNING_MIN_TRADE_COUNT_DELTA,
+    minEffectSize: overrides?.minEffectSize ?? env.RL_ONLINE_LEARNING_MIN_EFFECT_SIZE,
+    minConfidenceZ: overrides?.minConfidenceZ ?? env.RL_ONLINE_LEARNING_MIN_CONFIDENCE_Z,
+    minSampleSize: overrides?.minSampleSize ?? env.RL_ONLINE_LEARNING_MIN_SAMPLE_SIZE,
+  };
+}
+
+function resolveRolloutPolicy(overrides?: Partial<RolloutPolicy> | null): RolloutPolicy {
+  const env = loadEnv();
+  return {
+    mode: overrides?.mode ?? env.RL_ONLINE_LEARNING_ROLLOUT_MODE,
+    canaryMinTradeCount: overrides?.canaryMinTradeCount ?? env.RL_ONLINE_LEARNING_CANARY_MIN_TRADE_COUNT,
+    canaryMaxDrawdown: overrides?.canaryMaxDrawdown ?? env.RL_ONLINE_LEARNING_CANARY_MAX_DRAWDOWN,
   };
 }
 
@@ -53,7 +74,32 @@ type PromotionDecision = {
   deltas: Record<string, number>;
 };
 
-function evaluatePromotionDecision(params: {
+function clampProbability(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function computeWinRateConfidenceZ(params: {
+  challengerWinRate: number;
+  championWinRate: number;
+  challengerTrades: number;
+  championTrades: number;
+}) {
+  const challengerTrades = Math.max(0, Math.floor(params.challengerTrades));
+  const championTrades = Math.max(0, Math.floor(params.championTrades));
+  if (challengerTrades === 0 || championTrades === 0) return null;
+  const challengerWinRate = clampProbability(params.challengerWinRate);
+  const championWinRate = clampProbability(params.championWinRate);
+  const pooled =
+    (challengerWinRate * challengerTrades + championWinRate * championTrades) / (challengerTrades + championTrades);
+  const standardError = Math.sqrt(pooled * (1 - pooled) * (1 / challengerTrades + 1 / championTrades));
+  if (!Number.isFinite(standardError) || standardError <= 0) return null;
+  return (challengerWinRate - championWinRate) / standardError;
+}
+
+export function evaluatePromotionDecision(params: {
   challenger: LearningUpdateMetrics;
   challengerStatus?: "pass" | "fail";
   champion?: LearningUpdateMetrics | null;
@@ -63,11 +109,21 @@ function evaluatePromotionDecision(params: {
   const challenger = params.challenger;
   const champion = params.champion ?? null;
   const reasons: string[] = [];
+  const confidenceZ = champion
+    ? computeWinRateConfidenceZ({
+        challengerWinRate: challenger.winRate,
+        championWinRate: champion.winRate,
+        challengerTrades: challenger.tradeCount,
+        championTrades: champion.tradeCount,
+      })
+    : null;
   const deltas = {
     winRateDelta: champion ? challenger.winRate - champion.winRate : challenger.winRate,
     netPnlDelta: champion ? challenger.netPnlAfterFees - champion.netPnlAfterFees : challenger.netPnlAfterFees,
     drawdownDelta: champion ? challenger.maxDrawdown - champion.maxDrawdown : challenger.maxDrawdown,
     tradeCountDelta: champion ? challenger.tradeCount - champion.tradeCount : challenger.tradeCount,
+    winRateEffectSize: champion ? Math.abs(challenger.winRate - champion.winRate) : Math.abs(challenger.winRate),
+    winRateConfidenceZ: Number.isFinite(confidenceZ ?? NaN) ? Number(confidenceZ) : 0,
   };
 
   if (params.challengerStatus === "fail") reasons.push("challenger_report_failed");
@@ -81,6 +137,15 @@ function evaluatePromotionDecision(params: {
     if (deltas.netPnlDelta < gates.minNetPnlDelta) reasons.push("net_pnl_delta_below_gate");
     if (deltas.drawdownDelta > gates.maxDrawdownDelta) reasons.push("drawdown_delta_above_gate");
     if (deltas.tradeCountDelta < gates.minTradeCountDelta) reasons.push("trade_count_delta_below_gate");
+    if (Math.min(challenger.tradeCount, champion.tradeCount) < gates.minSampleSize) reasons.push("insufficient_sample_size");
+    if (deltas.winRateEffectSize < gates.minEffectSize) reasons.push("effect_size_below_gate");
+    if (gates.minConfidenceZ > 0) {
+      if (!Number.isFinite(confidenceZ ?? NaN)) {
+        reasons.push("confidence_unavailable");
+      } else if ((confidenceZ ?? 0) < gates.minConfidenceZ) {
+        reasons.push("confidence_below_gate");
+      }
+    }
   }
 
   return {
@@ -88,6 +153,47 @@ function evaluatePromotionDecision(params: {
     reasons,
     deltas,
   };
+}
+
+function applyRolloutPolicy(
+  decision: PromotionDecision,
+  challenger: LearningUpdateMetrics,
+  champion: LearningUpdateMetrics | null,
+  rolloutPolicy?: Partial<RolloutPolicy> | null,
+): PromotionDecision {
+  const policy = resolveRolloutPolicy(rolloutPolicy);
+  const reasons = [...decision.reasons];
+  if (!decision.promoted) {
+    reasons.push("rollout_stage:rejected");
+    return { ...decision, reasons };
+  }
+
+  if (policy.mode === "full") {
+    reasons.push("rollout_stage:full");
+    return { ...decision, reasons };
+  }
+  if (policy.mode === "shadow") {
+    reasons.push("rollout_stage:shadow");
+    reasons.push("rollout_shadow_only");
+    return { ...decision, promoted: false, reasons };
+  }
+
+  if (champion) {
+    if (challenger.tradeCount < policy.canaryMinTradeCount) {
+      reasons.push("rollout_stage:canary");
+      reasons.push("canary_insufficient_trade_count");
+      return { ...decision, promoted: false, reasons };
+    }
+    if (challenger.maxDrawdown > policy.canaryMaxDrawdown) {
+      reasons.push("rollout_stage:canary");
+      reasons.push("canary_drawdown_breach");
+      return { ...decision, promoted: false, reasons };
+    }
+  }
+
+  reasons.push("rollout_stage:canary");
+  reasons.push("rollout_stage:full");
+  return { ...decision, reasons };
 }
 
 export async function runLearningUpdate(input: LearningUpdateInput) {
@@ -124,20 +230,21 @@ export async function runLearningUpdate(input: LearningUpdateInput) {
     challengerStatus: "pass",
     champion: input.championMetrics ?? null,
   });
-  if (decision.promoted) {
+  const rolloutDecision = applyRolloutPolicy(decision, input.metrics, input.championMetrics ?? null, null);
+  if (rolloutDecision.promoted) {
     await promoteAgentVersion(input.agentVersionId);
   } else if (input.rollbackVersionId) {
     await rollbackAgentVersion(input.rollbackVersionId);
   }
 
-  const status = decision.promoted ? "succeeded" : "failed";
+  const status = rolloutDecision.promoted ? "succeeded" : "failed";
   const updated = await updateLearningUpdate(update.id, {
     status,
     completed_at: new Date().toISOString(),
-    promoted: decision.promoted,
+    promoted: rolloutDecision.promoted,
     champion_evaluation_report_id: input.championEvaluationReportId ?? null,
-    decision_reasons: decision.reasons,
-    metric_deltas: decision.deltas,
+    decision_reasons: rolloutDecision.reasons,
+    metric_deltas: rolloutDecision.deltas,
   });
 
   recordLearningWindow({
@@ -184,6 +291,7 @@ export async function runLearningUpdateFromReport(input: {
   } | null;
   rollbackVersionId?: string | null;
   promotionGates?: Partial<PromotionGates> | null;
+  rolloutPolicy?: Partial<RolloutPolicy> | null;
 }) {
   const report = input.report;
   const startedAt = new Date().toISOString();
@@ -226,21 +334,22 @@ export async function runLearningUpdateFromReport(input: {
     champion: championMetrics,
     promotionGates: input.promotionGates,
   });
+  const rolloutDecision = applyRolloutPolicy(decision, challengerMetrics, championMetrics, input.rolloutPolicy);
 
-  if (decision.promoted) {
+  if (rolloutDecision.promoted) {
     await promoteAgentVersion(agentVersionId);
   } else if (input.rollbackVersionId && input.rollbackVersionId !== agentVersionId) {
     await rollbackAgentVersion(input.rollbackVersionId);
   }
 
-  const status = decision.promoted ? "succeeded" : "failed";
+  const status = rolloutDecision.promoted ? "succeeded" : "failed";
   const updated = await updateLearningUpdate(update.id, {
     status,
     completed_at: new Date().toISOString(),
     champion_evaluation_report_id: input.championReport?.id ?? null,
-    promoted: decision.promoted,
-    decision_reasons: decision.reasons,
-    metric_deltas: decision.deltas,
+    promoted: rolloutDecision.promoted,
+    decision_reasons: rolloutDecision.reasons,
+    metric_deltas: rolloutDecision.deltas,
   });
 
   recordLearningWindow({

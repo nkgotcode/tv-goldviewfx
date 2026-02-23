@@ -97,7 +97,7 @@ def _compute_window_features(
     next_close = current_close
 
     snapshot = MarketSnapshot(
-        pair="Gold-USDT",
+        pair="XAUTUSDT",
         candles=[
             {
                 "timestamp": item.get("timestamp"),

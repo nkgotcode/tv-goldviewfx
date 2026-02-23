@@ -30,7 +30,6 @@ def _build_features(request: DatasetRequest) -> list[dict]:
         return []
     features: list[dict] = []
     base_price_map = {
-        "Gold-USDT": 2300.0,
         "XAUTUSDT": 2300.0,
         "PAXGUSDT": 2300.0,
         "ALGO-USDT": 0.2,

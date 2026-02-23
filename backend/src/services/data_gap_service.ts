@@ -91,6 +91,27 @@ export function detectCandleGaps(timestamps: string[], intervalMs: number, minMi
   return gaps;
 }
 
+export function hasOverlappingCandleGap(params: {
+  timestamps: string[];
+  intervalMs: number;
+  minMissingPoints: number;
+  rangeStart: string;
+  rangeEnd: string;
+}) {
+  const rangeStartMs = Date.parse(params.rangeStart);
+  const rangeEndMs = Date.parse(params.rangeEnd);
+  if (!Number.isFinite(rangeStartMs) || !Number.isFinite(rangeEndMs) || rangeEndMs < rangeStartMs) {
+    return false;
+  }
+  const gaps = detectCandleGaps(params.timestamps, params.intervalMs, params.minMissingPoints);
+  return gaps.some((gap) => {
+    const gapStartMs = Date.parse(gap.gapStart);
+    const gapEndMs = Date.parse(gap.gapEnd);
+    if (!Number.isFinite(gapStartMs) || !Number.isFinite(gapEndMs)) return false;
+    return gapStartMs <= rangeEndMs && gapEndMs >= rangeStartMs;
+  });
+}
+
 function gapKey(payload: { pair: TradingPair; source: string; interval?: string | null; start: string; end: string }) {
   return `${payload.pair}:${payload.source}:${payload.interval ?? "none"}:${payload.start}:${payload.end}`;
 }
@@ -369,6 +390,58 @@ export async function runDataGapMonitor() {
           gapEnd: item.gapEnd,
           maxBatches: healMaxBatches,
         });
+
+        const intervalMs = parseIntervalMs(item.interval);
+        const gapStartMs = Date.parse(item.gapStart);
+        const gapEndMs = Date.parse(item.gapEnd);
+        if (!Number.isFinite(gapStartMs) || !Number.isFinite(gapEndMs)) {
+          throw new Error("invalid_gap_window");
+        }
+        const verifyStart = new Date(gapStartMs - intervalMs).toISOString();
+        const verifyEnd = new Date(gapEndMs + intervalMs).toISOString();
+        const verifyTimes = await listBingxCandleTimes({
+          pair: item.pair,
+          interval: item.interval,
+          start: verifyStart,
+          end: verifyEnd,
+          limit: Math.min(maxPoints, 5000),
+        });
+        const stillMissing = hasOverlappingCandleGap({
+          timestamps: verifyTimes,
+          intervalMs,
+          minMissingPoints,
+          rangeStart: item.gapStart,
+          rangeEnd: item.gapEnd,
+        });
+
+        if (!stillMissing) {
+          await resolveDataGapEvent(item.id);
+          await recordOpsAudit({
+            actor: "system",
+            action: "data_gap.heal_verified",
+            resource_type: "data_gap_event",
+            resource_id: item.id,
+            metadata: {
+              pair: item.pair,
+              interval: item.interval,
+              verify_start: verifyStart,
+              verify_end: verifyEnd,
+            },
+          });
+        } else {
+          await recordOpsAudit({
+            actor: "system",
+            action: "data_gap.heal_unresolved",
+            resource_type: "data_gap_event",
+            resource_id: item.id,
+            metadata: {
+              pair: item.pair,
+              interval: item.interval,
+              verify_start: verifyStart,
+              verify_end: verifyEnd,
+            },
+          });
+        }
       } catch (error) {
         logWarn("Failed to heal candle gap", { error: String(error), pair: item.pair, interval: item.interval });
       }

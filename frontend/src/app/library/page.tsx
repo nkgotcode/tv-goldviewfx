@@ -395,7 +395,7 @@ export default function LibraryPage() {
                 id="trade-instrument"
                 value={tradeInstrument}
                 onChange={(event) => setTradeInstrument(event.target.value)}
-                placeholder="GOLD-USDT"
+                placeholder="XAUTUSDT"
               />
             </div>
             <div className="filter-row">

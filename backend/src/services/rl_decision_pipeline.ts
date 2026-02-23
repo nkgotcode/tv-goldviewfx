@@ -360,9 +360,14 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   }).catch(() => {});
 
   const openPositions = await countOpenPositions(run.pair, run.id, run.started_at ?? null);
+  const referencePrice = Number(request.market.lastPrice ?? request.market.candles?.slice(-1)[0]?.close ?? 0) || 1;
+  const proposedSize = inference.decision.size ?? riskLimitSet.max_position_size;
+  const proposedNotional = Math.abs(proposedSize) * referencePrice;
   const riskEvaluation = evaluateRiskLimits(riskLimitSet, {
-    positionSize: inference.decision.size ?? riskLimitSet.max_position_size,
-    leverage: riskLimitSet.leverage_cap,
+    positionSize: proposedSize,
+    referencePrice,
+    positionNotional: proposedNotional,
+    leverage: request.riskLimits?.leverageCap,
     openPositions,
   });
 

@@ -35,7 +35,7 @@ Dependencies: keep all libraries and runtimes on the latest stable releases.
 
 ## Recent Changes
 - 002-rl-trading-agent: Expanded specs/contracts to require full BingX perpetual market data ingestion for RL training
-- 001-trading-idea-platform: Added dark mode toggle, BingX client order tagging, fixed pagination, tightened TradingView sync timeouts, and aligned agent defaults to `GOLD-USDT`
+- 001-trading-idea-platform: Added dark mode toggle, BingX client order tagging, fixed pagination, tightened TradingView sync timeouts, and aligned agent defaults to `XAUTUSDT`
 
 <!-- MANUAL ADDITIONS START -->
 - RL/ops backend state is Timescale-capable: set `TIMESCALE_RL_OPS_ENABLED=true` with `TIMESCALE_URL` to run RL/ops repositories on Postgres; `CONVEX_URL` is no longer a hard backend bootstrap requirement in this mode.

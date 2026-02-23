@@ -2,7 +2,7 @@
 
 ## Active
 
-- [ ] None. Futures-aware PPO feedback loop slice completed in this iteration.
+- [ ] Enforce explicit fail-closed dataset behavior in production mode (no synthetic fallback) with dedicated regression tests.
 
 ## Discovered
 
@@ -28,3 +28,8 @@
 - [x] Fixed chart history proxy to honor `start/end` range when fetching BingX candles, enabling deep historical pagination in KLine chart loaders.
 - [x] Expanded market chart viewport and default history preload so dashboards open with substantially more candles and taller chart real estate.
 - [x] Made KLine history loading resilient to variable BingX page sizes and sparse/gapped ranges by using adaptive lookback paging instead of fixed-size stop conditions.
+- [x] Added confidence-aware promotion gates in online learning (effect size, minimum sample size, win-rate confidence z-score), exposed via ops API/UI overrides, and covered with targeted backend unit tests.
+- [x] Added pre-trade margin/liquidation feasibility checks (mark/index-price aware) in account-risk evaluation with deterministic unit coverage.
+- [x] Added automated critical-module coverage gates with CI enforcement across backend (LCOV parser), RL-service (Cobertura parser), and frontend (raised Vitest thresholds + service tests).
+- [x] Added DB-backed ingestion lease semantics (`startIngestionRunIfIdle`) for TradingView/Telegram/News/OCR pipelines to prevent duplicate worker races.
+- [x] Added deterministic post-heal verification in data gap monitor: healed windows are re-queried and only resolved when gaps no longer overlap the target interval, with audit events for verified/unresolved outcomes.

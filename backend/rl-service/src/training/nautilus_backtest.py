@@ -24,23 +24,75 @@ def _base_currency_for_pair(pair: str) -> str:
     return "XAU"
 
 
-def _pair_precision(pair: str) -> tuple[int, int, str, str]:
-    normalized = pair.replace("-", "").upper()
-    if normalized.startswith("BTC"):
-        return 2, 4, "0.01", "0.0001"
-    if normalized.startswith("ETH"):
-        return 2, 3, "0.01", "0.001"
-    if normalized.startswith("BNB"):
-        return 2, 2, "0.01", "0.01"
-    if normalized.startswith("SOL") or normalized.startswith("ALGO") or normalized.startswith("XRP"):
-        return 4, 1, "0.0001", "0.1"
-    return 2, 3, "0.01", "0.001"
+def _to_float(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
-def _build_instrument(pair: str, venue: str = "BINGX") -> CryptoPerpetual:
+def _to_int(value: object) -> int | None:
+    parsed = _to_float(value)
+    if parsed is None:
+        return None
+    casted = int(parsed)
+    if casted < 0 or casted > 12:
+        return None
+    return casted
+
+
+def _decimal_places(step: float) -> int:
+    text = f"{step:.12f}".rstrip("0").rstrip(".")
+    if "." not in text:
+        return 0
+    return len(text.split(".")[1])
+
+
+def _canonical_step(step: float | None, precision: int) -> float:
+    if step is not None and step > 0:
+        return float(f"{step:.12f}")
+    precision = max(0, min(12, precision))
+    return float(f"{1 / (10 ** precision):.{precision}f}")
+
+
+def _resolve_instrument_meta(instrument_meta: dict | None) -> tuple[int, int, str, str]:
+    instrument_meta = instrument_meta or {}
+    price_precision = _to_int(instrument_meta.get("pricePrecision") or instrument_meta.get("price_precision"))
+    size_precision = _to_int(instrument_meta.get("quantityPrecision") or instrument_meta.get("quantity_precision"))
+    price_step = _to_float(
+        instrument_meta.get("priceStep")
+        or instrument_meta.get("price_step")
+        or instrument_meta.get("tickSize")
+        or instrument_meta.get("tick_size")
+    )
+    size_step = _to_float(
+        instrument_meta.get("quantityStep")
+        or instrument_meta.get("quantity_step")
+        or instrument_meta.get("stepSize")
+        or instrument_meta.get("step_size")
+    )
+
+    resolved_price_precision = price_precision if price_precision is not None else _decimal_places(price_step or 0.01)
+    resolved_size_precision = size_precision if size_precision is not None else _decimal_places(size_step or 0.001)
+    resolved_price_step = _canonical_step(price_step, resolved_price_precision)
+    resolved_size_step = _canonical_step(size_step, resolved_size_precision)
+
+    return (
+        resolved_price_precision,
+        resolved_size_precision,
+        f"{resolved_price_step:.{max(1, _decimal_places(resolved_price_step))}f}",
+        f"{resolved_size_step:.{max(1, _decimal_places(resolved_size_step))}f}",
+    )
+
+
+def _build_instrument(pair: str, instrument_meta: dict | None = None, venue: str = "BINGX") -> CryptoPerpetual:
     symbol = pair.replace("-", "")
     instrument_id = InstrumentId(Symbol(symbol), Venue(venue))
-    price_precision, size_precision, price_increment, size_increment = _pair_precision(pair)
+    price_precision, size_precision, price_increment, size_increment = _resolve_instrument_meta(instrument_meta)
     return CryptoPerpetual(
         instrument_id=instrument_id,
         raw_symbol=Symbol(symbol),
@@ -100,9 +152,10 @@ def run_backtest(
     model_path: str,
     window_size: int,
     decision_threshold: float,
+    instrument_meta: dict | None = None,
 ):
-    instrument = _build_instrument(pair)
-    price_precision, size_precision, _, _ = _pair_precision(pair)
+    instrument = _build_instrument(pair, instrument_meta=instrument_meta)
+    price_precision, size_precision, _, _ = _resolve_instrument_meta(instrument_meta)
     bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
     if interval.endswith("m"):
         bar_spec = BarSpecification(int(interval[:-1]), BarAggregation.MINUTE, PriceType.LAST)

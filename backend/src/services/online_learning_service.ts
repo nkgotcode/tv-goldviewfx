@@ -1,8 +1,9 @@
 import { loadEnv } from "../config/env";
 import { loadRlServiceConfig } from "../config/rl_service";
+import { resolveSupportedPair } from "../config/market_catalog";
 import { listAgentRuns, updateAgentRun } from "../db/repositories/agent_runs";
 import type { TradingPair } from "../types/rl";
-import { runLearningUpdateFromReport, type PromotionGates } from "../jobs/learning_updates";
+import { runLearningUpdateFromReport, type PromotionGates, type RolloutPolicy } from "../jobs/learning_updates";
 import { getLatestPromotedVersion } from "./agent_version_service";
 import { runEvaluation } from "./evaluation_service";
 import { logInfo, logWarn } from "./logger";
@@ -11,7 +12,7 @@ import { rlServiceClient } from "../rl/client";
 
 type OnlineLearningTrigger = "schedule" | "retry" | "manual";
 
-type OnlineLearningResult =
+export type OnlineLearningResult =
   | { status: "skipped"; reason: string }
   | {
       status: "completed";
@@ -73,6 +74,7 @@ function normalizeContextIntervals(baseInterval: string, intervals?: string[] | 
 
 export type OnlineLearningRunOverrides = {
   pair?: TradingPair;
+  pairs?: TradingPair[];
   interval?: string;
   contextIntervals?: string[];
   trainWindowMin?: number;
@@ -84,18 +86,54 @@ export type OnlineLearningRunOverrides = {
   decisionThreshold?: number;
   autoRollForward?: boolean;
   promotionGates?: Partial<PromotionGates> | null;
+  rolloutPolicy?: Partial<RolloutPolicy> | null;
 };
 
-export async function runOnlineLearningCycle(
+function parsePairs(value?: string | null) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizePairs(rawPairs: string[]) {
+  const seen = new Set<string>();
+  const normalized: TradingPair[] = [];
+  for (const pair of rawPairs) {
+    const resolved = resolveSupportedPair(pair);
+    if (!resolved) continue;
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    normalized.push(resolved as TradingPair);
+  }
+  return normalized;
+}
+
+export function resolveOnlineLearningPairs(overrides?: OnlineLearningRunOverrides) {
+  const env = loadEnv();
+  const fromOverrides = overrides?.pairs?.length ? normalizePairs(overrides.pairs) : [];
+  if (fromOverrides.length > 0) return fromOverrides;
+  if (overrides?.pair) {
+    const resolved = resolveSupportedPair(overrides.pair);
+    if (resolved) return [resolved as TradingPair];
+  }
+  const configuredPairs = normalizePairs(parsePairs(env.RL_ONLINE_LEARNING_PAIRS));
+  if (configuredPairs.length > 0) return configuredPairs;
+  const fallback = resolveSupportedPair(env.RL_ONLINE_LEARNING_PAIR) ?? env.RL_ONLINE_LEARNING_PAIR;
+  return [fallback as TradingPair];
+}
+
+export async function runOnlineLearningCycleForPair(
+  pair: TradingPair,
   trigger: OnlineLearningTrigger = "schedule",
-  overrides?: OnlineLearningRunOverrides,
+  overrides?: Omit<OnlineLearningRunOverrides, "pair" | "pairs">,
 ): Promise<OnlineLearningResult> {
   const env = loadEnv();
   if (!env.RL_ONLINE_LEARNING_ENABLED) {
     return { status: "skipped", reason: "disabled" };
   }
 
-  const pair = (overrides?.pair ?? env.RL_ONLINE_LEARNING_PAIR) as TradingPair;
   const interval = overrides?.interval?.trim() || env.RL_ONLINE_LEARNING_INTERVAL;
   const intervalMinutes = parseIntervalMinutes(interval);
   const contextIntervals = normalizeContextIntervals(
@@ -217,6 +255,7 @@ export async function runOnlineLearningCycle(
     championReport,
     rollbackVersionId: previousPromoted?.id ?? null,
     promotionGates: overrides?.promotionGates ?? null,
+    rolloutPolicy: overrides?.rolloutPolicy ?? null,
   });
 
   const promoted = Boolean((update as any).promoted);
@@ -258,4 +297,96 @@ export async function runOnlineLearningCycle(
     trainWindow: { start: trainStart.toISOString(), end: trainEnd.toISOString() },
     evalWindow: { start: evalStart.toISOString(), end: evalEnd.toISOString() },
   };
+}
+
+export type OnlineLearningBatchResult = {
+  status: "completed" | "partial" | "failed" | "skipped";
+  requestedPairs: string[];
+  results: Array<{ pair: string; result: OnlineLearningResult }>;
+  failures: Array<{ pair: string; error: string }>;
+};
+
+export async function runOnlineLearningBatch(
+  trigger: OnlineLearningTrigger = "schedule",
+  overrides?: OnlineLearningRunOverrides,
+): Promise<OnlineLearningBatchResult> {
+  const pairs = resolveOnlineLearningPairs(overrides);
+  const results: Array<{ pair: string; result: OnlineLearningResult }> = [];
+  const failures: Array<{ pair: string; error: string }> = [];
+  if (pairs.length === 0) {
+    return {
+      status: "skipped",
+      requestedPairs: [],
+      results: [],
+      failures: [],
+    };
+  }
+
+  const sharedOverrides: Omit<OnlineLearningRunOverrides, "pair" | "pairs"> = {
+    interval: overrides?.interval,
+    contextIntervals: overrides?.contextIntervals,
+    trainWindowMin: overrides?.trainWindowMin,
+    evalWindowMin: overrides?.evalWindowMin,
+    evalLagMin: overrides?.evalLagMin,
+    windowSize: overrides?.windowSize,
+    stride: overrides?.stride,
+    timesteps: overrides?.timesteps,
+    decisionThreshold: overrides?.decisionThreshold,
+    autoRollForward: overrides?.autoRollForward,
+    promotionGates: overrides?.promotionGates,
+    rolloutPolicy: overrides?.rolloutPolicy,
+  };
+
+  for (const pair of pairs) {
+    try {
+      const result = await runOnlineLearningCycleForPair(pair, trigger, sharedOverrides);
+      results.push({ pair, result });
+    } catch (error) {
+      failures.push({
+        pair,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      logWarn("online_learning.pair_failed", {
+        trigger,
+        pair,
+        error: String(error),
+      });
+    }
+  }
+
+  if (results.length === 0 && failures.length > 0) {
+    return {
+      status: "failed",
+      requestedPairs: pairs,
+      results,
+      failures,
+    };
+  }
+
+  if (failures.length > 0) {
+    return {
+      status: "partial",
+      requestedPairs: pairs,
+      results,
+      failures,
+    };
+  }
+
+  const skippedOnly = results.every((entry) => entry.result.status === "skipped");
+  return {
+    status: skippedOnly ? "skipped" : "completed",
+    requestedPairs: pairs,
+    results,
+    failures,
+  };
+}
+
+export async function runOnlineLearningCycle(
+  trigger: OnlineLearningTrigger = "schedule",
+  overrides?: OnlineLearningRunOverrides,
+): Promise<OnlineLearningResult> {
+  const pairs = resolveOnlineLearningPairs(overrides);
+  const targetPair = pairs[0];
+  if (!targetPair) return { status: "skipped", reason: "no_pairs_configured" };
+  return runOnlineLearningCycleForPair(targetPair, trigger, overrides);
 }

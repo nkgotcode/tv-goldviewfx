@@ -86,6 +86,18 @@ export const evaluationRequestSchema = z.object({
   slippageBps: z.number().nonnegative().optional(),
   fundingWeight: z.number().nonnegative().optional(),
   drawdownPenalty: z.number().nonnegative().optional(),
+  instrumentMeta: z
+    .object({
+      bingxSymbol: z.string().min(1),
+      priceStep: z.number().positive(),
+      quantityStep: z.number().positive(),
+      minQuantity: z.number().positive(),
+      minNotional: z.number().nonnegative().nullable().optional(),
+      pricePrecision: z.number().int().nonnegative(),
+      quantityPrecision: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .optional(),
   walkForward: z
     .object({
       folds: z.number().int().min(1).max(24),

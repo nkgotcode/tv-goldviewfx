@@ -1,0 +1,13 @@
+{
+  "global": {
+    "minLines": 70,
+    "minBranches": 40
+  },
+  "files": [
+    { "path": "envs/market_env.py", "minLines": 90, "minBranches": 55 },
+    { "path": "training/evaluation.py", "minLines": 88, "minBranches": 60 },
+    { "path": "training/nautilus_backtest.py", "minLines": 78, "minBranches": 40 },
+    { "path": "training/promotion.py", "minLines": 88, "minBranches": 70 },
+    { "path": "training/walk_forward.py", "minLines": 74, "minBranches": 45 }
+  ]
+}

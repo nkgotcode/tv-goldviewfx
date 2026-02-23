@@ -113,7 +113,7 @@ export default function HomePage() {
             </div>
             <div className="system-meta">
               <span>Focus</span>
-              <strong>GOLD-USDT</strong>
+              <strong>XAUTUSDT</strong>
             </div>
             <Link className="text-link" href="/insights">
               Open insights -&gt;
@@ -204,7 +204,7 @@ export default function HomePage() {
         </div>
         <div className="pulse-grid">
           <MarketKlinePanel
-            title="Gold-USDT preview"
+            title="XAUTUSDT preview"
             description="Recent candles with the latest trades overlaid."
             showModeToggle={false}
             tone="teal"

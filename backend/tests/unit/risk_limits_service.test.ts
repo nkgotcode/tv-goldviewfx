@@ -22,11 +22,21 @@ test("evaluateRiskLimits allows trades within limits", () => {
 test("evaluateRiskLimits blocks size breaches", () => {
   const result = evaluateRiskLimits(limit, { positionSize: 2 });
   expect(result.allowed).toBe(false);
-  expect(result.reasons).toContain("max_position_size");
+  expect(result.reasons).toContain("max_position_notional");
 });
 
 test("evaluateRiskLimits blocks open position cap", () => {
   const result = evaluateRiskLimits(limit, { positionSize: 0.2, openPositions: 2 });
   expect(result.allowed).toBe(false);
   expect(result.reasons).toContain("max_open_positions");
+});
+
+test("evaluateRiskLimits blocks portfolio exposure breaches", () => {
+  const result = evaluateRiskLimits(limit, {
+    positionSize: 0.2,
+    portfolioExposure: 10,
+    openPositions: 1,
+  });
+  expect(result.allowed).toBe(false);
+  expect(result.reasons).toContain("max_portfolio_exposure");
 });

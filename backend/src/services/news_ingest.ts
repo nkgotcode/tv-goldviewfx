@@ -5,7 +5,7 @@ import { hashContent } from "./dedup";
 import { insertSignal } from "../db/repositories/signals";
 import { findNewsByExternalId, findNewsByHash, insertNewsItem } from "../db/repositories/news_items";
 import { getNewsSourceByIdentifier, upsertNewsSource } from "../db/repositories/news_sources";
-import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
+import { startIngestionRunIfIdle, completeIngestionRun } from "../db/repositories/ingestion_runs";
 import { getDefaultThreshold, recordDataSourceStatus } from "./data_source_status_service";
 import type { TradingPair } from "../types/rl";
 import { logInfo, logWarn } from "./logger";
@@ -33,13 +33,23 @@ export async function runNewsIngest(trigger: "manual" | "schedule" = "schedule")
     return { trigger, sources: 0, newCount: 0, skipped: true };
   }
 
-  const ingestionRun = await createIngestionRun({
-    source_type: "news",
-    source_id: null,
+  const ingestionLease = await startIngestionRunIfIdle({
+    sourceType: "news",
+    sourceId: null,
     feed: null,
     trigger,
-    status: "running",
+    timeoutMinutes: env.INGESTION_RUN_TIMEOUT_MIN,
   });
+  if (!ingestionLease.created || !ingestionLease.run?.id) {
+    logInfo("News ingest lease unavailable", { reason: ingestionLease.reason });
+    return { trigger, sources: identifiers.length, newCount: 0, skipped: true };
+  }
+  const ingestionRunId = ingestionLease.run.id;
+  if (ingestionLease.timed_out_run_id) {
+    logWarn("News ingest lease timed out prior run", {
+      timedOutRunId: ingestionLease.timed_out_run_id,
+    });
+  }
   let newCount = 0;
   let skippedCount = 0;
   let errorCount = 0;
@@ -105,7 +115,7 @@ export async function runNewsIngest(trigger: "manual" | "schedule" = "schedule")
     }
   } catch (error) {
     errorCount += 1;
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "failed",
       newCount,
       updatedCount: 0,
@@ -129,7 +139,7 @@ export async function runNewsIngest(trigger: "manual" | "schedule" = "schedule")
     logWarn("News data source status update failed", { error: String(error) });
   });
 
-  await completeIngestionRun(ingestionRun.id, {
+  await completeIngestionRun(ingestionRunId, {
     status: "succeeded",
     newCount,
     updatedCount: 0,

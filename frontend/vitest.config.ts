@@ -7,8 +7,24 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: resolve(__dirname, "tests/setup.ts"),
-    include: ["tests/**/*.test.tsx"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     globals: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov", "json-summary"],
+      thresholds: {
+        lines: 55,
+        branches: 31,
+        functions: 40,
+        statements: 52,
+      },
+      exclude: [
+        "**/*.d.ts",
+        "**/next-env.d.ts",
+        "**/tests/**",
+        "src/app/library/page.tsx",
+      ],
+    },
   },
   resolve: {
     alias: {

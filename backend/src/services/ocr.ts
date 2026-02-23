@@ -1,7 +1,7 @@
 import { loadEnv } from "../config/env";
 import { getSupportedPairs } from "../config/market_catalog";
 import { listPendingIdeaMedia, updateIdeaMedia } from "../db/repositories/idea_media";
-import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
+import { startIngestionRunIfIdle, completeIngestionRun } from "../db/repositories/ingestion_runs";
 import { getDefaultThreshold, recordDataSourceStatus } from "./data_source_status_service";
 import type { TradingPair } from "../types/rl";
 import { logWarn } from "./logger";
@@ -18,16 +18,25 @@ export async function runOcrBatch(limit = 10, trigger: "manual" | "schedule" = "
   if (!control.allowed) {
     return { processed: 0, skipped: 0, failed: 0, skippedRun: true };
   }
-  const ingestionRun = await createIngestionRun({
-    source_type: "ocr_text",
-    source_id: null,
+  const ingestionLease = await startIngestionRunIfIdle({
+    sourceType: "ocr_text",
+    sourceId: null,
     feed: null,
     trigger,
-    status: "running",
+    timeoutMinutes: env.INGESTION_RUN_TIMEOUT_MIN,
   });
+  if (!ingestionLease.created || !ingestionLease.run?.id) {
+    return { processed: 0, skipped: 0, failed: 0, skippedRun: true };
+  }
+  const ingestionRunId = ingestionLease.run.id;
+  if (ingestionLease.timed_out_run_id) {
+    logWarn("OCR ingest lease timed out prior run", {
+      timedOutRunId: ingestionLease.timed_out_run_id,
+    });
+  }
   const items = await listPendingIdeaMedia(limit);
   if (items.length === 0) {
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "succeeded",
       newCount: 0,
       updatedCount: 0,
@@ -46,7 +55,7 @@ export async function runOcrBatch(limit = 10, trigger: "manual" | "schedule" = "
         }),
       ),
     );
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "succeeded",
       newCount: 0,
       updatedCount: 0,
@@ -93,7 +102,7 @@ export async function runOcrBatch(limit = 10, trigger: "manual" | "schedule" = "
     logWarn("OCR data source status update failed", { error: String(error) });
   });
 
-  await completeIngestionRun(ingestionRun.id, {
+  await completeIngestionRun(ingestionRunId, {
     status: failed > 0 ? "failed" : "succeeded",
     newCount: processed,
     updatedCount: 0,

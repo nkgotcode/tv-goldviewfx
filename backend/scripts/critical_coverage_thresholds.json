@@ -1,0 +1,9 @@
+{
+  "files": [
+    { "path": "src/services/order_quantization.ts", "minLines": 85 },
+    { "path": "src/services/exchange_metadata_service.ts", "minLines": 60 },
+    { "path": "src/services/risk_limits_service.ts", "minLines": 55 },
+    { "path": "src/jobs/learning_updates.ts", "minLines": 28 },
+    { "path": "src/services/account_risk_service.ts", "minLines": 20 }
+  ]
+}

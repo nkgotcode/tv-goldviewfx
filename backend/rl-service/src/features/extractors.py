@@ -82,7 +82,7 @@ def extract_aux_features(
 
         last_ts = datetime.now(tz=timezone.utc)
     market = MarketSnapshot(
-        pair="Gold-USDT",
+        pair="XAUTUSDT",
         candles=[
             {
                 "timestamp": last_ts,

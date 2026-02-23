@@ -154,15 +154,16 @@ def run_evaluation(
     artifact_download_url: str | None = None,
     artifact_checksum: str | None = None,
     artifact_uri: str | None = None,
-    interval: str = "1m",
+    interval: str = "5m",
     window_size: int = 30,
     stride: int = 1,
-    decision_threshold: float = 0.2,
+    decision_threshold: float = 0.35,
     leverage: float = 1.0,
     taker_fee_bps: float = 4.0,
     slippage_bps: float = 1.0,
     funding_weight: float = 1.0,
     drawdown_penalty: float = 0.0,
+    instrument_meta: dict | None = None,
     feature_key_extras: list[str] | None = None,
     criteria: PromotionCriteria | None = None,
     walk_forward: WalkForwardConfig | None = None,
@@ -277,6 +278,7 @@ def run_evaluation(
                 model_path=handle.name,
                 window_size=window_size,
                 decision_threshold=decision_threshold,
+                instrument_meta=instrument_meta,
             )
             backtest_run_id = getattr(backtest_result, "run_id", None)
         except Exception as exc:
@@ -310,6 +312,7 @@ def run_evaluation(
                 "funding_weight": funding_weight,
                 "drawdown_penalty": drawdown_penalty,
             },
+            "instrument_meta": instrument_meta or {},
             "feature_key_extras": feature_key_extras or [],
         },
     )

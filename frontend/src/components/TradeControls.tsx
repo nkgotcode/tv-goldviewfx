@@ -147,7 +147,7 @@ export default function TradeControls() {
                   .filter(Boolean),
               })
             }
-            placeholder="Gold-USDT, BTC-USDT, ETH-USDT"
+            placeholder="XAUTUSDT, BTC-USDT, ETH-USDT"
           />
         </div>
         <div className="control-row">

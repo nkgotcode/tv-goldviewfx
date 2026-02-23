@@ -6,7 +6,7 @@ import { getOrCreateSource } from "../db/repositories/sources";
 import { createRevision } from "../db/repositories/idea_revisions";
 import { createSyncRun, completeSyncRun } from "../db/repositories/sync_runs";
 import { findIdeaByContentHash, findIdeaByExternalId, insertIdea, updateIdea } from "../db/repositories/ideas";
-import { createIngestionRun, completeIngestionRun } from "../db/repositories/ingestion_runs";
+import { startIngestionRunIfIdle, completeIngestionRun } from "../db/repositories/ingestion_runs";
 import { insertIdeaMedia } from "../db/repositories/idea_media";
 import { getIngestionConfig } from "../db/repositories/ingestion_configs";
 import { getDefaultThreshold, recordDataSourceStatus } from "./data_source_status_service";
@@ -79,14 +79,28 @@ export async function runTradingViewSync(options: {
   const config = await getIngestionConfig("tradingview", source.id, null);
   const rateLimit = config?.rate_limit_per_minute;
   const delayMs = rateLimit ? Math.max(env.SYNC_DELAY_MS, Math.ceil(60000 / rateLimit)) : env.SYNC_DELAY_MS;
-  const syncRun = await createSyncRun(source.id);
-  const ingestionRun = await createIngestionRun({
-    source_type: "tradingview",
-    source_id: source.id,
+  const ingestionLease = await startIngestionRunIfIdle({
+    sourceType: "tradingview",
+    sourceId: source.id,
     feed: null,
     trigger: options.trigger,
-    status: "running",
+    timeoutMinutes: env.INGESTION_RUN_TIMEOUT_MIN,
   });
+  if (!ingestionLease.created || !ingestionLease.run?.id) {
+    logInfo("TradingView sync lease unavailable", {
+      source: sourceIdentifier,
+      reason: ingestionLease.reason,
+    });
+    return { runId: null, newCount: 0, updatedCount: 0, errorCount: 0, skipped: true };
+  }
+  const ingestionRunId = ingestionLease.run.id;
+  if (ingestionLease.timed_out_run_id) {
+    logWarn("TradingView sync lease timed out prior run", {
+      source: sourceIdentifier,
+      timedOutRunId: ingestionLease.timed_out_run_id,
+    });
+  }
+  const syncRun = await createSyncRun(source.id);
   const recencyCutoff = getRecencyCutoffDays(env.TRADINGVIEW_RECENT_DAYS);
 
   let newCount = 0;
@@ -271,7 +285,7 @@ export async function runTradingViewSync(options: {
       missingFieldsCount: runQuality.missing_fields_count,
       parseConfidence: runQuality.parse_confidence,
     });
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "succeeded",
       newCount,
       updatedCount,
@@ -305,7 +319,7 @@ export async function runTradingViewSync(options: {
       errorCount,
       errorSummary: message,
     });
-    await completeIngestionRun(ingestionRun.id, {
+    await completeIngestionRun(ingestionRunId, {
       status: "failed",
       newCount,
       updatedCount,

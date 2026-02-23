@@ -11,7 +11,7 @@ import { runBingxMarketDataIngest } from "./bingx_market_data_ingest";
 import { runNewsIngest } from "./news_ingest";
 import { runOcrBatch } from "./ocr";
 import { recordOpsAudit } from "./ops_audit";
-import { runOnlineLearningCycle } from "./online_learning_service";
+import { runOnlineLearningBatch } from "./online_learning_service";
 
 type RetryJobPayload = Record<string, unknown>;
 
@@ -48,8 +48,10 @@ const handlers: Record<string, (payload: RetryJobPayload) => Promise<void>> = {
     const limit = payload.limit as number | undefined;
     await runOcrBatch(limit ?? 10);
   },
-  online_learning: async () => {
-    await runOnlineLearningCycle("retry");
+  online_learning: async (payload) => {
+    await runOnlineLearningBatch("retry", {
+      pairs: payload.pairs as string[] | undefined,
+    });
   },
 };
 
