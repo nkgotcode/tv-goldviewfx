@@ -2,7 +2,7 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "preserve",
-    "rootDir": "src",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "types": ["node"],
     "plugins": [{ "name": "next" }]
   },

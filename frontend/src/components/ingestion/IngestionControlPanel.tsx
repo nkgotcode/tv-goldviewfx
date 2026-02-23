@@ -43,11 +43,13 @@ export default function IngestionControlPanel({
 
   useEffect(() => {
     if (!status) return;
-    if (!tradingViewSourceId && status.tradingview.sources.length > 0) {
-      setTradingViewSourceId(status.tradingview.sources[0].id);
+    const firstTradingViewSource = status.tradingview.sources[0];
+    if (!tradingViewSourceId && firstTradingViewSource) {
+      setTradingViewSourceId(firstTradingViewSource.id);
     }
-    if (!telegramSourceId && status.telegram.sources.length > 0) {
-      setTelegramSourceId(status.telegram.sources[0].id);
+    const firstTelegramSource = status.telegram.sources[0];
+    if (!telegramSourceId && firstTelegramSource) {
+      setTelegramSourceId(firstTelegramSource.id);
     }
   }, [status, tradingViewSourceId, telegramSourceId]);
 

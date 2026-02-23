@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useList } from "@refinedev/core";
+import { useList, type CrudFilter } from "@refinedev/core";
 import Layout from "../../components/Layout";
 import HeroActions from "../../components/HeroActions";
 import IdeaTable from "../../components/IdeaTable";
@@ -15,6 +15,16 @@ function toIso(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
   return date.toISOString();
+}
+
+function buildEqFilters(entries: Array<{ field: string; value: string | undefined }>): CrudFilter[] {
+  return entries
+    .filter((entry) => entry.value !== undefined && entry.value !== "")
+    .map((entry) => ({
+      field: entry.field,
+      operator: "eq" as const,
+      value: entry.value,
+    }));
 }
 
 export default function LibraryPage() {
@@ -80,13 +90,13 @@ export default function LibraryPage() {
   };
 
   const ideaFilters = useMemo(() => {
-    return [
-      { field: "q", operator: "eq", value: ideaQuery || undefined },
-      { field: "sentiment", operator: "eq", value: ideaSentiment || undefined },
-      { field: "start", operator: "eq", value: toIso(ideaStart) },
-      { field: "end", operator: "eq", value: toIso(ideaEnd) },
-      { field: "include_duplicates", operator: "eq", value: ideaDuplicates ? "true" : undefined },
-    ];
+    return buildEqFilters([
+      { field: "q", value: ideaQuery || undefined },
+      { field: "sentiment", value: ideaSentiment || undefined },
+      { field: "start", value: toIso(ideaStart) },
+      { field: "end", value: toIso(ideaEnd) },
+      { field: "include_duplicates", value: ideaDuplicates ? "true" : undefined },
+    ]);
   }, [ideaQuery, ideaSentiment, ideaStart, ideaEnd, ideaDuplicates]);
 
   useEffect(() => {
@@ -94,13 +104,13 @@ export default function LibraryPage() {
   }, [ideaQuery, ideaSentiment, ideaStart, ideaEnd, ideaDuplicates]);
 
   const signalFilters = useMemo(() => {
-    return [
-      { field: "q", operator: "eq", value: signalQuery || undefined },
-      { field: "source", operator: "eq", value: signalSource || undefined },
-      { field: "min_confidence", operator: "eq", value: signalMinConfidence || undefined },
-      { field: "start", operator: "eq", value: toIso(signalStart) },
-      { field: "end", operator: "eq", value: toIso(signalEnd) },
-    ];
+    return buildEqFilters([
+      { field: "q", value: signalQuery || undefined },
+      { field: "source", value: signalSource || undefined },
+      { field: "min_confidence", value: signalMinConfidence || undefined },
+      { field: "start", value: toIso(signalStart) },
+      { field: "end", value: toIso(signalEnd) },
+    ]);
   }, [signalQuery, signalSource, signalMinConfidence, signalStart, signalEnd]);
 
   useEffect(() => {
@@ -108,14 +118,14 @@ export default function LibraryPage() {
   }, [signalQuery, signalSource, signalMinConfidence, signalStart, signalEnd]);
 
   const tradeFilters = useMemo(() => {
-    return [
-      { field: "status", operator: "eq", value: tradeStatus || undefined },
-      { field: "mode", operator: "eq", value: tradeMode || undefined },
-      { field: "side", operator: "eq", value: tradeSide || undefined },
-      { field: "instrument", operator: "eq", value: tradeInstrument || undefined },
-      { field: "start", operator: "eq", value: toIso(tradeStart) },
-      { field: "end", operator: "eq", value: toIso(tradeEnd) },
-    ];
+    return buildEqFilters([
+      { field: "status", value: tradeStatus || undefined },
+      { field: "mode", value: tradeMode || undefined },
+      { field: "side", value: tradeSide || undefined },
+      { field: "instrument", value: tradeInstrument || undefined },
+      { field: "start", value: toIso(tradeStart) },
+      { field: "end", value: toIso(tradeEnd) },
+    ]);
   }, [tradeStatus, tradeMode, tradeSide, tradeInstrument, tradeStart, tradeEnd]);
 
   useEffect(() => {
@@ -123,13 +133,13 @@ export default function LibraryPage() {
   }, [tradeStatus, tradeMode, tradeSide, tradeInstrument, tradeStart, tradeEnd]);
 
   const telegramFilters = useMemo(() => {
-    return [
-      { field: "q", operator: "eq", value: telegramQuery || undefined },
-      { field: "status", operator: "eq", value: telegramStatus || undefined },
-      { field: "start", operator: "eq", value: toIso(telegramStart) },
-      { field: "end", operator: "eq", value: toIso(telegramEnd) },
-      { field: "include_duplicates", operator: "eq", value: telegramDuplicates ? "true" : undefined },
-    ];
+    return buildEqFilters([
+      { field: "q", value: telegramQuery || undefined },
+      { field: "status", value: telegramStatus || undefined },
+      { field: "start", value: toIso(telegramStart) },
+      { field: "end", value: toIso(telegramEnd) },
+      { field: "include_duplicates", value: telegramDuplicates ? "true" : undefined },
+    ]);
   }, [telegramQuery, telegramStatus, telegramStart, telegramEnd, telegramDuplicates]);
 
   useEffect(() => {
@@ -247,7 +257,7 @@ export default function LibraryPage() {
               <input
                 id="idea-query"
                 value={ideaQuery}
-                onChange={(event) => setIdeaQuery(event.target.value)}
+                onChange={(event) => setIdeaQuery((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
                 placeholder="Search titles or content"
               />
             </div>
@@ -256,7 +266,7 @@ export default function LibraryPage() {
               <select
                 id="idea-sentiment"
                 value={ideaSentiment}
-                onChange={(event) => setIdeaSentiment(event.target.value)}
+                onChange={(event) => setIdeaSentiment((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               >
                 <option value="">All</option>
                 <option value="positive">Positive</option>
@@ -270,7 +280,7 @@ export default function LibraryPage() {
                 id="idea-start"
                 type="datetime-local"
                 value={ideaStart}
-                onChange={(event) => setIdeaStart(event.target.value)}
+                onChange={(event) => setIdeaStart((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
             <div className="filter-row">
@@ -279,14 +289,14 @@ export default function LibraryPage() {
                 id="idea-end"
                 type="datetime-local"
                 value={ideaEnd}
-                onChange={(event) => setIdeaEnd(event.target.value)}
+                onChange={(event) => setIdeaEnd((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
             <label className="inline-muted">
               <input
                 type="checkbox"
                 checked={ideaDuplicates}
-                onChange={(event) => setIdeaDuplicates(event.target.checked)}
+                onChange={(event) => setIdeaDuplicates((event.currentTarget as HTMLInputElement).checked)}
               />{" "}
               Include duplicates
             </label>
@@ -299,7 +309,7 @@ export default function LibraryPage() {
               <input
                 id="signal-query"
                 value={signalQuery}
-                onChange={(event) => setSignalQuery(event.target.value)}
+                onChange={(event) => setSignalQuery((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
                 placeholder="Search summaries"
               />
             </div>
@@ -308,7 +318,7 @@ export default function LibraryPage() {
               <select
                 id="signal-source"
                 value={signalSource}
-                onChange={(event) => setSignalSource(event.target.value)}
+                onChange={(event) => setSignalSource((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               >
                 <option value="">All</option>
                 <option value="tradingview">TradingView</option>
@@ -324,7 +334,7 @@ export default function LibraryPage() {
                 min="0"
                 max="1"
                 value={signalMinConfidence}
-                onChange={(event) => setSignalMinConfidence(event.target.value)}
+                onChange={(event) => setSignalMinConfidence((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
                 placeholder="0.0 - 1.0"
               />
             </div>
@@ -334,7 +344,7 @@ export default function LibraryPage() {
                 id="signal-start"
                 type="datetime-local"
                 value={signalStart}
-                onChange={(event) => setSignalStart(event.target.value)}
+                onChange={(event) => setSignalStart((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
             <div className="filter-row">
@@ -343,7 +353,7 @@ export default function LibraryPage() {
                 id="signal-end"
                 type="datetime-local"
                 value={signalEnd}
-                onChange={(event) => setSignalEnd(event.target.value)}
+                onChange={(event) => setSignalEnd((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
           </div>
@@ -355,7 +365,7 @@ export default function LibraryPage() {
               <select
                 id="trade-status"
                 value={tradeStatus}
-                onChange={(event) => setTradeStatus(event.target.value)}
+                onChange={(event) => setTradeStatus((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               >
                 <option value="">All</option>
                 <option value="proposed">Proposed</option>
@@ -370,7 +380,7 @@ export default function LibraryPage() {
               <select
                 id="trade-mode"
                 value={tradeMode}
-                onChange={(event) => setTradeMode(event.target.value)}
+                onChange={(event) => setTradeMode((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               >
                 <option value="">All</option>
                 <option value="paper">Paper</option>
@@ -382,7 +392,7 @@ export default function LibraryPage() {
               <select
                 id="trade-side"
                 value={tradeSide}
-                onChange={(event) => setTradeSide(event.target.value)}
+                onChange={(event) => setTradeSide((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               >
                 <option value="">All</option>
                 <option value="long">Long</option>
@@ -394,7 +404,7 @@ export default function LibraryPage() {
               <input
                 id="trade-instrument"
                 value={tradeInstrument}
-                onChange={(event) => setTradeInstrument(event.target.value)}
+                onChange={(event) => setTradeInstrument((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
                 placeholder="XAUTUSDT"
               />
             </div>
@@ -404,7 +414,7 @@ export default function LibraryPage() {
                 id="trade-start"
                 type="datetime-local"
                 value={tradeStart}
-                onChange={(event) => setTradeStart(event.target.value)}
+                onChange={(event) => setTradeStart((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
             <div className="filter-row">
@@ -413,7 +423,7 @@ export default function LibraryPage() {
                 id="trade-end"
                 type="datetime-local"
                 value={tradeEnd}
-                onChange={(event) => setTradeEnd(event.target.value)}
+                onChange={(event) => setTradeEnd((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
           </div>
@@ -425,7 +435,7 @@ export default function LibraryPage() {
               <input
                 id="telegram-query"
                 value={telegramQuery}
-                onChange={(event) => setTelegramQuery(event.target.value)}
+                onChange={(event) => setTelegramQuery((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
                 placeholder="Search posts"
               />
             </div>
@@ -434,7 +444,7 @@ export default function LibraryPage() {
               <select
                 id="telegram-status"
                 value={telegramStatus}
-                onChange={(event) => setTelegramStatus(event.target.value)}
+                onChange={(event) => setTelegramStatus((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               >
                 <option value="">All</option>
                 <option value="active">Active</option>
@@ -448,7 +458,7 @@ export default function LibraryPage() {
                 id="telegram-start"
                 type="datetime-local"
                 value={telegramStart}
-                onChange={(event) => setTelegramStart(event.target.value)}
+                onChange={(event) => setTelegramStart((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
             <div className="filter-row">
@@ -457,14 +467,14 @@ export default function LibraryPage() {
                 id="telegram-end"
                 type="datetime-local"
                 value={telegramEnd}
-                onChange={(event) => setTelegramEnd(event.target.value)}
+                onChange={(event) => setTelegramEnd((event.currentTarget as HTMLInputElement | HTMLSelectElement).value)}
               />
             </div>
             <label className="inline-muted">
               <input
                 type="checkbox"
                 checked={telegramDuplicates}
-                onChange={(event) => setTelegramDuplicates(event.target.checked)}
+                onChange={(event) => setTelegramDuplicates((event.currentTarget as HTMLInputElement).checked)}
               />{" "}
               Include duplicates
             </label>

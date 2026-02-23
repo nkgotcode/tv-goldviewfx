@@ -269,9 +269,12 @@ export default function MarketKlinePanel({
 
     const updateBounds = (data: ChartCandle[]) => {
       if (data.length === 0) return;
-      loadedBounds.earliest = loadedBounds.earliest === null ? data[0].timestamp : Math.min(loadedBounds.earliest, data[0].timestamp);
+      const first = data[0];
+      const last = data[data.length - 1];
+      if (!first || !last) return;
+      loadedBounds.earliest = loadedBounds.earliest === null ? first.timestamp : Math.min(loadedBounds.earliest, first.timestamp);
       loadedBounds.latest =
-        loadedBounds.latest === null ? data[data.length - 1].timestamp : Math.max(loadedBounds.latest, data[data.length - 1].timestamp);
+        loadedBounds.latest === null ? last.timestamp : Math.max(loadedBounds.latest, last.timestamp);
     };
 
     const handleDataLoad = async ({
@@ -316,7 +319,12 @@ export default function MarketKlinePanel({
           if (data.length > 0) {
             let requestCount = 0;
             let prependedBars = 0;
-            let anchor = data[0].timestamp;
+            const initialFirst = data[0];
+            if (!initialFirst) {
+              callback([], { backward: false, forward: false });
+              return;
+            }
+            let anchor = initialFirst.timestamp;
             while (
               !canceled &&
               requestCount < PRELOAD_HISTORY_REQUESTS &&
@@ -326,7 +334,9 @@ export default function MarketKlinePanel({
               const older = await fetchOlder(anchor);
               if (older.length === 0) break;
               data = [...older, ...data];
-              const nextAnchor = data[0].timestamp;
+              const nextFirst = data[0];
+              if (!nextFirst) break;
+              const nextAnchor = nextFirst.timestamp;
               if (nextAnchor >= anchor) break;
               anchor = nextAnchor;
               prependedBars += older.length;
@@ -338,7 +348,11 @@ export default function MarketKlinePanel({
           setInitCount(data.length);
           callback(data, { forward: true, backward: true });
           if (data.length > 0) {
-            await loadTradeOverlays(toIso(data[0].timestamp), toIso(data[data.length - 1].timestamp + intervalMs));
+            const first = data[0];
+            const last = data[data.length - 1];
+            if (first && last) {
+              await loadTradeOverlays(toIso(first.timestamp), toIso(last.timestamp + intervalMs));
+            }
           } else {
             setCounts((previous) => ({ ...previous, trades: 0 }));
           }
@@ -391,7 +405,7 @@ export default function MarketKlinePanel({
       }
 
       let inFlight = false;
-      liveTimerRef.current = window.setInterval(async () => {
+      liveTimerRef.current = setInterval(async () => {
         if (canceled || inFlight) return;
         inFlight = true;
         try {

@@ -63,11 +63,14 @@ function parseIntervalToMinutes(value: string) {
   const trimmed = value.trim();
   const match = trimmed.match(/^(\d+)(m|h|d)$/);
   if (!match) return null;
-  const amount = Number.parseInt(match[1], 10);
+  const amountRaw = match[1];
+  const unit = match[2];
+  if (!amountRaw || !unit) return null;
+  const amount = Number.parseInt(amountRaw, 10);
   if (!Number.isFinite(amount) || amount <= 0) return null;
-  if (match[2] === "m") return amount;
-  if (match[2] === "h") return amount * 60;
-  if (match[2] === "d") return amount * 24 * 60;
+  if (unit === "m") return amount;
+  if (unit === "h") return amount * 60;
+  if (unit === "d") return amount * 24 * 60;
   return null;
 }
 

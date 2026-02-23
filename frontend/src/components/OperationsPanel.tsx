@@ -85,8 +85,9 @@ export default function OperationsPanel() {
       failedSources,
       runningSources,
       pausedSources,
-      nextRunAt: Number.isFinite(nextRunAt) ? new Date(nextRunAt).toISOString() : null,
-      latestRunAt: Number.isFinite(latestRunAt) ? new Date(latestRunAt).toISOString() : null,
+      nextRunAt: typeof nextRunAt === "number" && Number.isFinite(nextRunAt) ? new Date(nextRunAt).toISOString() : null,
+      latestRunAt:
+        typeof latestRunAt === "number" && Number.isFinite(latestRunAt) ? new Date(latestRunAt).toISOString() : null,
     };
   }, [status, runs]);
 

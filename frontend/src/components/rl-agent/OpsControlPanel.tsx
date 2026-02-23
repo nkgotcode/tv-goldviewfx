@@ -43,18 +43,20 @@ export default function OpsControlPanel({
   const [error, setError] = useState<string | null>(null);
 
   const telegramSources = ingestionStatus?.telegram.sources ?? [];
+  const firstRiskLimit = riskLimits[0];
+  const firstTelegramSource = telegramSources[0];
 
   useEffect(() => {
-    if (!riskLimitId && riskLimits.length > 0) {
-      setRiskLimitId(riskLimits[0].id);
+    if (!riskLimitId && firstRiskLimit) {
+      setRiskLimitId(firstRiskLimit.id);
     }
-  }, [riskLimitId, riskLimits]);
+  }, [riskLimitId, firstRiskLimit]);
 
   useEffect(() => {
-    if (!telegramSourceId && telegramSources.length > 0) {
-      setTelegramSourceId(telegramSources[0].id);
+    if (!telegramSourceId && firstTelegramSource) {
+      setTelegramSourceId(firstTelegramSource.id);
     }
-  }, [telegramSourceId, telegramSources]);
+  }, [telegramSourceId, firstTelegramSource]);
 
   const activeRun = agentStatus?.currentRun ?? null;
 

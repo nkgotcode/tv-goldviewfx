@@ -54,6 +54,7 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dataProvider: DataProvider = {
+  getApiUrl: () => getApiBaseUrl(),
   getList: async ({ resource, filters, pagination }) => {
     const path = resourcePaths[resource];
     if (!path) {

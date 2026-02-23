@@ -2,6 +2,7 @@ import { loadEnv } from "../config/env";
 import { loadRlServiceConfig } from "../config/rl_service";
 import { resolveSupportedPair } from "../config/market_catalog";
 import { listAgentRuns, updateAgentRun } from "../db/repositories/agent_runs";
+import { insertLearningUpdate } from "../db/repositories/learning_updates";
 import type { TradingPair } from "../types/rl";
 import { runLearningUpdateFromReport, type PromotionGates, type RolloutPolicy } from "../jobs/learning_updates";
 import { getLatestPromotedVersion } from "./agent_version_service";
@@ -129,6 +130,7 @@ export async function runOnlineLearningCycleForPair(
   trigger: OnlineLearningTrigger = "schedule",
   overrides?: Omit<OnlineLearningRunOverrides, "pair" | "pairs">,
 ): Promise<OnlineLearningResult> {
+  const cycleStartedAt = new Date().toISOString();
   const env = loadEnv();
   if (!env.RL_ONLINE_LEARNING_ENABLED) {
     return { status: "skipped", reason: "disabled" };
@@ -200,24 +202,41 @@ export async function runOnlineLearningCycleForPair(
     throw new Error("Online learning training did not return an agent version id");
   }
 
-  const report = await runEvaluation({
-    pair,
-    periodStart: evalStart.toISOString(),
-    periodEnd: evalEnd.toISOString(),
-    interval,
-    contextIntervals,
-    agentVersionId: trainedVersionId,
-    windowSize,
-    stride,
-    decisionThreshold,
-    walkForward: {
-      folds: 4,
-      purgeBars: 1,
-      embargoBars: 1,
-      minTrainBars: Math.max(windowSize * 2, 60),
-      strict: true,
-    },
-  });
+  let report: Awaited<ReturnType<typeof runEvaluation>>;
+  try {
+    report = await runEvaluation({
+      pair,
+      periodStart: evalStart.toISOString(),
+      periodEnd: evalEnd.toISOString(),
+      interval,
+      contextIntervals,
+      agentVersionId: trainedVersionId,
+      windowSize,
+      stride,
+      decisionThreshold,
+      walkForward: {
+        folds: 4,
+        purgeBars: 1,
+        embargoBars: 1,
+        minTrainBars: Math.max(windowSize * 2, 60),
+        strict: true,
+      },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    await insertLearningUpdate({
+      agent_version_id: trainedVersionId,
+      window_start: evalStart.toISOString(),
+      window_end: evalEnd.toISOString(),
+      status: "failed",
+      started_at: cycleStartedAt,
+      completed_at: new Date().toISOString(),
+      promoted: false,
+      decision_reasons: [`evaluation_error:${reason}`],
+      metric_deltas: {},
+    });
+    throw error;
+  }
 
   let championReport: Awaited<ReturnType<typeof runEvaluation>> | null = null;
   if (previousPromoted?.id && previousPromoted.id !== trainedVersionId) {

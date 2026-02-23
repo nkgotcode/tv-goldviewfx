@@ -237,7 +237,7 @@ export async function runLearningUpdate(input: LearningUpdateInput) {
     await rollbackAgentVersion(input.rollbackVersionId);
   }
 
-  const status = rolloutDecision.promoted ? "succeeded" : "failed";
+  const status = "succeeded";
   const updated = await updateLearningUpdate(update.id, {
     status,
     completed_at: new Date().toISOString(),
@@ -342,7 +342,7 @@ export async function runLearningUpdateFromReport(input: {
     await rollbackAgentVersion(input.rollbackVersionId);
   }
 
-  const status = rolloutDecision.promoted ? "succeeded" : "failed";
+  const status = "succeeded";
   const updated = await updateLearningUpdate(update.id, {
     status,
     completed_at: new Date().toISOString(),
