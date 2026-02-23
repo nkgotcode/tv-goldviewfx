@@ -59,20 +59,30 @@ opsIngestionRoutes.get("/runs", async (c) => {
   const sourceType = c.req.query("source_type");
   const sourceId = c.req.query("source_id");
   const feed = c.req.query("feed");
+  const status = c.req.query("status");
+  const search = c.req.query("search");
   const page = Number.parseInt(c.req.query("page") ?? "1", 10);
   const pageSize = Number.parseInt(c.req.query("page_size") ?? "25", 10);
+  const scanLimit = Number.parseInt(c.req.query("scan_limit") ?? "5000", 10);
   try {
     const result = await listIngestionRuns({
       sourceType: sourceType ?? undefined,
       sourceId: sourceId ? sourceId : undefined,
       feed: feed ?? undefined,
+      status: status ?? undefined,
+      search: search ?? undefined,
       page,
       pageSize,
+      scanLimit: Number.isFinite(scanLimit) ? Math.max(100, Math.min(scanLimit, 10000)) : 5000,
     });
-    return c.json(result);
+    return c.json({
+      data: result.data,
+      total: result.total,
+      scan: result.scan ?? null,
+    });
   } catch (error) {
     logWarn("Failed to load ingestion runs", { error: String(error) });
-    return c.json({ data: [], total: 0 });
+    return c.json({ data: [], total: 0, scan: null });
   }
 });
 

@@ -134,6 +134,11 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function canonicalPair(value: unknown) {
   if (typeof value !== "string") return null;
   return resolveSupportedPair(value) ?? value;
@@ -181,7 +186,15 @@ async function loadRlServiceHealthSnapshot(mock: boolean): Promise<RlServiceHeal
 
 function formatEvaluation(report: any) {
   if (!report) return null;
-  const metadata = (report.metadata ?? {}) as Record<string, unknown>;
+  const metadata = asRecord(report.metadata);
+  const foldMetrics = (metadata?.fold_metrics ?? metadata?.foldMetrics ?? []) as unknown[];
+  const aggregate = (metadata?.aggregate ?? null) as Record<string, unknown> | null;
+  const featureSchemaFingerprint = (metadata?.feature_schema_fingerprint ??
+    metadata?.featureSchemaFingerprint ??
+    null) as string | null;
+  const promotionComparison = (metadata?.promotion_comparison ??
+    metadata?.promotionComparison ??
+    null) as Record<string, unknown> | null;
   return {
     id: report.id,
     agentVersionId: report.agent_version_id,
@@ -195,16 +208,18 @@ function formatEvaluation(report: any) {
     backtestRunId: report.backtest_run_id ?? null,
     status: report.status,
     createdAt: report.created_at ?? null,
-    metadata: {
-      foldMetrics: (metadata.fold_metrics ?? metadata.foldMetrics ?? []) as unknown[],
-      aggregate: (metadata.aggregate ?? null) as Record<string, unknown> | null,
-      featureSchemaFingerprint: (metadata.feature_schema_fingerprint ??
-        metadata.featureSchemaFingerprint ??
-        null) as string | null,
-      promotionComparison: (metadata.promotion_comparison ??
-        metadata.promotionComparison ??
-        null) as Record<string, unknown> | null,
-    },
+    metadata: metadata
+      ? {
+          ...metadata,
+          fold_metrics: foldMetrics,
+          foldMetrics,
+          aggregate,
+          feature_schema_fingerprint: featureSchemaFingerprint,
+          featureSchemaFingerprint,
+          promotion_comparison: promotionComparison,
+          promotionComparison,
+        }
+      : null,
   };
 }
 

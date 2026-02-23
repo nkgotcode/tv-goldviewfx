@@ -66,10 +66,13 @@ export async function updateDataSourceConfig(payload: DataSourceConfigPayload) {
   });
 }
 
-export async function fetchDataSourceRuns(params?: { sourceType?: string; pair?: string }) {
+export async function fetchDataSourceRuns(params?: { sourceType?: string; pair?: string; limit?: number }) {
   const query = new URLSearchParams();
   if (params?.sourceType) query.set("sourceType", params.sourceType);
   if (params?.pair) query.set("pair", params.pair);
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    query.set("limit", String(Math.max(1, Math.min(Math.trunc(params.limit), 500))));
+  }
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return fetchJson<DataSourceRun[]>(`/data-sources/runs${suffix}`);
 }

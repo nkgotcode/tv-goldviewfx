@@ -77,6 +77,8 @@ dataSourcesRoutes.patch("/config", requireOperatorRole, validateJson(dataSourceC
 
 dataSourcesRoutes.get("/runs", async (c) => {
   const sourceType = c.req.query("sourceType") ?? undefined;
+  const limitRaw = Number.parseInt(c.req.query("limit") ?? "50", 10);
+  const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 500));
   const defaultPair = getSupportedPairs()[0] ?? "XAUTUSDT";
   const pair = (c.req.query("pair") as z.infer<typeof tradingPairSchema> | undefined) ?? defaultPair;
   const runs = await listSyncRuns();
@@ -106,7 +108,7 @@ dataSourcesRoutes.get("/runs", async (c) => {
   );
 
   const filtered = sourceType ? enriched.filter((run) => run.sourceType === sourceType) : enriched;
-  return c.json(filtered);
+  return c.json(filtered.slice(0, limit));
 });
 
 dataSourcesRoutes.post("/backfill", requireOperatorRole, validateJson(dataSourceBackfillSchema), async (c) => {

@@ -1431,6 +1431,27 @@ button.ghost:hover {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.ops-control-strip {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-bottom: 14px;
+}
+
+.ops-control-strip .panel {
+  gap: 8px;
+}
+
+.ops-control-strip .panel strong {
+  font-size: 1.08rem;
+}
+
+.ops-control-actions {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
 .panel {
   background: var(--panel-bg);
   border: 1px solid var(--border);

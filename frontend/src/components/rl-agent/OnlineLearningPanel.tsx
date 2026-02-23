@@ -803,7 +803,7 @@ export default function OnlineLearningPanel({
                 </div>
                 {selectedUpdate.evaluationReport && !hasExecutionMetadata(selectedUpdate.evaluationReport) ? (
                   <div className="empty">
-                    Some steps are marked partial because execution telemetry was not fully recorded for this run.
+                    Some steps show telemetry-missing because this run did not persist full execution metadata.
                   </div>
                 ) : null}
                 {selectedUpdate.evaluationReport ? (

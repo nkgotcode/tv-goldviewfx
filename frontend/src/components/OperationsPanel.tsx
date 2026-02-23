@@ -18,9 +18,18 @@ function formatDate(value?: string | null) {
 export default function OperationsPanel() {
   const [status, setStatus] = useState<OpsIngestionStatusResponse | null>(null);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
+  const [runsTotal, setRunsTotal] = useState(0);
+  const [runsScanTruncated, setRunsScanTruncated] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [runsPage, setRunsPage] = useState(1);
+  const [runsPageSize, setRunsPageSize] = useState(50);
+  const [runsSearchInput, setRunsSearchInput] = useState("");
+  const [runsSearch, setRunsSearch] = useState("");
+  const [runsSourceFilter, setRunsSourceFilter] = useState("");
+  const [runsStatusFilter, setRunsStatusFilter] = useState("");
+  const [runsRefreshNonce, setRunsRefreshNonce] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -46,8 +55,18 @@ export default function OperationsPanel() {
     let mounted = true;
     const loadRuns = async () => {
       try {
-        const payload = await fetchOpsIngestionRuns();
-        if (mounted) setRuns(payload.data ?? []);
+        const payload = await fetchOpsIngestionRuns({
+          page: runsPage,
+          page_size: runsPageSize,
+          search: runsSearch || undefined,
+          source_type: runsSourceFilter || undefined,
+          status: runsStatusFilter || undefined,
+          scan_limit: 10000,
+        });
+        if (!mounted) return;
+        setRuns(payload.data ?? []);
+        setRunsTotal(payload.total ?? 0);
+        setRunsScanTruncated(Boolean(payload.scan?.truncated));
       } catch (err) {
         if (mounted) {
           setError(err instanceof Error ? err.message : "Unable to load ingestion runs.");
@@ -60,7 +79,15 @@ export default function OperationsPanel() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [runsPage, runsPageSize, runsSearch, runsSourceFilter, runsStatusFilter, runsRefreshNonce]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setRunsPage(1);
+      setRunsSearch(runsSearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [runsSearchInput]);
 
   const summary = useMemo(() => {
     const sources = status?.sources ?? [];
@@ -129,7 +156,40 @@ export default function OperationsPanel() {
         </div>
       </div>
       <div className="ops-wide">
-        <IngestionRunsTable runs={runs} loading={loadingRuns} />
+        <IngestionRunsTable
+          runs={runs}
+          loading={loadingRuns}
+          total={runsTotal}
+          page={runsPage}
+          pageSize={runsPageSize}
+          search={runsSearchInput}
+          sourceType={runsSourceFilter}
+          status={runsStatusFilter}
+          scanTruncated={runsScanTruncated}
+          onPageChange={setRunsPage}
+          onPageSizeChange={(nextPageSize) => {
+            setRunsPageSize(nextPageSize);
+            setRunsPage(1);
+          }}
+          onSearchChange={setRunsSearchInput}
+          onSourceTypeChange={(value) => {
+            setRunsSourceFilter(value);
+            setRunsPage(1);
+          }}
+          onStatusChange={(value) => {
+            setRunsStatusFilter(value);
+            setRunsPage(1);
+          }}
+          onRefresh={() => setRunsRefreshNonce((value) => value + 1)}
+          onResetFilters={() => {
+            setRunsSearchInput("");
+            setRunsSearch("");
+            setRunsSourceFilter("");
+            setRunsStatusFilter("");
+            setRunsPage(1);
+            setRunsPageSize(50);
+          }}
+        />
       </div>
     </section>
   );

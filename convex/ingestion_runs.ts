@@ -14,14 +14,19 @@ async function collectRuns(
     source_type?: string;
     source_id?: string | null;
     feed?: string | null;
+    status?: string;
+    search?: string;
+    scan_limit?: number;
   },
   takeCount: number,
 ) {
   const requestedCount = Math.max(1, takeCount);
+  const scanLimit = Math.min(10000, Math.max(100, args.scan_limit ?? 5000));
+  const hasClientFilters = args.feed !== undefined || typeof args.status === "string" || Boolean(args.search?.trim());
   const scanCount =
-    args.feed !== undefined
-      ? Math.min(1000, Math.max(requestedCount * 25, 100))
-      : requestedCount;
+    hasClientFilters
+      ? Math.min(scanLimit, Math.max(requestedCount * 25, 250))
+      : Math.min(scanLimit, requestedCount);
 
   let queryBuilder;
   if (args.source_type && args.source_id !== undefined) {
@@ -41,6 +46,27 @@ async function collectRuns(
   let docs = (await queryBuilder.order("desc").take(scanCount)) as Array<Record<string, unknown>>;
   if (args.feed !== undefined) {
     docs = docs.filter((doc) => (args.feed === null ? doc.feed == null : doc.feed === args.feed));
+  }
+  if (typeof args.status === "string" && args.status.trim()) {
+    docs = docs.filter((doc) => doc.status === args.status);
+  }
+  const search = (args.search ?? "").trim().toLowerCase();
+  if (search) {
+    docs = docs.filter((doc) => {
+      const haystack = [
+        doc.id,
+        doc.source_type,
+        doc.source_id,
+        doc.feed,
+        doc.trigger,
+        doc.status,
+        doc.error_summary,
+      ]
+        .map((value) => (typeof value === "string" ? value : value == null ? "" : String(value)))
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
   }
   return docs.slice(0, requestedCount);
 }
@@ -223,17 +249,27 @@ export const list = query({
     source_type: v.optional(v.string()),
     source_id: nullableString,
     feed: nullableString,
+    status: v.optional(v.string()),
+    search: v.optional(v.string()),
     page: v.optional(v.number()),
     page_size: v.optional(v.number()),
+    scan_limit: v.optional(v.number()),
   },
   handler: async ({ db }, args) => {
     const page = Math.max(1, args.page ?? 1);
     const pageSize = Math.min(250, Math.max(1, args.page_size ?? 25));
     const from = Math.max(0, (page - 1) * pageSize);
     const to = from + pageSize - 1;
-    const docs = await collectRuns(db, args, to + 1);
+    const docs = await collectRuns(db, args, Math.max(to + 1, args.scan_limit ?? 5000));
     const windowed = docs.slice(from, to + 1).map(stripMetadata);
-    return { data: windowed, count: null };
+    return {
+      data: windowed,
+      count: docs.length,
+      scan: {
+        limit: Math.min(10000, Math.max(100, args.scan_limit ?? 5000)),
+        truncated: docs.length >= Math.min(10000, Math.max(100, args.scan_limit ?? 5000)),
+      },
+    };
   },
 });
 

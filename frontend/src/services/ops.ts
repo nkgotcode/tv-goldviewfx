@@ -53,6 +53,15 @@ export type IngestionRun = {
   parse_confidence?: number | null;
 };
 
+export type IngestionRunsResponse = {
+  data: IngestionRun[];
+  total: number;
+  scan?: {
+    limit: number;
+    truncated: boolean;
+  } | null;
+};
+
 export type OpsAuditEvent = {
   id: string;
   actor: string;
@@ -128,13 +137,27 @@ export async function fetchOpsIngestionStatus() {
   return fetchOpsJson<OpsIngestionStatusResponse>("/ops/ingestion/status");
 }
 
-export async function fetchOpsIngestionRuns(params?: { source_type?: string; source_id?: string; feed?: string }) {
+export async function fetchOpsIngestionRuns(params?: {
+  source_type?: string;
+  source_id?: string;
+  feed?: string;
+  status?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+  scan_limit?: number;
+}) {
   const query = new URLSearchParams();
   if (params?.source_type) query.set("source_type", params.source_type);
   if (params?.source_id) query.set("source_id", params.source_id);
   if (params?.feed) query.set("feed", params.feed);
+  if (params?.status) query.set("status", params.status);
+  if (params?.search) query.set("search", params.search);
+  if (typeof params?.page === "number") query.set("page", String(Math.max(1, Math.trunc(params.page))));
+  if (typeof params?.page_size === "number") query.set("page_size", String(Math.max(1, Math.trunc(params.page_size))));
+  if (typeof params?.scan_limit === "number") query.set("scan_limit", String(Math.max(100, Math.trunc(params.scan_limit))));
   const queryString = query.toString();
-  return fetchOpsJson<{ data: IngestionRun[]; total: number }>(
+  return fetchOpsJson<IngestionRunsResponse>(
     queryString ? `/ops/ingestion/runs?${queryString}` : "/ops/ingestion/runs",
   );
 }

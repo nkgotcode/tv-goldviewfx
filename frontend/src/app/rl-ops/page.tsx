@@ -6,7 +6,6 @@ import OpsControlPanel from "../../components/rl-agent/OpsControlPanel";
 import DataSourceRunsTable from "../../components/rl-agent/DataSourceRunsTable";
 import BackfillForm from "../../components/rl-agent/BackfillForm";
 import OnlineLearningPanel from "../../components/rl-agent/OnlineLearningPanel";
-import NautilusBacktestStatusPanel from "../../components/rl-agent/NautilusBacktestStatusPanel";
 import { ALL_PAIRS } from "../../config/marketCatalog";
 import {
   fetchAgentStatus,
@@ -48,7 +47,7 @@ export default function RlOpsPage() {
         fetchAgentStatus(),
         listRiskLimitSets(),
         fetchOpsIngestionStatus(),
-        fetchDataSourceRuns(),
+        fetchDataSourceRuns({ limit: 50 }),
         fetchOnlineLearningStatus(),
       ]);
       setAgentStatus(agent);
@@ -96,12 +95,6 @@ export default function RlOpsPage() {
 
       {error ? <div className="empty">{error}</div> : null}
 
-      <NautilusBacktestStatusPanel
-        status={learningStatus}
-        title="Is learning actually running?"
-        description="This panel answers the core operational questions: learning cadence, RL service health, Nautilus availability, strict backtest mode, and the latest recorded backtest id."
-      />
-
       <section className="summary-grid">
         <div className="summary-card" data-tone="ember">
           <span>Agent Status</span>
@@ -132,7 +125,13 @@ export default function RlOpsPage() {
       </section>
 
       <section className="rl-grid">
-        <OpsControlPanel agentStatus={agentStatus} riskLimits={riskLimits} ingestionStatus={ingestionStatus} onUpdated={refresh} />
+        <OpsControlPanel
+          agentStatus={agentStatus}
+          riskLimits={riskLimits}
+          ingestionStatus={ingestionStatus}
+          learningStatus={learningStatus}
+          onUpdated={refresh}
+        />
         <DataSourceRunsTable runs={runs} />
       </section>
 

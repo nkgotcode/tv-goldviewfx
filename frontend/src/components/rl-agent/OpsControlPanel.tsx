@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { ALL_PAIRS } from "../../config/marketCatalog";
 import type { AgentStatus, RiskLimitSet } from "../../services/rl_agent";
 import type { IngestionStatus } from "../../services/ingestion";
+import type { OnlineLearningStatus } from "../../services/rl_ops";
 import {
   pauseAgentRun,
   resumeAgentRun,
@@ -22,15 +24,30 @@ function formatTimestamp(value?: string | null) {
   return date.toLocaleString();
 }
 
+function asBooleanLabel(value: boolean | undefined) {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "unknown";
+}
+
+function healthTone(status: "ok" | "error" | "unavailable" | undefined) {
+  if (status === "ok") return "status-ok";
+  if (status === "error") return "status-bad";
+  if (status === "unavailable") return "status-warn";
+  return "status-muted";
+}
+
 export default function OpsControlPanel({
   agentStatus,
   riskLimits,
   ingestionStatus,
+  learningStatus,
   onUpdated,
 }: {
   agentStatus: AgentStatus | null;
   riskLimits: RiskLimitSet[];
   ingestionStatus: IngestionStatus | null;
+  learningStatus: OnlineLearningStatus | null;
   onUpdated: () => Promise<void>;
 }) {
   const [pair, setPair] = useState<string>(ALL_PAIRS[0] ?? "XAUTUSDT");
@@ -59,6 +76,12 @@ export default function OpsControlPanel({
   }, [telegramSourceId, firstTelegramSource]);
 
   const activeRun = agentStatus?.currentRun ?? null;
+  const learningHealth = learningStatus?.rlService?.health ?? null;
+  const latestLearningUpdate = learningStatus?.latestUpdates?.[0] ?? null;
+  const latestBacktestRunId =
+    learningStatus?.latestReport?.backtestRunId ??
+    latestLearningUpdate?.evaluationReport?.backtestRunId ??
+    null;
 
   const handleStart = async () => {
     if (!riskLimitId) {
@@ -180,115 +203,167 @@ export default function OpsControlPanel({
 
   return (
     <section className="table-card">
-      <h3>Ops Control Panel</h3>
-      <p>Manage trading runs alongside ingestion controls for TradingView, Telegram, and BingX.</p>
+      <div className="section-head">
+        <div>
+          <span>Ops Control</span>
+          <h3>Run + backtest + ingestion controls</h3>
+          <p>One horizontal command strip for run controls, Nautilus health, and ingestion operations.</p>
+        </div>
+        <div className="action-row">
+          <Link href="/rl-evaluations" className="text-link">
+            Open evaluation timeline -&gt;
+          </Link>
+          <Link href="/ops#ingestion-run-history" className="text-link">
+            Open full ingestion run history -&gt;
+          </Link>
+        </div>
+      </div>
 
       {error ? <div className="empty">{error}</div> : null}
 
-      <div className="panel-grid">
-        <div className="panel">
+      <div className="ops-control-strip">
+        <div className="panel" data-tone="ember">
+          <h5>Agent run</h5>
+          <strong>{activeRun?.status ?? "idle"}</strong>
+          <div className="inline-muted">Mode {activeRun?.mode ?? "paper"} · Pair {activeRun?.pair ?? pair}</div>
+          <div className="inline-muted">Gate {agentStatus?.promotionGateStatus ?? "unknown"}</div>
+        </div>
+        <div className="panel" data-tone="teal">
+          <h5>Learning cadence</h5>
+          <strong>{learningStatus?.config?.enabled ? "enabled" : "disabled"}</strong>
+          <div className="inline-muted">
+            Every {learningStatus?.config?.intervalMin ?? "—"} min · Candle {learningStatus?.config?.interval ?? "—"}
+          </div>
+          <div className="inline-muted">
+            Last update {latestLearningUpdate?.status ?? "none"} · {formatTimestamp(latestLearningUpdate?.completedAt)}
+          </div>
+        </div>
+        <div className="panel" data-tone="slate">
+          <h5>RL service</h5>
+          <strong>{learningHealth?.status ?? "unknown"}</strong>
+          <div className="inline-muted">
+            <span className={`status-pill ${healthTone(learningHealth?.status)}`}>{learningHealth?.status ?? "not checked"}</span>
+          </div>
+          <div className="inline-muted">Checked {formatTimestamp(learningHealth?.checkedAt ?? null)}</div>
+        </div>
+        <div className="panel" data-tone="clay">
+          <h5>Nautilus backtest</h5>
+          <strong>{asBooleanLabel(learningHealth?.mlDependencies?.nautilus_trader)}</strong>
+          <div className="inline-muted">Strict backtest {asBooleanLabel(learningHealth?.strictBacktest)}</div>
+          <div className="inline-muted mono">{latestBacktestRunId ?? "backtest id not recorded"}</div>
+        </div>
+        <div className="panel" data-tone="slate">
           <h5>TradingView</h5>
-          <div className="inline-muted">State: {ingestionStatus?.tradingview.overall_status ?? "unknown"}</div>
-          <div className="inline-muted">Last run: {formatTimestamp(ingestionStatus?.tradingview.last_run?.finished_at ?? null)}</div>
+          <div className="inline-muted">State {ingestionStatus?.tradingview.overall_status ?? "unknown"}</div>
+          <div className="inline-muted">Last run {formatTimestamp(ingestionStatus?.tradingview.last_run?.finished_at ?? null)}</div>
         </div>
+        <div className="panel" data-tone="teal">
+          <h5>Telegram + BingX</h5>
+          <div className="inline-muted">Telegram {ingestionStatus?.telegram.overall_status ?? "unknown"}</div>
+          <div className="inline-muted">BingX {ingestionStatus?.bingx.overall_status ?? "unknown"}</div>
+          <div className="inline-muted">BingX update {formatTimestamp(ingestionStatus?.bingx.last_updated_at ?? null)}</div>
+        </div>
+      </div>
+
+      <div className="ops-control-actions">
         <div className="panel">
-          <h5>Telegram</h5>
-          <div className="inline-muted">State: {ingestionStatus?.telegram.overall_status ?? "unknown"}</div>
-          <div className="inline-muted">Last run: {formatTimestamp(ingestionStatus?.telegram.last_run?.finished_at ?? null)}</div>
+          <h5>Trading run actions</h5>
+          <div className="form-grid">
+            <label>
+              Pair
+              <select value={pair} onChange={(event) => setPair(event.target.value as typeof pair)}>
+                {ALL_PAIRS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Mode
+              <select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}>
+                <option value="paper">Paper</option>
+                <option value="live">Live</option>
+              </select>
+            </label>
+            <label>
+              Risk limits
+              <select value={riskLimitId} onChange={(event) => setRiskLimitId(event.target.value)}>
+                {riskLimits.map((limit) => (
+                  <option key={limit.id} value={limit.id}>
+                    {limit.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Learning window (min)
+              <input type="number" value={learningWindow} onChange={(event) => setLearningWindow(event.target.value)} />
+            </label>
+            <label className="toggle-row">
+              <span>Learning enabled</span>
+              <input
+                type="checkbox"
+                checked={learningEnabled}
+                onChange={(event) => setLearningEnabled(event.target.checked)}
+              />
+            </label>
+          </div>
+          <div className="action-row">
+            <button type="button" onClick={handleStart} disabled={actionLoading}>
+              Start run
+            </button>
+            <button type="button" className="secondary" onClick={handlePause} disabled={actionLoading || activeRun?.status !== "running"}>
+              Pause
+            </button>
+            <button type="button" className="secondary" onClick={handleResume} disabled={actionLoading || activeRun?.status !== "paused"}>
+              Resume
+            </button>
+            <button type="button" className="ghost" onClick={handleStop} disabled={actionLoading || !activeRun}>
+              Stop
+            </button>
+          </div>
         </div>
+
         <div className="panel">
-          <h5>BingX</h5>
-          <div className="inline-muted">State: {ingestionStatus?.bingx.overall_status ?? "unknown"}</div>
-          <div className="inline-muted">Last update: {formatTimestamp(ingestionStatus?.bingx.last_updated_at ?? null)}</div>
+          <h5>Ingestion actions</h5>
+          <div className="form-grid">
+            <label>
+              Telegram source
+              <select value={telegramSourceId} onChange={(event) => setTelegramSourceId(event.target.value)}>
+                {telegramSources.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {source.display_name ?? source.identifier}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              BingX pair target
+              <select value={pair} onChange={(event) => setPair(event.target.value as typeof pair)}>
+                {ALL_PAIRS.map((option) => (
+                  <option key={`ingest-pair-${option}`} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="action-row">
+            <button type="button" onClick={handleTradingViewSync} disabled={actionLoading}>
+              Sync TradingView
+            </button>
+            <button type="button" className="secondary" onClick={handleTelegramIngest} disabled={actionLoading}>
+              Ingest Telegram
+            </button>
+            <button type="button" className="secondary" onClick={handleBingxRefresh} disabled={actionLoading}>
+              Refresh BingX
+            </button>
+            <button type="button" className="ghost" onClick={handleBingxBackfill} disabled={actionLoading}>
+              Backfill BingX
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div className="form-grid">
-        <label>
-          Pair
-          <select value={pair} onChange={(event) => setPair(event.target.value as typeof pair)}>
-            {ALL_PAIRS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Mode
-          <select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}>
-            <option value="paper">Paper</option>
-            <option value="live">Live</option>
-          </select>
-        </label>
-        <label>
-          Risk Limits
-          <select value={riskLimitId} onChange={(event) => setRiskLimitId(event.target.value)}>
-            {riskLimits.map((limit) => (
-              <option key={limit.id} value={limit.id}>
-                {limit.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Learning Window (min)
-          <input
-            type="number"
-            value={learningWindow}
-            onChange={(event) => setLearningWindow(event.target.value)}
-          />
-        </label>
-        <label className="toggle-row">
-          <span>Learning Enabled</span>
-          <input
-            type="checkbox"
-            checked={learningEnabled}
-            onChange={(event) => setLearningEnabled(event.target.checked)}
-          />
-        </label>
-        <label>
-          Telegram Source
-          <select value={telegramSourceId} onChange={(event) => setTelegramSourceId(event.target.value)}>
-            {telegramSources.map((source) => (
-              <option key={source.id} value={source.id}>
-                {source.display_name ?? source.identifier}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <h5>Trading Run Actions</h5>
-      <div className="action-row">
-        <button type="button" onClick={handleStart} disabled={actionLoading}>
-          Start Run
-        </button>
-        <button type="button" className="secondary" onClick={handlePause} disabled={actionLoading || activeRun?.status !== "running"}>
-          Pause
-        </button>
-        <button type="button" className="secondary" onClick={handleResume} disabled={actionLoading || activeRun?.status !== "paused"}>
-          Resume
-        </button>
-        <button type="button" className="ghost" onClick={handleStop} disabled={actionLoading || !activeRun}>
-          Stop
-        </button>
-      </div>
-
-      <h5>Ingestion Actions</h5>
-      <div className="action-row">
-        <button type="button" onClick={handleTradingViewSync} disabled={actionLoading}>
-          Sync TradingView
-        </button>
-        <button type="button" className="secondary" onClick={handleTelegramIngest} disabled={actionLoading}>
-          Ingest Telegram
-        </button>
-        <button type="button" className="secondary" onClick={handleBingxRefresh} disabled={actionLoading}>
-          Refresh BingX
-        </button>
-        <button type="button" className="ghost" onClick={handleBingxBackfill} disabled={actionLoading}>
-          Backfill BingX
-        </button>
       </div>
     </section>
   );

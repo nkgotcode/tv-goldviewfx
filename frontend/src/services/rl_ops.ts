@@ -173,28 +173,7 @@ export type OnlineLearningReport = {
   backtestRunId?: string | null;
   status: "pass" | "fail";
   createdAt?: string | null;
-  metadata?: {
-    foldMetrics?: Array<{
-      fold: number;
-      start: string;
-      end: string;
-      winRate: number;
-      netPnlAfterFees: number;
-      maxDrawdown: number;
-      tradeCount: number;
-      status: "pass" | "fail";
-    }>;
-    aggregate?: {
-      folds: number;
-      passRate: number;
-      winRateAvg: number;
-      netPnlAfterFeesTotal: number;
-      maxDrawdownWorst: number;
-      tradeCountTotal: number;
-    } | null;
-    featureSchemaFingerprint?: string | null;
-    promotionComparison?: Record<string, unknown> | null;
-  } | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type OnlineLearningUpdate = {

@@ -97,7 +97,7 @@ function statusClass(status: TimelineStepStatus) {
 function statusLabel(status: TimelineStepStatus) {
   if (status === "ok") return "Completed";
   if (status === "error") return "Failed";
-  return "Partial/missing data";
+  return "Telemetry missing";
 }
 
 function parseFoldMetrics(metadata: Record<string, unknown> | null): FoldMetric[] {
@@ -180,6 +180,7 @@ function parseStoredExecutionSteps(
 
 function buildFallbackSteps(input: EvaluationExecutionInput): TimelineStep[] {
   const metadata = asRecord(input.metadata);
+  const telemetryUnavailable = !metadata || Object.keys(metadata).length === 0;
   const parameters =
     asRecord(pickValue(metadata, ["parameters", "params", "request", "config"])) ?? ({} as Record<string, unknown>);
   const provenance =
@@ -220,35 +221,38 @@ function buildFallbackSteps(input: EvaluationExecutionInput): TimelineStep[] {
     {
       key: "resolve_dataset",
       label: "Resolve dataset + provenance",
-      status: dataSourceSummary.length > 0 ? "ok" : "warn",
+      status: telemetryUnavailable || dataSourceSummary.length > 0 ? "ok" : "warn",
       details: [
         `dataset_version_id: ${asString(pickValue(parameters, ["datasetVersionId", "dataset_version_id"])) ?? "—"}`,
         `feature_set_version_id: ${asString(pickValue(parameters, ["featureSetVersionId", "feature_set_version_id"])) ?? "—"}`,
         `resolved_pair: ${asString(pickValue(parameters, ["resolvedPair", "resolved_pair"])) ?? input.pair}`,
         `resolved_bingx_symbol: ${asString(pickValue(parameters, ["resolvedBingxSymbol", "resolved_bingx_symbol"])) ?? "—"}`,
+        telemetryUnavailable ? "telemetry: legacy run did not persist dataset/provenance details" : null,
         dataSourceSummary.length > 0 ? `data_sources: ${dataSourceSummary.join(" | ")}` : "data_sources: none recorded",
-      ],
+      ].filter((value): value is string => Boolean(value)),
     },
     {
       key: "build_features",
       label: "Build feature matrix",
-      status: dataFields.length > 0 ? "ok" : "warn",
+      status: telemetryUnavailable || dataFields.length > 0 ? "ok" : "warn",
       details: [
         `window_size: ${asNumber(pickValue(parameters, ["windowSize", "window_size"])) ?? "—"}`,
         `stride: ${asNumber(pickValue(parameters, ["stride"])) ?? "—"}`,
         `feature_fields: ${dataFields.length}`,
         `feature_schema_fingerprint: ${asString(pickValue(parameters, ["featureSchemaFingerprint", "feature_schema_fingerprint"])) ?? "—"}`,
-      ],
+        telemetryUnavailable ? "telemetry: feature matrix diagnostics were not persisted for this run" : null,
+      ].filter((value): value is string => Boolean(value)),
     },
     {
       key: "walk_forward",
       label: "Walk-forward split + fold scoring",
-      status: failedFolds.length > 0 ? "error" : foldMetrics.length > 0 ? "ok" : "warn",
+      status: failedFolds.length > 0 ? "error" : telemetryUnavailable || foldMetrics.length > 0 ? "ok" : "warn",
       details: [
         `walk_forward: ${walkForward ? stringifyDetail(walkForward) : "default"}`,
         `fold_count: ${foldMetrics.length}`,
         `failed_folds: ${failedFolds.length}`,
-      ],
+        telemetryUnavailable ? "telemetry: fold-level metrics were not persisted for this run" : null,
+      ].filter((value): value is string => Boolean(value)),
       folds: foldMetrics.length > 0 ? foldMetrics : undefined,
     },
     {
@@ -298,7 +302,7 @@ export default function EvaluationExecutionTimeline({
     <div className={`execution-timeline${compact ? " compact" : ""}`}>
       {hasPartialSteps ? (
         <div className="inline-muted">
-          Partial steps usually mean missing execution metadata for this run, not necessarily a hard execution failure.
+          Telemetry-missing steps usually indicate incomplete run metadata, not necessarily a hard execution failure.
         </div>
       ) : null}
       <ol className="execution-steps">
