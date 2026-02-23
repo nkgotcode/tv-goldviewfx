@@ -8,6 +8,9 @@ import TradingAnalyticsPanel from "./TradingAnalyticsPanel";
 import OpsAuditLog from "./OpsAuditLog";
 import { fetchOpsIngestionRuns, fetchOpsIngestionStatus, type IngestionRun, type OpsIngestionStatusResponse } from "../services/ops";
 
+const RUN_HISTORY_FETCH_PAGE_SIZE = 250;
+const RUN_HISTORY_FETCH_MAX_PAGES = 20;
+
 function formatDate(value?: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -18,7 +21,6 @@ function formatDate(value?: string | null) {
 export default function OperationsPanel() {
   const [status, setStatus] = useState<OpsIngestionStatusResponse | null>(null);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
-  const [runsTotal, setRunsTotal] = useState(0);
   const [runsScanTruncated, setRunsScanTruncated] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingRuns, setLoadingRuns] = useState(true);
@@ -54,19 +56,30 @@ export default function OperationsPanel() {
   useEffect(() => {
     let mounted = true;
     const loadRuns = async () => {
+      setLoadingRuns(true);
       try {
-        const payload = await fetchOpsIngestionRuns({
-          page: runsPage,
-          page_size: runsPageSize,
-          search: runsSearch || undefined,
-          source_type: runsSourceFilter || undefined,
-          status: runsStatusFilter || undefined,
-          scan_limit: 10000,
-        });
+        const allRuns: IngestionRun[] = [];
+        let page = 1;
+        let truncated = false;
+        while (page <= RUN_HISTORY_FETCH_MAX_PAGES) {
+          const payload = await fetchOpsIngestionRuns({
+            page,
+            page_size: RUN_HISTORY_FETCH_PAGE_SIZE,
+          });
+          const chunk = payload.data ?? [];
+          if (chunk.length === 0) break;
+          allRuns.push(...chunk);
+          if (chunk.length < RUN_HISTORY_FETCH_PAGE_SIZE) break;
+          if (page === RUN_HISTORY_FETCH_MAX_PAGES) {
+            truncated = true;
+            break;
+          }
+          page += 1;
+        }
         if (!mounted) return;
-        setRuns(payload.data ?? []);
-        setRunsTotal(payload.total ?? 0);
-        setRunsScanTruncated(Boolean(payload.scan?.truncated));
+        const deduped = Array.from(new Map(allRuns.map((run) => [run.id, run])).values());
+        setRuns(deduped);
+        setRunsScanTruncated(truncated);
       } catch (err) {
         if (mounted) {
           setError(err instanceof Error ? err.message : "Unable to load ingestion runs.");
@@ -79,15 +92,45 @@ export default function OperationsPanel() {
     return () => {
       mounted = false;
     };
-  }, [runsPage, runsPageSize, runsSearch, runsSourceFilter, runsStatusFilter, runsRefreshNonce]);
+  }, [runsRefreshNonce]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      setRunsPage(1);
       setRunsSearch(runsSearchInput.trim());
     }, 250);
     return () => window.clearTimeout(handle);
   }, [runsSearchInput]);
+
+  useEffect(() => {
+    setRunsPage(1);
+  }, [runsSearch, runsSourceFilter, runsStatusFilter, runsPageSize]);
+
+  const filteredRuns = useMemo(() => {
+    const search = runsSearch.toLowerCase();
+    return runs.filter((run) => {
+      if (runsSourceFilter && run.source_type !== runsSourceFilter) return false;
+      if (runsStatusFilter && run.status !== runsStatusFilter) return false;
+      if (!search) return true;
+      const haystack = [
+        run.id,
+        run.source_type,
+        run.source_id ?? "",
+        run.feed ?? "",
+        run.trigger,
+        run.status,
+        run.error_summary ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
+  }, [runs, runsSearch, runsSourceFilter, runsStatusFilter]);
+
+  const pagedRuns = useMemo(() => {
+    const from = (runsPage - 1) * runsPageSize;
+    const to = from + runsPageSize;
+    return filteredRuns.slice(from, to);
+  }, [filteredRuns, runsPage, runsPageSize]);
 
   const summary = useMemo(() => {
     const sources = status?.sources ?? [];
@@ -157,9 +200,9 @@ export default function OperationsPanel() {
       </div>
       <div className="ops-wide">
         <IngestionRunsTable
-          runs={runs}
+          runs={pagedRuns}
           loading={loadingRuns}
-          total={runsTotal}
+          total={filteredRuns.length}
           page={runsPage}
           pageSize={runsPageSize}
           search={runsSearchInput}
@@ -174,11 +217,9 @@ export default function OperationsPanel() {
           onSearchChange={setRunsSearchInput}
           onSourceTypeChange={(value) => {
             setRunsSourceFilter(value);
-            setRunsPage(1);
           }}
           onStatusChange={(value) => {
             setRunsStatusFilter(value);
-            setRunsPage(1);
           }}
           onRefresh={() => setRunsRefreshNonce((value) => value + 1)}
           onResetFilters={() => {

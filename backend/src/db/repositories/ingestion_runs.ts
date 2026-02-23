@@ -146,29 +146,19 @@ export async function listIngestionRuns(filters?: {
   sourceType?: string;
   sourceId?: string | null;
   feed?: string | null;
-  status?: string;
-  search?: string;
   page?: number;
   pageSize?: number;
-  scanLimit?: number;
 }) {
   try {
     const result = await convexClient.query(anyApi.ingestion_runs.list, {
       source_type: filters?.sourceType,
       source_id: filters?.sourceId ?? undefined,
       feed: filters?.feed ?? undefined,
-      status: filters?.status ?? undefined,
-      search: filters?.search ?? undefined,
       page: filters?.page,
       page_size: filters?.pageSize,
-      scan_limit: filters?.scanLimit,
     });
     const data = result?.data ?? [];
-    return {
-      data,
-      total: result?.count ?? data.length,
-      scan: result?.scan ?? null,
-    };
+    return { data, total: result?.count ?? data.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Query failed";
     throw new Error(`list ingestion runs: ${message}`);
