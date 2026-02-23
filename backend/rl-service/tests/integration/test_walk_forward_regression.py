@@ -19,7 +19,7 @@ def _features(start: datetime, count: int = 240):
     return rows
 
 
-def test_walk_forward_regression_is_deterministic_for_fixed_inputs(client):
+def test_nautilus_backtest_regression_is_deterministic_for_fixed_inputs(client):
     now = datetime.now(tz=timezone.utc)
     start = now - timedelta(minutes=260)
     features = _features(start, 260)
@@ -72,7 +72,7 @@ def test_walk_forward_regression_is_deterministic_for_fixed_inputs(client):
     assert first_payload["max_drawdown"] == second_payload["max_drawdown"]
     assert first_payload["trade_count"] == second_payload["trade_count"]
 
-    first_folds = (first_payload.get("metadata") or {}).get("fold_metrics") or []
-    second_folds = (second_payload.get("metadata") or {}).get("fold_metrics") or []
-    assert len(first_folds) == len(second_folds)
-    assert len(first_folds) >= 1
+    first_metadata = first_payload.get("metadata") or {}
+    second_metadata = second_payload.get("metadata") or {}
+    assert first_metadata.get("evaluation_mode") == "nautilus_backtest_only"
+    assert second_metadata.get("evaluation_mode") == "nautilus_backtest_only"

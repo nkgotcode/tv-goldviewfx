@@ -38,6 +38,10 @@ export type EvaluationRequest = {
   slippageBps?: number;
   fundingWeight?: number;
   drawdownPenalty?: number;
+  fullHistory?: boolean;
+  maxFeatureRows?: number;
+  strategyIds?: string[];
+  venueIds?: string[];
   walkForward?: {
     folds: number;
     purgeBars?: number;
@@ -47,6 +51,30 @@ export type EvaluationRequest = {
   } | null;
   featureSchemaFingerprint?: string;
 };
+
+export type EvaluationConfirmHealRequest = {
+  evaluation: EvaluationRequest;
+  heal: {
+    confirm: true;
+    intervals?: string[];
+    maxBatches?: number;
+    runGapMonitor?: boolean;
+  };
+};
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly payload?: Record<string, unknown> | null;
+
+  constructor(message: string, status: number, code?: string, payload?: Record<string, unknown> | null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.payload = payload;
+  }
+}
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
@@ -58,14 +86,16 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.text();
-    let parsed: { message?: string; error?: string; detail?: string } | null = null;
+    let parsed: Record<string, unknown> | null = null;
     try {
-      parsed = JSON.parse(body) as { message?: string; error?: string; detail?: string };
+      const json = JSON.parse(body) as unknown;
+      parsed = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
     } catch {
       parsed = null;
     }
-    const message = parsed?.message ?? parsed?.error ?? parsed?.detail ?? body;
-    throw new Error(message || `API error: ${response.status}`);
+    const message = (parsed?.message as string) ?? (parsed?.error as string) ?? (parsed?.detail as string) ?? body;
+    const code = typeof parsed?.code === "string" ? parsed.code : undefined;
+    throw new ApiError(message || `API error: ${response.status}`, response.status, code, parsed);
   }
   return response.json() as Promise<T>;
 }
@@ -81,4 +111,15 @@ export async function runEvaluation(agentId: string, payload: EvaluationRequest)
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function runEvaluationConfirmHeal(agentId: string, payload: EvaluationConfirmHealRequest) {
+  return fetchJson<{ report: EvaluationReport; heal: Record<string, unknown> }>(
+    `/agents/${agentId}/evaluations/confirm-heal`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }

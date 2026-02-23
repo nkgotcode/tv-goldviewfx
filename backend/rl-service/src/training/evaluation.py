@@ -1,33 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 import logging
 import tempfile
 
-import numpy as np
-
 from config import load_config
 from data.dataset_builder import build_dataset
-from envs.market_env import _compute_window_features
-from features.extractors import resolve_feature_keys
 from models.artifact_loader import decode_base64, fetch_artifact
-from models.registry import load_sb3_model_from_bytes
 from reports.evaluation_report import build_evaluation_report
-from schemas import EvaluationReport, TradeRecord, TradingPair
-from training.nautilus_backtest import run_backtest
+from schemas import EvaluationReport, TradingPair, WalkForwardConfig
+from training.nautilus_backtest import MatrixBacktestResult, run_backtest
 from training.promotion import EvaluationMetrics, PromotionCriteria
-from training.walk_forward import build_walk_forward_folds
-from schemas import WalkForwardConfig
 
-DEFAULT_FEE_RATE = 0.0004
 logger = logging.getLogger(__name__)
-
-
-def _fee_rate_from_bps(taker_fee_bps: float, slippage_bps: float) -> float:
-    taker = max(0.0, float(taker_fee_bps)) / 10_000.0
-    slippage = max(0.0, float(slippage_bps)) / 10_000.0
-    return taker + slippage
 
 
 @dataclass(frozen=True)
@@ -42,107 +29,179 @@ def _validate_window(window: EvaluationWindow) -> None:
         raise ValueError("period_end must be after period_start")
 
 
-def calculate_trade_net_pnls(trades: list[TradeRecord], fee_rate: float = DEFAULT_FEE_RATE) -> list[float]:
-    net_pnls: list[float] = []
-    for trade in trades:
-        realized = trade.realized_pnl or 0.0
-        notional = abs(trade.quantity * trade.price)
-        fee = notional * fee_rate
-        net_pnls.append(realized - fee)
-    return net_pnls
-
-
-def calculate_win_rate(trades: list[TradeRecord]) -> float:
-    if not trades:
-        return 0.0
-    wins = sum(1 for trade in trades if (trade.realized_pnl or 0) > 0)
-    return wins / len(trades)
-
-
-def calculate_net_pnl_after_fees(trades: list[TradeRecord], fee_rate: float = DEFAULT_FEE_RATE) -> float:
-    return sum(calculate_trade_net_pnls(trades, fee_rate))
-
-
-def calculate_max_drawdown(net_pnls: list[float]) -> float:
-    peak = 0.0
-    cumulative = 0.0
-    max_drawdown = 0.0
-    for pnl in net_pnls:
-        cumulative += pnl
-        peak = max(peak, cumulative)
-        if peak <= 0:
-            continue
-        drawdown = (peak - cumulative) / peak
-        max_drawdown = max(max_drawdown, drawdown)
-    return max_drawdown
-
-
-def calculate_exposure_by_pair(trades: list[TradeRecord], pair: TradingPair) -> dict[str, float]:
-    notional = sum(abs(trade.quantity * trade.price) for trade in trades)
-    return {pair: notional}
-
-
-def compute_evaluation_metrics(
-    trades: list[TradeRecord],
-    fee_rate: float = DEFAULT_FEE_RATE,
-    drawdown_penalty: float = 0.0,
-) -> EvaluationMetrics:
-    net_pnls = calculate_trade_net_pnls(trades, fee_rate)
-    max_drawdown = calculate_max_drawdown(net_pnls)
-    net_pnl_after_fees = sum(net_pnls) - max(0.0, float(drawdown_penalty)) * max_drawdown
-    return EvaluationMetrics(
-        win_rate=calculate_win_rate(trades),
-        net_pnl_after_fees=net_pnl_after_fees,
-        max_drawdown=max_drawdown,
-        trade_count=len(trades),
-    )
-
-
-def _build_trade_records(
-    windows: list[list[dict]],
-    model,
-    decision_threshold: float,
-    period_start: datetime,
-    start_idx: int,
-    end_idx: int,
-    leverage: float,
-    funding_weight: float,
-    feature_keys: list[str],
-) -> list[TradeRecord]:
-    if end_idx - start_idx < 2:
-        return []
-    trades: list[TradeRecord] = []
-    for idx in range(start_idx, end_idx - 1):
-        current_window = windows[idx]
-        next_window = windows[idx + 1]
-        features = _compute_window_features(current_window, feature_keys)
-        observation = np.array(features.observation, dtype=float)
-        action, _ = model.predict(observation, deterministic=True)
+def _to_float(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        return parsed if parsed == parsed else None
+    if isinstance(value, str) and value.strip():
+        normalized = value.strip().replace("%", "")
         try:
-            score = float(action)
-        except (TypeError, ValueError):
-            score = float(np.array(action).reshape(-1)[0])
-        if abs(score) < decision_threshold:
-            continue
-        current_close = float(current_window[-1].get("close", 0.0))
-        next_close = float(next_window[-1].get("close", current_close))
-        if current_close <= 0:
-            continue
-        position = float(np.clip(score, -1.0, 1.0))
-        price_return = (next_close - current_close) / current_close
-        funding_rate = float(current_window[-1].get("funding_rate", 0.0) or 0.0)
-        pnl = position * price_return * leverage - position * funding_rate * funding_weight * leverage
-        executed_at = current_window[-1].get("timestamp") or period_start
-        trades.append(
-            TradeRecord(
-                executed_at=executed_at,
-                side="long" if position > 0 else "short",
-                quantity=max(abs(position), 1e-6),
-                price=current_close,
-                realized_pnl=pnl,
-            )
+            parsed = float(normalized)
+            return parsed if parsed == parsed else None
+        except ValueError:
+            return None
+    return None
+
+
+def _to_json_value(value: object):
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _to_json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_json_value(item) for item in value]
+    return str(value)
+
+
+def _canonical_stat_key(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(character for character in value.lower() if character.isalnum())
+
+
+def _select_stats_block(raw: object) -> dict[str, object]:
+    if not isinstance(raw, Mapping):
+        return {}
+    flattened = {str(key): value for key, value in raw.items()}
+    nested_candidates = [value for value in flattened.values() if isinstance(value, Mapping)]
+    if not nested_candidates:
+        return flattened
+    first_nested = nested_candidates[0]
+    return {str(key): value for key, value in first_nested.items()} if isinstance(first_nested, Mapping) else {}
+
+
+def _extract_stat(stats: dict[str, object], candidates: list[str]) -> float | None:
+    if not stats:
+        return None
+    normalized_lookup = {_canonical_stat_key(key): value for key, value in stats.items()}
+    for candidate in candidates:
+        parsed = _to_float(normalized_lookup.get(_canonical_stat_key(candidate)))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _normalize_win_rate(value: float | None) -> float:
+    if value is None:
+        return 0.0
+    normalized = value / 100.0 if value > 1 else value
+    return max(0.0, min(1.0, normalized))
+
+
+def _normalize_drawdown(value: float | None) -> float:
+    if value is None:
+        return 0.0
+    normalized = abs(value)
+    if normalized > 1:
+        normalized = normalized / 100.0
+    return max(0.0, min(1.0, normalized))
+
+
+def _extract_trade_count(backtest_result: object, stats_pnls: dict[str, object]) -> int:
+    total_positions = _to_float(getattr(backtest_result, "total_positions", None))
+    if total_positions is not None and total_positions >= 0:
+        return int(total_positions)
+    stats_trade_count = _extract_stat(stats_pnls, ["Total Positions", "Total Trades", "Trade Count", "Trades"])
+    if stats_trade_count is None:
+        return 0
+    return int(max(0.0, stats_trade_count))
+
+
+def _extract_single_backtest_metrics(backtest_result: object, drawdown_penalty: float = 0.0) -> tuple[EvaluationMetrics, dict[str, float], dict]:
+    stats_pnls_raw = getattr(backtest_result, "stats_pnls", {})
+    stats_returns_raw = getattr(backtest_result, "stats_returns", {})
+    stats_pnls = _select_stats_block(stats_pnls_raw)
+    stats_returns = _select_stats_block(stats_returns_raw)
+
+    net_pnl_after_fees = _extract_stat(
+        stats_pnls,
+        ["PnL (total)", "Net PnL", "Net PnL (total)", "Total PnL", "PnL Total"],
+    )
+    if net_pnl_after_fees is None:
+        raise RuntimeError("Nautilus backtest did not return a usable PnL metric")
+
+    win_rate = _normalize_win_rate(_extract_stat(stats_pnls, ["Win Rate", "Win Rate %", "Winning %"]))
+    max_drawdown = _normalize_drawdown(_extract_stat(stats_returns, ["Max Drawdown", "Max DD", "Drawdown Max"]))
+    trade_count = _extract_trade_count(backtest_result, stats_pnls)
+    adjusted_net_pnl = float(net_pnl_after_fees) - max(0.0, float(drawdown_penalty)) * max_drawdown
+
+    metrics = EvaluationMetrics(
+        win_rate=win_rate,
+        net_pnl_after_fees=adjusted_net_pnl,
+        max_drawdown=max_drawdown,
+        trade_count=trade_count,
+    )
+    exposure = {"total_positions": float(trade_count)}
+    diagnostics = {
+        "total_positions": trade_count,
+        "stats_pnls": _to_json_value(stats_pnls),
+        "stats_returns": _to_json_value(stats_returns),
+    }
+    return metrics, exposure, diagnostics
+
+
+def _extract_backtest_metrics(
+    backtest_result: object | list[MatrixBacktestResult],
+    drawdown_penalty: float = 0.0,
+) -> tuple[EvaluationMetrics, dict[str, float], dict]:
+    if not isinstance(backtest_result, list):
+        return _extract_single_backtest_metrics(backtest_result, drawdown_penalty=drawdown_penalty)
+
+    if not backtest_result:
+        raise RuntimeError("Nautilus backtest produced no results")
+
+    run_rows: list[tuple[MatrixBacktestResult, EvaluationMetrics, dict[str, float], dict]] = []
+    for run in backtest_result:
+        metrics, exposure, diagnostics = _extract_single_backtest_metrics(
+            run.result,
+            drawdown_penalty=drawdown_penalty,
         )
-    return trades
+        run_rows.append((run, metrics, exposure, diagnostics))
+
+    total_trade_count = int(sum(row[1].trade_count for row in run_rows))
+    weighted_win_sum = float(sum(row[1].win_rate * row[1].trade_count for row in run_rows))
+    mean_win_rate = float(sum(row[1].win_rate for row in run_rows)) / float(len(run_rows))
+    aggregate_win_rate = weighted_win_sum / total_trade_count if total_trade_count > 0 else mean_win_rate
+    aggregate_net_pnl = float(sum(row[1].net_pnl_after_fees for row in run_rows))
+    aggregate_max_drawdown = float(max(row[1].max_drawdown for row in run_rows))
+    aggregate_positions = float(sum(row[2].get("total_positions", 0.0) for row in run_rows))
+
+    aggregate_metrics = EvaluationMetrics(
+        win_rate=aggregate_win_rate,
+        net_pnl_after_fees=aggregate_net_pnl,
+        max_drawdown=aggregate_max_drawdown,
+        trade_count=total_trade_count,
+    )
+    exposure = {"total_positions": aggregate_positions}
+    diagnostics = {
+        "total_positions": total_trade_count,
+        "aggregate": {
+            "run_count": len(run_rows),
+            "win_rate": aggregate_win_rate,
+            "net_pnl_after_fees": aggregate_net_pnl,
+            "max_drawdown": aggregate_max_drawdown,
+            "trade_count": total_trade_count,
+        },
+        "matrix": [
+            {
+                "strategy_id": row[0].strategy_id,
+                "venue_id": row[0].venue_id,
+                "venue_name": row[0].venue_name,
+                "run_id": getattr(row[0].result, "run_id", None),
+                "metrics": {
+                    "win_rate": row[1].win_rate,
+                    "net_pnl_after_fees": row[1].net_pnl_after_fees,
+                    "max_drawdown": row[1].max_drawdown,
+                    "trade_count": row[1].trade_count,
+                },
+                "diagnostics": row[3],
+            }
+            for row in run_rows
+        ],
+    }
+    return aggregate_metrics, exposure, diagnostics
 
 
 def run_evaluation(
@@ -164,6 +223,8 @@ def run_evaluation(
     funding_weight: float = 1.0,
     drawdown_penalty: float = 0.0,
     instrument_meta: dict | None = None,
+    strategy_ids: list[str] | None = None,
+    venue_ids: list[str] | None = None,
     feature_key_extras: list[str] | None = None,
     criteria: PromotionCriteria | None = None,
     walk_forward: WalkForwardConfig | None = None,
@@ -176,17 +237,11 @@ def run_evaluation(
         raise ValueError("dataset_features are required for evaluation")
     if not artifact_base64 and not artifact_download_url:
         raise ValueError("artifact payload is required for evaluation")
-    fee_rate = _fee_rate_from_bps(taker_fee_bps=taker_fee_bps, slippage_bps=slippage_bps)
-    leverage = max(0.0, float(leverage))
-    funding_weight = max(0.0, float(funding_weight))
 
     if artifact_base64:
         artifact = decode_base64(artifact_base64)
     else:
         artifact = fetch_artifact(artifact_download_url, expected_checksum=artifact_checksum)
-
-    model = load_sb3_model_from_bytes(artifact.data)
-    feature_keys = resolve_feature_keys(feature_key_extras)
 
     dataset = build_dataset(
         dataset_features,
@@ -200,78 +255,15 @@ def run_evaluation(
             "feature_schema_fingerprint": feature_schema_fingerprint,
         },
     )
-    windows = dataset["windows"]
-    if not windows:
+    if not dataset["windows"]:
         raise ValueError("No evaluation windows generated")
-    folds = walk_forward or WalkForwardConfig()
-    fold_ranges = build_walk_forward_folds(
-        total_windows=len(windows),
-        folds=folds.folds,
-        purge_bars=folds.purge_bars,
-        embargo_bars=folds.embargo_bars,
-        min_train_bars=folds.min_train_bars,
-        strict=folds.strict,
-    )
-    if not fold_ranges:
-        raise ValueError("No walk-forward folds available for evaluation")
 
-    fold_metrics: list[dict] = []
-    all_trades: list[TradeRecord] = []
-    for fold in fold_ranges:
-        fold_trades = _build_trade_records(
-            windows=windows,
-            model=model,
-            decision_threshold=decision_threshold,
-            period_start=period_start,
-            start_idx=fold.test_start,
-            end_idx=fold.test_end,
-            leverage=leverage,
-            funding_weight=funding_weight,
-            feature_keys=feature_keys,
-        )
-        if not fold_trades and folds.strict:
-            raise ValueError(f"No trades available for fold {fold.fold}")
-        metrics = compute_evaluation_metrics(fold_trades, fee_rate=fee_rate, drawdown_penalty=drawdown_penalty)
-        fold_status = "pass"
-        if criteria:
-            from training.promotion import evaluate_promotion
-
-            fold_status = "pass" if evaluate_promotion(metrics, criteria).promote else "fail"
-        fold_metrics.append(
-            {
-                "fold": fold.fold,
-                "start": windows[fold.test_start][0].get("timestamp"),
-                "end": windows[max(fold.test_start, fold.test_end - 1)][-1].get("timestamp"),
-                "win_rate": metrics.win_rate,
-                "net_pnl_after_fees": metrics.net_pnl_after_fees,
-                "max_drawdown": metrics.max_drawdown,
-                "trade_count": metrics.trade_count,
-                "status": fold_status,
-            }
-        )
-        all_trades.extend(fold_trades)
-
-    if not all_trades:
-        raise ValueError("No trades available for evaluation window")
-
-    metrics = compute_evaluation_metrics(all_trades, fee_rate=fee_rate, drawdown_penalty=drawdown_penalty)
-    exposure = calculate_exposure_by_pair(all_trades, pair)
-    fold_count = len(fold_metrics)
-    aggregate = {
-        "folds": fold_count,
-        "pass_rate": (sum(1 for fold in fold_metrics if fold["status"] == "pass") / fold_count) if fold_count else 0.0,
-        "win_rate_avg": float(sum(fold["win_rate"] for fold in fold_metrics) / fold_count) if fold_count else 0.0,
-        "net_pnl_after_fees_total": float(sum(fold["net_pnl_after_fees"] for fold in fold_metrics)),
-        "max_drawdown_worst": float(max((fold["max_drawdown"] for fold in fold_metrics), default=0.0)),
-        "trade_count_total": int(sum(fold["trade_count"] for fold in fold_metrics)),
-    }
-
-    backtest_run_id = None
+    requested_walk_forward = walk_forward or WalkForwardConfig()
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=True) as handle:
         handle.write(artifact.data)
         handle.flush()
         try:
-            backtest_result = run_backtest(
+            backtest_results = run_backtest(
                 pair=pair.value if hasattr(pair, "value") else str(pair),
                 interval=interval,
                 features=dataset_features,
@@ -279,12 +271,21 @@ def run_evaluation(
                 window_size=window_size,
                 decision_threshold=decision_threshold,
                 instrument_meta=instrument_meta,
+                strategy_ids=strategy_ids,
+                venue_ids=venue_ids,
             )
-            backtest_run_id = getattr(backtest_result, "run_id", None)
         except Exception as exc:
-            if config.strict_backtest:
-                raise RuntimeError(f"Nautilus backtest failed: {exc}") from exc
-            logger.warning("Backtest failed: %s", exc, exc_info=True)
+            if not config.strict_backtest:
+                logger.warning("Backtest failed with strict_backtest disabled: %s", exc, exc_info=True)
+            raise RuntimeError(f"Nautilus backtest failed: {exc}") from exc
+
+    if not backtest_results:
+        raise RuntimeError("Nautilus backtest produced no results")
+    backtest_run_id = getattr(backtest_results[0].result, "run_id", None)
+    run_ids = [getattr(item.result, "run_id", None) for item in backtest_results if getattr(item.result, "run_id", None)]
+    resolved_strategy_ids = sorted({item.strategy_id for item in backtest_results})
+    resolved_venue_ids = sorted({item.venue_id for item in backtest_results})
+    metrics, exposure, backtest_diagnostics = _extract_backtest_metrics(backtest_results, drawdown_penalty=drawdown_penalty)
 
     return build_evaluation_report(
         pair,
@@ -295,15 +296,31 @@ def run_evaluation(
         artifact_uri=artifact_uri,
         backtest_run_id=backtest_run_id,
         metadata={
-            "fold_metrics": fold_metrics,
-            "aggregate": aggregate,
+            "evaluation_mode": "nautilus_backtest_only",
+            "aggregate": {
+                "source": "nautilus_backtest",
+                "win_rate": metrics.win_rate,
+                "net_pnl_after_fees": metrics.net_pnl_after_fees,
+                "max_drawdown": metrics.max_drawdown,
+                "trade_count": metrics.trade_count,
+            },
             "feature_schema_fingerprint": feature_schema_fingerprint,
+            "strategy_matrix": {
+                "requested_strategy_ids": strategy_ids or ["all"],
+                "requested_venue_ids": venue_ids or ["all"],
+                "resolved_strategy_ids": resolved_strategy_ids,
+                "resolved_venue_ids": resolved_venue_ids,
+            },
             "walk_forward": {
-                "folds": folds.folds,
-                "purge_bars": folds.purge_bars,
-                "embargo_bars": folds.embargo_bars,
-                "min_train_bars": folds.min_train_bars,
-                "strict": folds.strict,
+                "ignored": True,
+                "reason": "nautilus_backtest_only",
+                "requested": {
+                    "folds": requested_walk_forward.folds,
+                    "purge_bars": requested_walk_forward.purge_bars,
+                    "embargo_bars": requested_walk_forward.embargo_bars,
+                    "min_train_bars": requested_walk_forward.min_train_bars,
+                    "strict": requested_walk_forward.strict,
+                },
             },
             "reward_config": {
                 "leverage": leverage,
@@ -314,5 +331,13 @@ def run_evaluation(
             },
             "instrument_meta": instrument_meta or {},
             "feature_key_extras": feature_key_extras or [],
+            "nautilus": {
+                "engine": "nautilus_trader",
+                "run_id": backtest_run_id,
+                "run_ids": run_ids,
+                "run_count": len(backtest_results),
+                "metrics_source": "backtest_result.stats_pnls/stats_returns",
+                "metrics": backtest_diagnostics,
+            },
         },
     )

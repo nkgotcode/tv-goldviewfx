@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import tempfile
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig
@@ -13,6 +14,44 @@ from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.objects import Currency, Price, Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+
+
+@dataclass(frozen=True)
+class MatrixBacktestResult:
+    strategy_id: str
+    venue_id: str
+    venue_name: str
+    result: object
+
+
+STRATEGY_REGISTRY: dict[str, dict[str, Any]] = {
+    "rl_sb3_market": {
+        "strategy_path": "training.rl_strategy:RLSb3Strategy",
+        "config_path": "training.rl_strategy:RLSb3StrategyConfig",
+        "config": {},
+    },
+}
+
+VENUE_REGISTRY: dict[str, dict[str, Any]] = {
+    "bingx_margin": {
+        "name": "BINGX",
+        "oms_type": OmsType.HEDGING,
+        "account_type": AccountType.MARGIN,
+        "starting_balances": ["100000 USDT"],
+    },
+    "bybit_margin": {
+        "name": "BYBIT",
+        "oms_type": OmsType.HEDGING,
+        "account_type": AccountType.MARGIN,
+        "starting_balances": ["100000 USDT"],
+    },
+    "okx_margin": {
+        "name": "OKX",
+        "oms_type": OmsType.HEDGING,
+        "account_type": AccountType.MARGIN,
+        "starting_balances": ["100000 USDT"],
+    },
+}
 
 
 def _base_currency_for_pair(pair: str) -> str:
@@ -145,6 +184,43 @@ def _build_bars(
     return bars
 
 
+def _resolve_requested_ids(
+    requested_ids: list[str] | None,
+    registry: Mapping[str, Any],
+    *,
+    kind: str,
+) -> list[str]:
+    if not requested_ids:
+        return list(registry.keys())
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw_value in requested_ids:
+        normalized = str(raw_value).strip().lower()
+        if not normalized:
+            continue
+        if normalized in {"*", "all"}:
+            return list(registry.keys())
+        if normalized not in registry:
+            allowed = ", ".join(sorted(registry.keys()))
+            raise ValueError(f"Unsupported {kind}_id '{normalized}'. Allowed: {allowed}")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    if not deduped:
+        return list(registry.keys())
+    return deduped
+
+
+def _resolve_bar_spec(interval: str) -> BarSpecification:
+    if interval.endswith("m"):
+        return BarSpecification(int(interval[:-1]), BarAggregation.MINUTE, PriceType.LAST)
+    if interval.endswith("h"):
+        return BarSpecification(int(interval[:-1]), BarAggregation.HOUR, PriceType.LAST)
+    return BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+
+
 def run_backtest(
     pair: str,
     interval: str,
@@ -153,65 +229,82 @@ def run_backtest(
     window_size: int,
     decision_threshold: float,
     instrument_meta: dict | None = None,
-):
-    instrument = _build_instrument(pair, instrument_meta=instrument_meta)
+    strategy_ids: list[str] | None = None,
+    venue_ids: list[str] | None = None,
+) -> list[MatrixBacktestResult]:
+    resolved_strategy_ids = _resolve_requested_ids(strategy_ids, STRATEGY_REGISTRY, kind="strategy")
+    resolved_venue_ids = _resolve_requested_ids(venue_ids, VENUE_REGISTRY, kind="venue")
     price_precision, size_precision, _, _ = _resolve_instrument_meta(instrument_meta)
-    bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-    if interval.endswith("m"):
-        bar_spec = BarSpecification(int(interval[:-1]), BarAggregation.MINUTE, PriceType.LAST)
-    elif interval.endswith("h"):
-        bar_spec = BarSpecification(int(interval[:-1]), BarAggregation.HOUR, PriceType.LAST)
-    bar_type = BarType(instrument.id, bar_spec)
+    bar_spec = _resolve_bar_spec(interval)
+    matrix_results: list[MatrixBacktestResult] = []
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        catalog = ParquetDataCatalog(tmpdir)
-        catalog.write_data([instrument])
-        bars = _build_bars(
-            instrument.id,
-            bar_type,
-            features,
-            price_precision=price_precision,
-            size_precision=size_precision,
-        )
-        catalog.write_data(bars)
+    for venue_id in resolved_venue_ids:
+        venue_spec = VENUE_REGISTRY[venue_id]
+        instrument = _build_instrument(pair, instrument_meta=instrument_meta, venue=str(venue_spec["name"]))
+        bar_type = BarType(instrument.id, bar_spec)
 
-        strategy_config = ImportableStrategyConfig(
-            strategy_path="training.rl_strategy:RLSb3Strategy",
-            config_path="training.rl_strategy:RLSb3StrategyConfig",
-            config={
-                "instrument_id": instrument.id,
-                "bar_type": str(bar_type),
-                "trade_size": _format_decimal(1.0, size_precision),
-                "model_path": model_path,
-                "decision_threshold": decision_threshold,
-                "window_size": window_size,
-            },
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            catalog = ParquetDataCatalog(tmpdir)
+            catalog.write_data([instrument])
+            bars = _build_bars(
+                instrument.id,
+                bar_type,
+                features,
+                price_precision=price_precision,
+                size_precision=size_precision,
+            )
+            catalog.write_data(bars)
 
-        engine_config = BacktestEngineConfig(strategies=[strategy_config])
-        venue_config = BacktestVenueConfig(
-            name="BINGX",
-            oms_type=OmsType.HEDGING,
-            account_type=AccountType.MARGIN,
-            starting_balances=["100000 USDT"],
-        )
-        data_config = BacktestDataConfig(
-            catalog_path=tmpdir,
-            data_cls="nautilus_trader.model.data:Bar",
-            instrument_id=instrument.id,
-            bar_spec=str(bar_spec),
-        )
-        run_config = BacktestRunConfig(
-            venues=[venue_config],
-            data=[data_config],
-            engine=engine_config,
-            raise_exception=True,
-        )
-        node = BacktestNode([run_config])
-        try:
-            results = node.run()
-        except Exception as exc:
-            raise RuntimeError("Nautilus backtest failed") from exc
-        if not results:
-            raise RuntimeError("Nautilus backtest produced no results")
-        return results[0]
+            venue_config = BacktestVenueConfig(
+                name=str(venue_spec["name"]),
+                oms_type=venue_spec["oms_type"],
+                account_type=venue_spec["account_type"],
+                starting_balances=list(venue_spec["starting_balances"]),
+            )
+            data_config = BacktestDataConfig(
+                catalog_path=tmpdir,
+                data_cls="nautilus_trader.model.data:Bar",
+                instrument_id=instrument.id,
+                bar_spec=str(bar_spec),
+            )
+
+            for strategy_id in resolved_strategy_ids:
+                strategy_spec = STRATEGY_REGISTRY[strategy_id]
+                strategy_config = ImportableStrategyConfig(
+                    strategy_path=str(strategy_spec["strategy_path"]),
+                    config_path=str(strategy_spec["config_path"]),
+                    config={
+                        "instrument_id": instrument.id,
+                        "bar_type": str(bar_type),
+                        "trade_size": _format_decimal(1.0, size_precision),
+                        "model_path": model_path,
+                        "decision_threshold": decision_threshold,
+                        "window_size": window_size,
+                        **(strategy_spec.get("config", {}) or {}),
+                    },
+                )
+
+                run_config = BacktestRunConfig(
+                    venues=[venue_config],
+                    data=[data_config],
+                    engine=BacktestEngineConfig(strategies=[strategy_config]),
+                    raise_exception=True,
+                )
+                node = BacktestNode([run_config])
+                try:
+                    results = node.run()
+                except Exception as exc:
+                    raise RuntimeError("Nautilus backtest failed") from exc
+                if not results:
+                    raise RuntimeError("Nautilus backtest produced no results")
+
+                matrix_results.append(
+                    MatrixBacktestResult(
+                        strategy_id=strategy_id,
+                        venue_id=venue_id,
+                        venue_name=str(venue_spec["name"]),
+                        result=results[0],
+                    )
+                )
+
+    return matrix_results

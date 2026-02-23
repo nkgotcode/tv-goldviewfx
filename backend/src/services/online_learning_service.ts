@@ -214,13 +214,6 @@ export async function runOnlineLearningCycleForPair(
       windowSize,
       stride,
       decisionThreshold,
-      walkForward: {
-        folds: 4,
-        purgeBars: 1,
-        embargoBars: 1,
-        minTrainBars: Math.max(windowSize * 2, 60),
-        strict: true,
-      },
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -251,13 +244,6 @@ export async function runOnlineLearningCycleForPair(
         windowSize,
         stride,
         decisionThreshold,
-        walkForward: {
-          folds: 4,
-          purgeBars: 1,
-          embargoBars: 1,
-          minTrainBars: Math.max(windowSize * 2, 60),
-          strict: true,
-        },
       });
     } catch (error) {
       logWarn("online_learning.champion_eval_failed", {

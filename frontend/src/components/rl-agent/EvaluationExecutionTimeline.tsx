@@ -13,17 +13,6 @@ type EvaluationExecutionInput = {
 
 type TimelineStepStatus = "ok" | "warn" | "error";
 
-type FoldMetric = {
-  fold: number;
-  start: string;
-  end: string;
-  winRate: number;
-  netPnlAfterFees: number;
-  maxDrawdown: number;
-  tradeCount: number;
-  status: string;
-};
-
 type TimelineStep = {
   key: string;
   label: string;
@@ -32,7 +21,6 @@ type TimelineStep = {
   completedAt?: string;
   durationMs?: number;
   details: string[];
-  folds?: FoldMetric[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -100,34 +88,6 @@ function statusLabel(status: TimelineStepStatus) {
   return "Telemetry missing";
 }
 
-function parseFoldMetrics(metadata: Record<string, unknown> | null): FoldMetric[] {
-  const rawFolds = asArray(pickValue(metadata, ["fold_metrics", "foldMetrics"]));
-  return rawFolds
-    .map((entry, index) => {
-      const record = asRecord(entry);
-      if (!record) return null;
-      const fold = asNumber(pickValue(record, ["fold"])) ?? index + 1;
-      const start = asString(pickValue(record, ["start"])) ?? "—";
-      const end = asString(pickValue(record, ["end"])) ?? "—";
-      const winRate = asNumber(pickValue(record, ["win_rate", "winRate"])) ?? 0;
-      const netPnlAfterFees = asNumber(pickValue(record, ["net_pnl_after_fees", "netPnlAfterFees"])) ?? 0;
-      const maxDrawdown = asNumber(pickValue(record, ["max_drawdown", "maxDrawdown"])) ?? 0;
-      const tradeCount = asNumber(pickValue(record, ["trade_count", "tradeCount"])) ?? 0;
-      const status = asString(pickValue(record, ["status"])) ?? "unknown";
-      return {
-        fold,
-        start,
-        end,
-        winRate,
-        netPnlAfterFees,
-        maxDrawdown,
-        tradeCount,
-        status,
-      };
-    })
-    .filter((value): value is FoldMetric => value !== null);
-}
-
 function stringifyDetail(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (typeof value === "string") return value;
@@ -146,10 +106,7 @@ function stringifyDetail(value: unknown): string {
   return `{ ${pairs.join(", ")} }${suffix}`;
 }
 
-function parseStoredExecutionSteps(
-  metadata: Record<string, unknown> | null,
-  foldMetrics: FoldMetric[],
-): TimelineStep[] {
+function parseStoredExecutionSteps(metadata: Record<string, unknown> | null): TimelineStep[] {
   const execution = asRecord(pickValue(metadata, ["execution"])) ?? metadata;
   const rawSteps = asArray(pickValue(execution, ["steps", "execution_steps", "executionSteps"]));
   if (rawSteps.length === 0) return [];
@@ -172,7 +129,6 @@ function parseStoredExecutionSteps(
       completedAt: asString(pickValue(record, ["completed_at", "completedAt"])) ?? undefined,
       durationMs: asNumber(pickValue(record, ["duration_ms", "durationMs"])) ?? undefined,
       details,
-      folds: key === "run_rl_evaluation" && foldMetrics.length > 0 ? foldMetrics : undefined,
     });
   });
   return parsed;
@@ -185,12 +141,8 @@ function buildFallbackSteps(input: EvaluationExecutionInput): TimelineStep[] {
     asRecord(pickValue(metadata, ["parameters", "params", "request", "config"])) ?? ({} as Record<string, unknown>);
   const provenance =
     asRecord(pickValue(metadata, ["dataset_provenance", "datasetProvenance"])) ?? ({} as Record<string, unknown>);
-  const walkForward =
-    asRecord(pickValue(metadata, ["walk_forward", "walkForward"])) ??
-    asRecord(pickValue(parameters, ["walkForward", "walk_forward"]));
   const rewardConfig = asRecord(pickValue(metadata, ["reward_config", "rewardConfig"]));
   const nautilus = asRecord(pickValue(metadata, ["nautilus"]));
-  const foldMetrics = parseFoldMetrics(metadata);
   const dataFields = asArray(pickValue(metadata, ["data_fields", "dataFields"]));
   const rawSources = asArray(pickValue(provenance, ["data_sources", "dataSources"]));
   const dataSourceSummary = rawSources
@@ -202,8 +154,6 @@ function buildFallbackSteps(input: EvaluationExecutionInput): TimelineStep[] {
       return `${source}: ${rows} rows`;
     })
     .filter((value): value is string => Boolean(value));
-  const failedFolds = foldMetrics.filter((fold) => fold.status.toLowerCase() === "fail");
-  const strictWalkForward = pickValue(walkForward, ["strict"]) === true;
 
   return [
     {
@@ -244,21 +194,9 @@ function buildFallbackSteps(input: EvaluationExecutionInput): TimelineStep[] {
       ].filter((value): value is string => Boolean(value)),
     },
     {
-      key: "walk_forward",
-      label: "Walk-forward split + fold scoring",
-      status: failedFolds.length > 0 ? "error" : telemetryUnavailable || foldMetrics.length > 0 ? "ok" : "warn",
-      details: [
-        `walk_forward: ${walkForward ? stringifyDetail(walkForward) : "default"}`,
-        `fold_count: ${foldMetrics.length}`,
-        `failed_folds: ${failedFolds.length}`,
-        telemetryUnavailable ? "telemetry: fold-level metrics were not persisted for this run" : null,
-      ].filter((value): value is string => Boolean(value)),
-      folds: foldMetrics.length > 0 ? foldMetrics : undefined,
-    },
-    {
       key: "nautilus_backtest",
       label: "Run Nautilus backtest",
-      status: input.backtestRunId ? "ok" : strictWalkForward ? "error" : "warn",
+      status: input.backtestRunId ? "ok" : "warn",
       details: [
         `engine: ${asString(pickValue(nautilus, ["engine"])) ?? "nautilus_trader"}`,
         `backtest_run_id: ${input.backtestRunId ?? "not recorded"}`,
@@ -293,8 +231,7 @@ export default function EvaluationExecutionTimeline({
   }
 
   const metadata = asRecord(report.metadata);
-  const foldMetrics = parseFoldMetrics(metadata);
-  const storedSteps = parseStoredExecutionSteps(metadata, foldMetrics);
+  const storedSteps = parseStoredExecutionSteps(metadata);
   const steps = storedSteps.length > 0 ? storedSteps : buildFallbackSteps(report);
   const hasPartialSteps = steps.some((step) => step.status === "warn");
 
@@ -327,38 +264,6 @@ export default function EvaluationExecutionTimeline({
                   <li key={`${step.key}-detail-${detailIndex}`}>{detail}</li>
                 ))}
               </ul>
-            ) : null}
-            {step.folds && step.folds.length > 0 ? (
-              <div className="table-scroll">
-                <table className="table compact">
-                  <thead>
-                    <tr>
-                      <th>Fold</th>
-                      <th>Range</th>
-                      <th>Status</th>
-                      <th>Win</th>
-                      <th>Net PnL</th>
-                      <th>Drawdown</th>
-                      <th>Trades</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {step.folds.map((fold) => (
-                      <tr key={`${step.key}-fold-${fold.fold}`}>
-                        <td>{fold.fold}</td>
-                        <td>
-                          {formatDate(fold.start)} → {formatDate(fold.end)}
-                        </td>
-                        <td>{fold.status}</td>
-                        <td>{formatPercent(fold.winRate)}</td>
-                        <td>{formatMetric(fold.netPnlAfterFees, 2)}</td>
-                        <td>{formatMetric(fold.maxDrawdown, 4)}</td>
-                        <td>{fold.tradeCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             ) : null}
           </li>
         ))}

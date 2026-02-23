@@ -10,8 +10,10 @@ import EvaluationExecutionTimeline, {
 import NautilusBacktestStatusPanel from "../../components/rl-agent/NautilusBacktestStatusPanel";
 import { listAgentVersions, type AgentVersion } from "../../services/rl_agent";
 import {
+  ApiError,
   listEvaluationReports,
   runEvaluation,
+  runEvaluationConfirmHeal,
   type EvaluationReport,
   type EvaluationRequest,
 } from "../../services/rl_evaluations";
@@ -62,6 +64,14 @@ function parseIntervalCsv(value: string) {
   return unique;
 }
 
+function parseIdentifierCsv(value: string) {
+  const tokens = value
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  return Array.from(new Set(tokens));
+}
+
 function parseIntervalToMinutes(value: string) {
   const trimmed = value.trim();
   const match = trimmed.match(/^(\d+)(m|h|d)$/);
@@ -78,17 +88,17 @@ function parseIntervalToMinutes(value: string) {
 }
 
 function toFriendlyEvaluationError(message: string) {
+  if (message.includes("Backtest blocked: data gaps detected")) {
+    return "Evaluation blocked due to market-data gaps. Confirm heal-and-continue to trigger immediate backfill and rerun.";
+  }
   if (message.includes("MAX_PARAMETERS_EXCEEDED")) {
     return "Evaluation window was too large for a single run. Use a shorter period, or keep Auto window enabled so the system uses a safe capped window.";
   }
   if (message.includes("No evaluation windows generated")) {
     return "Evaluation failed because the requested window size is larger than available feature rows for this period. Expand the period range or reduce window size (or enable auto window sizing).";
   }
-  if (message.includes("No walk-forward folds available")) {
-    return "Evaluation failed because not enough windows were available to create walk-forward folds. Use a longer time range, smaller window size, or disable Walk Forward.";
-  }
-  if (message.includes("No trades available for fold")) {
-    return "Evaluation failed because one walk-forward fold had zero trades. Try a longer period (for example 7 days), use 5m/15m interval, or set Walk Forward to disabled in Advanced settings.";
+  if (message.includes("Nautilus backtest did not return a usable PnL metric")) {
+    return "Evaluation failed because Nautilus returned incomplete portfolio stats. Verify the run generated closed positions and portfolio PnL metrics.";
   }
   if (message.includes("No features available for dataset window")) {
     return "Evaluation failed because no usable features were built for this window. Expand the time range and keep interval/context intervals aligned with available market data.";
@@ -109,6 +119,11 @@ function toBingxSymbolToken(pair: string) {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function asStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [] as string[];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function extractDataFields(metadata: Record<string, unknown> | null): string[] {
@@ -209,12 +224,10 @@ export default function RlEvaluationsPage() {
   const [slippageBps, setSlippageBps] = useState("");
   const [fundingWeight, setFundingWeight] = useState("");
   const [drawdownPenalty, setDrawdownPenalty] = useState("");
-  const [walkForwardMode, setWalkForwardMode] = useState<"default" | "enabled" | "disabled">("disabled");
-  const [walkForwardFolds, setWalkForwardFolds] = useState("4");
-  const [walkForwardPurgeBars, setWalkForwardPurgeBars] = useState("0");
-  const [walkForwardEmbargoBars, setWalkForwardEmbargoBars] = useState("0");
-  const [walkForwardMinTrainBars, setWalkForwardMinTrainBars] = useState("");
-  const [walkForwardStrict, setWalkForwardStrict] = useState(false);
+  const [fullHistory, setFullHistory] = useState(false);
+  const [maxFeatureRows, setMaxFeatureRows] = useState("");
+  const [strategyIdsCsv, setStrategyIdsCsv] = useState("");
+  const [venueIdsCsv, setVenueIdsCsv] = useState("");
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [useFullWindowSize, setUseFullWindowSize] = useState(false);
   const [nautilusPreset, setNautilusPreset] = useState<NautilusPreset>("quick");
@@ -416,46 +429,53 @@ export default function RlEvaluationsPage() {
           }
           payload.drawdownPenalty = parsedDrawdownPenalty;
         }
-
-        if (walkForwardMode !== "default") {
-          if (walkForwardMode === "disabled") {
-            payload.walkForward = {
-              folds: 1,
-              purgeBars: 0,
-              embargoBars: 0,
-              strict: false,
-            };
-          } else {
-            const folds = Number(walkForwardFolds || "4");
-            const purgeBars = Number(walkForwardPurgeBars || "0");
-            const embargoBars = Number(walkForwardEmbargoBars || "0");
-            const minTrainBarsRaw = walkForwardMinTrainBars.trim();
-            if (!Number.isFinite(folds) || folds < 1 || folds > 24) {
-              throw new Error("Walk-forward folds must be between 1 and 24.");
-            }
-            if (!Number.isFinite(purgeBars) || purgeBars < 0) {
-              throw new Error("Walk-forward purge bars must be zero or positive.");
-            }
-            if (!Number.isFinite(embargoBars) || embargoBars < 0) {
-              throw new Error("Walk-forward embargo bars must be zero or positive.");
-            }
-            payload.walkForward = {
-              folds: Math.round(folds),
-              purgeBars: Math.round(purgeBars),
-              embargoBars: Math.round(embargoBars),
-              strict: walkForwardStrict,
-            };
-            if (minTrainBarsRaw) {
-              const minTrainBars = Number(minTrainBarsRaw);
-              if (!Number.isFinite(minTrainBars) || minTrainBars <= 0) {
-                throw new Error("Walk-forward min train bars must be a positive number.");
-              }
-              payload.walkForward.minTrainBars = Math.round(minTrainBars);
-            }
+        payload.fullHistory = fullHistory;
+        if (!fullHistory && maxFeatureRows.trim()) {
+          const parsedMaxFeatureRows = Number(maxFeatureRows);
+          if (!Number.isFinite(parsedMaxFeatureRows) || parsedMaxFeatureRows <= 0) {
+            throw new Error("Max feature rows must be a positive number.");
           }
+          payload.maxFeatureRows = Math.round(parsedMaxFeatureRows);
         }
 
-        await runEvaluation("gold-rl-agent", payload);
+        const strategyIds = parseIdentifierCsv(strategyIdsCsv);
+        if (strategyIds.length > 0 && !strategyIds.includes("all") && !strategyIds.includes("*")) {
+          payload.strategyIds = strategyIds;
+        }
+        const venueIds = parseIdentifierCsv(venueIdsCsv);
+        if (venueIds.length > 0 && !venueIds.includes("all") && !venueIds.includes("*")) {
+          payload.venueIds = venueIds;
+        }
+
+        try {
+          await runEvaluation("gold-rl-agent", payload);
+        } catch (runError) {
+          if (runError instanceof ApiError && runError.code === "DATA_GAP_BLOCKED") {
+            const blockingReasons = asStringArray(runError.payload?.blocking_reasons);
+            const warnings = asStringArray(runError.payload?.warnings);
+            const blockedInterval =
+              typeof runError.payload?.interval === "string" ? runError.payload.interval : payload.interval ?? interval;
+            const reasonText = blockingReasons.length > 0 ? blockingReasons.join(", ") : "unknown";
+            const warningText = warnings.length > 0 ? `\nWarnings: ${warnings.join(", ")}` : "";
+            const confirmed = window.confirm(
+              `Data gaps detected for ${targetPair} (${blockedInterval}).\nReasons: ${reasonText}${warningText}\n\nHeal now and continue this backtest?`,
+            );
+            if (!confirmed) {
+              throw new Error(`Backtest blocked by data gaps (${reasonText}).`);
+            }
+            setActionNote(`Healing data gaps for ${targetPair} and continuing backtest…`);
+            await runEvaluationConfirmHeal("gold-rl-agent", {
+              evaluation: payload,
+              heal: {
+                confirm: true,
+                intervals: [blockedInterval],
+                runGapMonitor: true,
+              },
+            });
+          } else {
+            throw runError;
+          }
+        }
       }
       setActionNote(`Completed ${targetPairs.length} evaluation run(s).`);
       await refresh();
@@ -487,12 +507,10 @@ export default function RlEvaluationsPage() {
     setSlippageBps("");
     setFundingWeight("");
     setDrawdownPenalty("");
-    setWalkForwardMode(preset === "quick" ? "disabled" : "enabled");
-    setWalkForwardFolds(preset === "research" ? "6" : "4");
-    setWalkForwardPurgeBars("0");
-    setWalkForwardEmbargoBars("0");
-    setWalkForwardMinTrainBars(preset === "research" ? "512" : preset === "promotion" ? "240" : "");
-    setWalkForwardStrict(false);
+    setFullHistory(false);
+    setMaxFeatureRows("");
+    setStrategyIdsCsv("");
+    setVenueIdsCsv("");
     setUseFullWindowSize(false);
     setShowAdvancedConfig(preset !== "quick");
     setNautilusPreset(preset);
@@ -577,7 +595,7 @@ export default function RlEvaluationsPage() {
             </button>
           </div>
           <div className="empty" style={{ marginBottom: 12 }}>
-            Nautilus-safe defaults avoid oversized windows and unstable fold splits. If you need multi-year analysis, run multiple regime windows instead of one giant run.
+            Nautilus-safe defaults avoid oversized windows. If you need multi-year analysis, run multiple regime windows instead of one giant run.
           </div>
           {selectedPeriodDays !== null && selectedPeriodDays > MAX_PERIOD_DAYS ? (
             <div className="empty" style={{ marginBottom: 12 }}>
@@ -701,14 +719,6 @@ export default function RlEvaluationsPage() {
                   />
                 </label>
                 <label>
-                  Walk Forward
-                  <select value={walkForwardMode} onChange={(event) => setWalkForwardMode(event.target.value as typeof walkForwardMode)}>
-                    <option value="default">Use backend default</option>
-                    <option value="enabled">Enabled</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                </label>
-                <label>
                   Leverage (optional)
                   <input type="number" min={0.01} step="0.01" value={leverage} onChange={(event) => setLeverage(event.target.value)} />
                 </label>
@@ -752,49 +762,38 @@ export default function RlEvaluationsPage() {
                     onChange={(event) => setDrawdownPenalty(event.target.value)}
                   />
                 </label>
-                <label>
-                  WF Folds
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={walkForwardFolds}
-                    onChange={(event) => setWalkForwardFolds(event.target.value)}
-                  />
-                </label>
-                <label>
-                  WF Purge Bars
-                  <input
-                    type="number"
-                    min={0}
-                    value={walkForwardPurgeBars}
-                    onChange={(event) => setWalkForwardPurgeBars(event.target.value)}
-                  />
-                </label>
-                <label>
-                  WF Embargo Bars
-                  <input
-                    type="number"
-                    min={0}
-                    value={walkForwardEmbargoBars}
-                    onChange={(event) => setWalkForwardEmbargoBars(event.target.value)}
-                  />
-                </label>
-                <label>
-                  WF Min Train Bars (optional)
-                  <input
-                    type="number"
-                    min={1}
-                    value={walkForwardMinTrainBars}
-                    onChange={(event) => setWalkForwardMinTrainBars(event.target.value)}
-                  />
-                </label>
                 <label className="toggle-row">
-                  <span>WF Strict Mode</span>
+                  <span>Use full history rows (disable downsampling)</span>
+                  <input type="checkbox" checked={fullHistory} onChange={(event) => setFullHistory(event.target.checked)} />
+                </label>
+                {!fullHistory ? (
+                  <label>
+                    Max Feature Rows (optional)
+                    <input
+                      type="number"
+                      min={1}
+                      value={maxFeatureRows}
+                      placeholder="20000"
+                      onChange={(event) => setMaxFeatureRows(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                <label>
+                  Strategy IDs (CSV, optional)
                   <input
-                    type="checkbox"
-                    checked={walkForwardStrict}
-                    onChange={(event) => setWalkForwardStrict(event.target.checked)}
+                    type="text"
+                    value={strategyIdsCsv}
+                    placeholder="rl_sb3_market or all"
+                    onChange={(event) => setStrategyIdsCsv(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Venue IDs (CSV, optional)
+                  <input
+                    type="text"
+                    value={venueIdsCsv}
+                    placeholder="bingx_margin,bybit_margin,okx_margin or all"
+                    onChange={(event) => setVenueIdsCsv(event.target.value)}
                   />
                 </label>
               </>
@@ -987,7 +986,7 @@ export default function RlEvaluationsPage() {
 
       <section className="table-card">
         <h3>Execution Timeline</h3>
-        <p>Step-by-step trace of dataset preparation, walk-forward scoring, Nautilus backtest execution, and promotion gating.</p>
+        <p>Step-by-step trace of dataset preparation, Nautilus backtest execution, and promotion gating.</p>
         <EvaluationExecutionTimeline report={selectedExecutionInput} />
       </section>
 

@@ -86,6 +86,18 @@ export const evaluationRequestSchema = z.object({
   slippageBps: z.number().nonnegative().optional(),
   fundingWeight: z.number().nonnegative().optional(),
   drawdownPenalty: z.number().nonnegative().optional(),
+  fullHistory: z.boolean().optional(),
+  maxFeatureRows: z.number().int().positive().max(1_000_000).optional(),
+  strategyIds: z
+    .array(z.string().min(1))
+    .max(32, "Too many strategy IDs")
+    .transform((ids) => Array.from(new Set(ids.map((value) => value.trim().toLowerCase()))))
+    .optional(),
+  venueIds: z
+    .array(z.string().min(1))
+    .max(32, "Too many venue IDs")
+    .transform((ids) => Array.from(new Set(ids.map((value) => value.trim().toLowerCase()))))
+    .optional(),
   instrumentMeta: z
     .object({
       bingxSymbol: z.string().min(1),

@@ -39,7 +39,7 @@ uv run uvicorn server:app --host 0.0.0.0 --port 9101
 
 - `GET /health` — service status
 - `POST /inference` — run inference for a market snapshot
-- `POST /evaluations` — run evaluation metrics for a window (supports walk-forward folds with purge/embargo)
+- `POST /evaluations` — run Nautilus-backtest-only evaluation metrics for a window
 
 ## Environment Variables
 

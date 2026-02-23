@@ -83,6 +83,8 @@ export class RlServiceClient {
       slippage_bps: payload.slippageBps ?? null,
       funding_weight: payload.fundingWeight ?? null,
       drawdown_penalty: payload.drawdownPenalty ?? null,
+      strategy_ids: payload.strategyIds ?? null,
+      venue_ids: payload.venueIds ?? null,
       instrument_meta: payload.instrumentMeta ?? null,
       walk_forward: payload.walkForward
         ? {

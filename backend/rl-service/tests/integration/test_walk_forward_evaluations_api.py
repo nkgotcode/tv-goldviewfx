@@ -19,7 +19,7 @@ def _features(start: datetime, count: int = 180):
     return rows
 
 
-def test_walk_forward_evaluation_returns_fold_metadata(client):
+def test_walk_forward_evaluation_records_nautilus_metadata(client):
     now = datetime.now(tz=timezone.utc)
     start = now - timedelta(minutes=220)
     features = _features(start, 220)
@@ -62,6 +62,7 @@ def test_walk_forward_evaluation_returns_fold_metadata(client):
     assert response.status_code == 200
     payload = response.json()
     metadata = payload.get("metadata") or {}
-    assert "fold_metrics" in metadata
-    assert len(metadata["fold_metrics"]) >= 1
+    assert metadata.get("evaluation_mode") == "nautilus_backtest_only"
+    assert metadata.get("walk_forward", {}).get("ignored") is True
+    assert metadata.get("nautilus", {}).get("engine") == "nautilus_trader"
     assert "aggregate" in metadata

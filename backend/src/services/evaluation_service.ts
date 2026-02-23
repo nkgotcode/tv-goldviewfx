@@ -14,6 +14,8 @@ import { evaluateDriftForLatestReport } from "./drift_monitoring_service";
 import { resolveArtifactUrl } from "./model_artifact_service";
 import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
 import { getExchangeMetadata } from "./exchange_metadata_service";
+import { evaluateDataIntegrityGate } from "./data_integrity_service";
+import { getDataGapHealth } from "./data_gap_health";
 import type { TradingPair } from "../types/rl";
 
 type EvaluationMetrics = {
@@ -54,6 +56,20 @@ type PromotionCriteria = {
   minTradeCount: number;
 };
 
+type RunEvaluationOptions = {
+  bypassDataGapGate?: boolean;
+  gapGateBypassReason?: string | null;
+};
+
+type DataGapBlockedContext = {
+  pair: TradingPair;
+  interval: string;
+  blockingReasons: string[];
+  warnings: string[];
+  integrityProvenance: Record<string, unknown>;
+  gapHealth: Awaited<ReturnType<typeof getDataGapHealth>> | null;
+};
+
 const DEFAULT_PROMOTION_CRITERIA: PromotionCriteria = {
   minWinRate: 0.55,
   minNetPnl: 0,
@@ -69,6 +85,21 @@ const E2E_PROMOTION_CRITERIA: PromotionCriteria = {
 };
 const MAX_EVALUATION_FEATURE_ROWS = Number.parseInt(process.env.RL_EVAL_MAX_FEATURE_ROWS ?? "20000", 10);
 const MAX_EVALUATION_WINDOW_SIZE = Number.parseInt(process.env.RL_EVAL_MAX_WINDOW_SIZE ?? "4096", 10);
+
+export class DataGapBlockedError extends Error {
+  readonly code = "DATA_GAP_BLOCKED" as const;
+  readonly context: DataGapBlockedContext;
+
+  constructor(message: string, context: DataGapBlockedContext) {
+    super(message);
+    this.name = "DataGapBlockedError";
+    this.context = context;
+  }
+}
+
+export function isDataGapBlockedError(error: unknown): error is DataGapBlockedError {
+  return error instanceof DataGapBlockedError;
+}
 
 function resolveStatus(metrics: EvaluationMetrics, criteria: PromotionCriteria) {
   if (metrics.win_rate < criteria.minWinRate) return "fail";
@@ -203,7 +234,16 @@ function resolvePositiveLimit(value: number, fallback: number) {
   return Math.floor(value);
 }
 
-function downsampleFeatureRows<T>(rows: T[], requestedMaxRows: number) {
+function downsampleFeatureRows<T>(rows: T[], requestedMaxRows: number, useFullHistory: boolean) {
+  if (useFullHistory) {
+    return {
+      rows,
+      downsampled: false,
+      step: 1,
+      originalCount: rows.length,
+      usedCount: rows.length,
+    };
+  }
   const maxRows = resolvePositiveLimit(requestedMaxRows, 20_000);
   if (rows.length <= maxRows) {
     return {
@@ -332,45 +372,6 @@ export function normalizeEvaluationReport(
   };
 }
 
-export function buildMockEvaluation(
-  request: EvaluationRequest,
-  criteria: PromotionCriteria = DEFAULT_PROMOTION_CRITERIA,
-): EvaluationMetrics {
-  const start = new Date(request.periodStart);
-  const end = new Date(request.periodEnd);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    throw new Error("Invalid evaluation period");
-  }
-  const durationHours = Math.floor((end.getTime() - start.getTime()) / (60 * 60 * 1000));
-  if (durationHours <= 0) {
-    throw new Error("No trades available for evaluation window");
-  }
-  const tradeCount = durationHours;
-  const winRate = Math.min(0.85, 0.4 + Math.min(tradeCount, 40) * 0.01);
-  const netPnl = tradeCount * 4 - 12;
-  const maxDrawdown = Math.max(0.1, 0.35 - winRate * 0.2);
-  const status = resolveStatus(
-    {
-      win_rate: winRate,
-      net_pnl_after_fees: netPnl,
-      max_drawdown: maxDrawdown,
-      trade_count: tradeCount,
-      exposure_by_pair: { [request.pair]: tradeCount * 1000 },
-      status: "fail",
-    },
-    criteria,
-  );
-
-  return {
-    win_rate: winRate,
-    net_pnl_after_fees: netPnl,
-    max_drawdown: maxDrawdown,
-    trade_count: tradeCount,
-    exposure_by_pair: { [request.pair]: tradeCount * 1000 },
-    status,
-  };
-}
-
 async function resolveAgentVersionId(agentVersionId?: string | null) {
   if (agentVersionId) {
     const version = await getAgentVersion(agentVersionId);
@@ -387,9 +388,11 @@ async function resolveAgentVersionId(agentVersionId?: string | null) {
   throw new Error("No agent versions available");
 }
 
-export async function runEvaluation(request: EvaluationRequest) {
+export async function runEvaluation(request: EvaluationRequest, options: RunEvaluationOptions = {}) {
   const executionStartedAt = new Date();
   const executionSteps: EvaluationExecutionStep[] = [];
+  const bypassDataGapGate = options.bypassDataGapGate ?? false;
+  const gapGateBypassReason = options.gapGateBypassReason ?? null;
   const env = loadEnv();
   const versionId = await recordExecutionStep(
     executionSteps,
@@ -405,6 +408,9 @@ export async function runEvaluation(request: EvaluationRequest) {
   const agentConfig = await getAgentConfig();
   const criteria = resolveCriteria(agentConfig);
   const rlConfig = loadRlServiceConfig();
+  if (rlConfig.mock) {
+    throw new Error("RL service mock mode is disabled for evaluations; Nautilus backtest is required.");
+  }
   const requestedInterval = request.interval ?? "1m";
   const dataset = await recordExecutionStep(
     executionSteps,
@@ -487,11 +493,69 @@ export async function runEvaluation(request: EvaluationRequest) {
       throw error;
     }
   })();
+  const useFullHistory = request.fullHistory ?? false;
+  const requestedMaxFeatureRows = request.maxFeatureRows ?? MAX_EVALUATION_FEATURE_ROWS;
   const featureRows = downsampleFeatureRows(
     datasetFeatures as Array<Record<string, unknown>>,
-    MAX_EVALUATION_FEATURE_ROWS,
+    requestedMaxFeatureRows,
+    useFullHistory,
   );
   const effectiveDatasetFeatures = featureRows.rows;
+  const candidateCandles = (datasetFeatures as Array<Record<string, unknown>>)
+    .map((row) => ({ timestamp: String(row.timestamp ?? "") }))
+    .filter((row) => row.timestamp.length > 0);
+  let dataIntegrityProvenance: Record<string, unknown> = {
+    bypassed: bypassDataGapGate,
+    reason: gapGateBypassReason,
+  };
+  if (bypassDataGapGate) {
+    await recordExecutionStep(
+      executionSteps,
+      "data_gap_preflight",
+      "Data gap preflight (bypassed)",
+      () => ({
+        allowed: true,
+        blockingReasons: [] as string[],
+        warnings: [] as string[],
+        provenance: dataIntegrityProvenance,
+      }),
+    );
+  } else {
+    const integrity = await recordExecutionStep(
+      executionSteps,
+      "data_gap_preflight",
+      "Data gap preflight",
+      () =>
+        evaluateDataIntegrityGate({
+          pair: request.pair as TradingPair,
+          candles: candidateCandles,
+        }),
+      (result) => ({
+        allowed: result.allowed,
+        blocking_reasons: result.blockingReasons,
+        warnings: result.warnings,
+      }),
+    );
+    dataIntegrityProvenance = (integrity.provenance ?? {}) as Record<string, unknown>;
+    if (!integrity.allowed) {
+      const gapHealth = await getDataGapHealth({
+        pair: request.pair as TradingPair,
+        sourceType: "bingx_candles",
+        limit: 100,
+      }).catch(() => null);
+      throw new DataGapBlockedError(
+        `Backtest blocked: data gaps detected for ${request.pair} (${interval}).`,
+        {
+          pair: request.pair as TradingPair,
+          interval,
+          blockingReasons: integrity.blockingReasons,
+          warnings: integrity.warnings,
+          integrityProvenance: dataIntegrityProvenance,
+          gapHealth,
+        },
+      );
+    }
+  }
   const featureKeyExtras = extractContextFeatureKeys(effectiveDatasetFeatures as Array<Record<string, unknown>>);
   const requestedWindowSize = request.windowSize ?? dataset.window_size ?? 30;
   let windowSize = resolveEffectiveWindowSize(requestedWindowSize, effectiveDatasetFeatures.length);
@@ -514,147 +578,150 @@ export async function runEvaluation(request: EvaluationRequest) {
   let effectiveWalkForward = request.walkForward ?? null;
   let evaluationRetryReason: string | null = null;
   let evaluationRetryApplied = false;
-  let reportPayload: EvaluationReport | null = null;
-  if (!rlConfig.mock) {
-    const payload = {
+  const payload = {
+    pair: request.pair,
+    periodStart: request.periodStart,
+    periodEnd: request.periodEnd,
+    interval,
+    contextIntervals: request.contextIntervals ?? [],
+    agentVersionId: versionId,
+    datasetVersionId: dataset.id,
+    featureSetVersionId,
+    datasetHash: dataset.dataset_hash ?? dataset.checksum,
+    artifactUri: version.artifact_uri ?? null,
+    artifactChecksum: version.artifact_checksum ?? null,
+    artifactDownloadUrl: artifactUrl ?? undefined,
+    artifactBase64: null as string | null,
+    decisionThreshold: request.decisionThreshold ?? null,
+    windowSize,
+    stride,
+    leverage,
+    takerFeeBps,
+    slippageBps,
+    fundingWeight,
+    drawdownPenalty,
+    strategyIds: request.strategyIds ?? null,
+    venueIds: request.venueIds ?? null,
+    instrumentMeta: exchangeMetadata
+      ? {
+          bingxSymbol: exchangeMetadata.bingxSymbol,
+          priceStep: exchangeMetadata.priceStep,
+          quantityStep: exchangeMetadata.quantityStep,
+          minQuantity: exchangeMetadata.minQuantity,
+          minNotional: exchangeMetadata.minNotional,
+          pricePrecision: exchangeMetadata.pricePrecision,
+          quantityPrecision: exchangeMetadata.quantityPrecision,
+        }
+      : null,
+    walkForward: effectiveWalkForward,
+    featureSchemaFingerprint,
+    featureKeyExtras,
+    datasetFeatures: effectiveDatasetFeatures,
+  };
+  if (!payload.artifactDownloadUrl && E2E_RUN_ENABLED) {
+    const trainingResponse = await rlServiceClient.train({
       pair: request.pair,
       periodStart: request.periodStart,
       periodEnd: request.periodEnd,
       interval,
       contextIntervals: request.contextIntervals ?? [],
-      agentVersionId: versionId,
       datasetVersionId: dataset.id,
-      featureSetVersionId,
-      datasetHash: dataset.dataset_hash ?? dataset.checksum,
-      artifactUri: version.artifact_uri ?? null,
-      artifactChecksum: version.artifact_checksum ?? null,
-      artifactDownloadUrl: artifactUrl ?? undefined,
-      artifactBase64: null as string | null,
-      decisionThreshold: request.decisionThreshold ?? null,
+      featureSetVersionId: request.featureSetVersionId ?? dataset.feature_set_version_id ?? null,
+      datasetHash: dataset.dataset_hash ?? dataset.checksum ?? null,
       windowSize,
       stride,
+      timesteps: 200,
       leverage,
       takerFeeBps,
       slippageBps,
       fundingWeight,
       drawdownPenalty,
-      instrumentMeta: exchangeMetadata
-        ? {
-            bingxSymbol: exchangeMetadata.bingxSymbol,
-            priceStep: exchangeMetadata.priceStep,
-            quantityStep: exchangeMetadata.quantityStep,
-            minQuantity: exchangeMetadata.minQuantity,
-            minNotional: exchangeMetadata.minNotional,
-            pricePrecision: exchangeMetadata.pricePrecision,
-            quantityPrecision: exchangeMetadata.quantityPrecision,
-          }
-        : null,
-      walkForward: effectiveWalkForward,
+      feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
+      feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
+      feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
       featureSchemaFingerprint,
       featureKeyExtras,
       datasetFeatures: effectiveDatasetFeatures,
-    };
-    if (!payload.artifactDownloadUrl && E2E_RUN_ENABLED) {
-      const trainingResponse = await rlServiceClient.train({
-        pair: request.pair,
-        periodStart: request.periodStart,
-        periodEnd: request.periodEnd,
-        interval,
-        contextIntervals: request.contextIntervals ?? [],
-        datasetVersionId: dataset.id,
-        featureSetVersionId: request.featureSetVersionId ?? dataset.feature_set_version_id ?? null,
-        datasetHash: dataset.dataset_hash ?? dataset.checksum ?? null,
-        windowSize,
-        stride,
-        timesteps: 200,
-        leverage,
-        takerFeeBps,
-        slippageBps,
-        fundingWeight,
-        drawdownPenalty,
-        feedbackRounds: env.RL_PPO_FEEDBACK_ROUNDS,
-        feedbackTimesteps: env.RL_PPO_FEEDBACK_TIMESTEPS,
-        feedbackHardRatio: env.RL_PPO_FEEDBACK_HARD_RATIO,
-        featureSchemaFingerprint,
-        featureKeyExtras,
-        datasetFeatures: effectiveDatasetFeatures,
-      });
-      payload.artifactBase64 =
-        (trainingResponse as any).artifactBase64 ?? (trainingResponse as any).artifact_base64 ?? null;
-      payload.artifactChecksum =
-        (trainingResponse as any).artifactChecksum ?? (trainingResponse as any).artifact_checksum ?? payload.artifactChecksum;
-    }
-    reportPayload = await recordExecutionStep(
-      executionSteps,
-      "run_rl_evaluation",
-      "Run RL evaluation service",
-      async () => {
-        try {
-          return await rlServiceClient.evaluate(payload);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (message.includes("No evaluation windows generated")) {
-            const featureRowCount = payload.datasetFeatures?.length ?? 0;
-            const fallbackWindowSize = resolveEffectiveWindowSize(payload.windowSize ?? 30, featureRowCount);
-            const fallbackWalkForward = buildRelaxedWalkForward();
-            const canRetry =
-              featureRowCount > 1 &&
-              (fallbackWindowSize !== payload.windowSize || JSON.stringify(payload.walkForward) !== JSON.stringify(fallbackWalkForward));
-            if (canRetry) {
-              evaluationRetryApplied = true;
-              evaluationRetryReason = "auto_relaxed_window_and_walk_forward";
-              windowSize = fallbackWindowSize;
-              effectiveWalkForward = fallbackWalkForward;
-              return rlServiceClient.evaluate({
-                ...payload,
-                windowSize: fallbackWindowSize,
-                walkForward: fallbackWalkForward,
-              });
-            }
-            throw new Error(
-              `No evaluation windows generated: feature rows=${featureRowCount}, requested windowSize=${payload.windowSize}. Increase period range or use a smaller window size.`,
-            );
-          }
-          if (E2E_RUN_ENABLED && message.includes("No trades available")) {
+    });
+    payload.artifactBase64 =
+      (trainingResponse as any).artifactBase64 ?? (trainingResponse as any).artifact_base64 ?? null;
+    payload.artifactChecksum =
+      (trainingResponse as any).artifactChecksum ?? (trainingResponse as any).artifact_checksum ?? payload.artifactChecksum;
+  }
+  const reportPayload = await recordExecutionStep(
+    executionSteps,
+    "run_rl_evaluation",
+    "Run RL evaluation service",
+    async () => {
+      try {
+        return await rlServiceClient.evaluate(payload);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("No evaluation windows generated")) {
+          const featureRowCount = payload.datasetFeatures?.length ?? 0;
+          const fallbackWindowSize = resolveEffectiveWindowSize(payload.windowSize ?? 30, featureRowCount);
+          const fallbackWalkForward = buildRelaxedWalkForward();
+          const canRetry =
+            featureRowCount > 1 &&
+            (fallbackWindowSize !== payload.windowSize || JSON.stringify(payload.walkForward) !== JSON.stringify(fallbackWalkForward));
+          if (canRetry) {
+            evaluationRetryApplied = true;
+            evaluationRetryReason = "auto_relaxed_window_and_walk_forward";
+            windowSize = fallbackWindowSize;
+            effectiveWalkForward = fallbackWalkForward;
             return rlServiceClient.evaluate({
               ...payload,
-              decisionThreshold: 0.01,
+              windowSize: fallbackWindowSize,
+              walkForward: fallbackWalkForward,
             });
           }
-          throw error;
+          throw new Error(
+            `No evaluation windows generated: feature rows=${featureRowCount}, requested windowSize=${payload.windowSize}. Increase period range or use a smaller window size.`,
+          );
         }
-      },
-      (result) => ({
-        provider: "rl_service",
-        mock: false,
-        pair: payload.pair,
-        interval: payload.interval,
-        context_intervals: payload.contextIntervals ?? [],
-        walk_forward: effectiveWalkForward,
-        requested_window_size: requestedWindowSize,
-        effective_window_size: windowSize,
-        dataset_feature_rows_original: featureRows.originalCount,
-        dataset_feature_rows_used: featureRows.usedCount,
-        dataset_feature_downsampled: featureRows.downsampled,
-        dataset_feature_downsample_step: featureRows.step,
-        retry_applied: evaluationRetryApplied,
-        retry_reason: evaluationRetryReason,
-        backtest_run_id:
-          (result as Record<string, unknown>).backtest_run_id ??
-          (result as Record<string, unknown>).backtestRunId ??
-          null,
-      }),
-    );
-  }
+        if (E2E_RUN_ENABLED && message.includes("No trades available")) {
+          return rlServiceClient.evaluate({
+            ...payload,
+            decisionThreshold: 0.01,
+          });
+        }
+        throw error;
+      }
+    },
+    (result) => ({
+      provider: "rl_service",
+      mock: false,
+      pair: payload.pair,
+      interval: payload.interval,
+      context_intervals: payload.contextIntervals ?? [],
+      strategy_ids: payload.strategyIds ?? ["all"],
+      venue_ids: payload.venueIds ?? ["all"],
+      walk_forward: effectiveWalkForward,
+      requested_window_size: requestedWindowSize,
+      effective_window_size: windowSize,
+      use_full_history: useFullHistory,
+      requested_max_feature_rows: requestedMaxFeatureRows,
+      dataset_feature_rows_original: featureRows.originalCount,
+      dataset_feature_rows_used: featureRows.usedCount,
+      dataset_feature_downsampled: featureRows.downsampled,
+      dataset_feature_downsample_step: featureRows.step,
+      retry_applied: evaluationRetryApplied,
+      retry_reason: evaluationRetryReason,
+      backtest_run_id:
+        (result as Record<string, unknown>).backtest_run_id ??
+        (result as Record<string, unknown>).backtestRunId ??
+        null,
+    }),
+  );
 
   const report = await recordExecutionStep(
     executionSteps,
     "normalize_report",
     "Normalize metrics and apply gates",
-    () => (rlConfig.mock ? buildMockEvaluation(request, criteria) : normalizeEvaluationReport(reportPayload ?? {}, criteria)),
+    () => normalizeEvaluationReport(reportPayload ?? {}, criteria),
     (normalized) => ({
-      provider: rlConfig.mock ? "mock" : "rl_service",
-      mock: rlConfig.mock,
+      provider: "rl_service",
+      mock: false,
       status: normalized.status,
       win_rate: normalized.win_rate,
       net_pnl_after_fees: normalized.net_pnl_after_fees,
@@ -706,14 +773,23 @@ export async function runEvaluation(request: EvaluationRequest) {
       costModelFingerprint,
       costModel,
       exchangeMetadataFingerprint: exchangeMetadata?.fingerprint ?? null,
+      strategyIds: request.strategyIds ?? ["all"],
+      venueIds: request.venueIds ?? ["all"],
       walkForward: effectiveWalkForward,
+      dataGapGate: {
+        bypassed: bypassDataGapGate,
+        bypassReason: gapGateBypassReason,
+        provenance: dataIntegrityProvenance,
+      },
       evaluationRetryApplied,
       evaluationRetryReason,
+      useFullHistory,
+      requestedMaxFeatureRows,
       datasetFeatureRowsOriginal: featureRows.originalCount,
       datasetFeatureRowsUsed: featureRows.usedCount,
       datasetFeatureDownsampled: featureRows.downsampled,
       datasetFeatureDownsampleStep: featureRows.step,
-      maxEvaluationFeatureRows: resolvePositiveLimit(MAX_EVALUATION_FEATURE_ROWS, 20_000),
+      maxEvaluationFeatureRows: useFullHistory ? null : resolvePositiveLimit(requestedMaxFeatureRows, 20_000),
       featureKeyExtras,
     },
     dataFields: provenance.dataFields,

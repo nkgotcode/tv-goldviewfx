@@ -292,6 +292,10 @@ export type EvaluationRequest = {
   slippageBps?: number | null;
   fundingWeight?: number | null;
   drawdownPenalty?: number | null;
+  fullHistory?: boolean | null;
+  maxFeatureRows?: number | null;
+  strategyIds?: string[] | null;
+  venueIds?: string[] | null;
   instrumentMeta?: {
     bingxSymbol: string;
     priceStep: number;

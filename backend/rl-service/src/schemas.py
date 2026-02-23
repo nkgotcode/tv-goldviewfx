@@ -127,6 +127,8 @@ class EvaluationRequest(BaseModel):
     funding_weight: float = 1.0
     drawdown_penalty: float = 0.0
     instrument_meta: dict[str, Any] | None = None
+    strategy_ids: list[str] | None = None
+    venue_ids: list[str] | None = None
     walk_forward: WalkForwardConfig | None = None
     feature_schema_fingerprint: str | None = None
     feature_key_extras: list[str] | None = None

@@ -1,31 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildMockEvaluation, normalizeEvaluationReport } from "../../src/services/evaluation_service";
-
-test("buildMockEvaluation marks long windows as pass", () => {
-  const now = new Date();
-  const payload = {
-    pair: "Gold-USDT",
-    periodStart: new Date(now.getTime() - 30 * 60 * 60 * 1000).toISOString(),
-    periodEnd: now.toISOString(),
-  };
-
-  const report = buildMockEvaluation(payload);
-  expect(report.trade_count).toBeGreaterThanOrEqual(20);
-  expect(report.status).toBe("pass");
-});
-
-test("buildMockEvaluation marks short windows as fail", () => {
-  const now = new Date();
-  const payload = {
-    pair: "Gold-USDT",
-    periodStart: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
-    periodEnd: now.toISOString(),
-  };
-
-  const report = buildMockEvaluation(payload);
-  expect(report.trade_count).toBeLessThan(20);
-  expect(report.status).toBe("fail");
-});
+import { DataGapBlockedError, isDataGapBlockedError, normalizeEvaluationReport } from "../../src/services/evaluation_service";
 
 test("normalizeEvaluationReport accepts camelCase payloads", () => {
   const report = normalizeEvaluationReport({
@@ -42,4 +16,17 @@ test("normalizeEvaluationReport accepts camelCase payloads", () => {
   expect(report.max_drawdown).toBe(0.12);
   expect(report.trade_count).toBe(40);
   expect(report.status).toBe("pass");
+});
+
+test("isDataGapBlockedError identifies typed gap-blocking failures", () => {
+  const error = new DataGapBlockedError("blocked", {
+    pair: "Gold-USDT",
+    interval: "1m",
+    blockingReasons: ["candle_gaps_detected"],
+    warnings: [],
+    integrityProvenance: {},
+    gapHealth: null,
+  });
+  expect(isDataGapBlockedError(error)).toBe(true);
+  expect(error.code).toBe("DATA_GAP_BLOCKED");
 });
