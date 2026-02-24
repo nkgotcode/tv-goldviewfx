@@ -28,12 +28,8 @@ const manualRunPayloadSchema = z.object({
   pairs: z.array(z.string().min(1)).optional(),
   useConfiguredPairs: z.boolean().optional(),
   interval: z.string().regex(intervalRegex).optional(),
-  // Run across multiple candle intervals (e.g. ["5m","15m","1h"])
-  intervals: z.array(z.string().regex(intervalRegex)).optional(),
   contextIntervals: z.array(z.string().regex(intervalRegex)).optional(),
   contextIntervalsCsv: z.string().optional(),
-  // Use full available history (no downsampling cap)
-  fullHistory: z.boolean().optional(),
   trainWindowMin: z.number().int().positive().optional(),
   evalWindowMin: z.number().int().positive().optional(),
   evalLagMin: z.number().int().nonnegative().optional(),
@@ -421,7 +417,6 @@ opsLearningRoutes.post("/run", requireOperatorRole, async (c) => {
       pair: (resolvedPair ?? undefined) as TradingPair | undefined,
       pairs: payload.useConfiguredPairs ? undefined : ((resolvedPairs.length > 0 ? resolvedPairs : undefined) as TradingPair[] | undefined),
       interval: payload.interval,
-      intervals: payload.intervals,
       contextIntervals: hasContextOverride ? mergedContextIntervals : undefined,
       trainWindowMin: payload.trainWindowMin,
       evalWindowMin: payload.evalWindowMin,
@@ -431,7 +426,6 @@ opsLearningRoutes.post("/run", requireOperatorRole, async (c) => {
       timesteps: payload.timesteps,
       decisionThreshold: payload.decisionThreshold,
       autoRollForward: payload.autoRollForward,
-      fullHistory: payload.fullHistory,
       promotionGates: payload.promotionGates ?? null,
       rolloutPolicy: payload.rolloutPolicy ?? null,
     };

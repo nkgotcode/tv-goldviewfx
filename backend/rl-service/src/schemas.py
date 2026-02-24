@@ -4,31 +4,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
-
-
-# Canonical pair aliases — normalize legacy / alternate names before enum validation.
-_PAIR_ALIASES: dict[str, str] = {
-    # "Gold-USDT" was an old enum value; canonical form is XAUTUSDT
-    "GOLDUSDT": "XAUTUSDT",
-    "GOLD-USDT": "XAUTUSDT",
-    "GOLD_USDT": "XAUTUSDT",
-    "GOLD": "XAUTUSDT",
-    "XAUT-USDT": "XAUTUSDT",
-    "PAXG-USDT": "PAXGUSDT",
-}
-
-
-def _normalize_pair(value: str) -> str:
-    """Resolve legacy or alternate pair strings to the canonical enum value."""
-    upper = value.strip().upper()
-    if upper in _PAIR_ALIASES:
-        return _PAIR_ALIASES[upper]
-    no_sep = upper.replace("-", "").replace("_", "")
-    return _PAIR_ALIASES.get(no_sep, value)
+from pydantic import BaseModel, Field
 
 
 class TradingPair(str, Enum):
+    GOLD_USDT = "Gold-USDT"
     XAUTUSDT = "XAUTUSDT"
     PAXGUSDT = "PAXGUSDT"
     ALGO_USDT = "ALGO-USDT"
@@ -37,16 +17,6 @@ class TradingPair(str, Enum):
     SOL_USDT = "SOL-USDT"
     XRP_USDT = "XRP-USDT"
     BNB_USDT = "BNB-USDT"
-
-    @classmethod
-    def _missing_(cls, value: object) -> "TradingPair | None":
-        """Allow legacy values like 'Gold-USDT' to resolve to XAUTUSDT."""
-        if isinstance(value, str):
-            normalized = _normalize_pair(value)
-            for member in cls:
-                if member.value == normalized:
-                    return member
-        return None
 
 
 class MarketCandle(BaseModel):
@@ -58,23 +28,11 @@ class MarketCandle(BaseModel):
     volume: float
 
 
-def _validate_pair(cls: Any, v: Any) -> Any:
-    """Pre-validate pair field: normalize alias → canonical before enum lookup."""
-    if isinstance(v, str):
-        return _normalize_pair(v)
-    return v
-
-
 class MarketSnapshot(BaseModel):
     pair: TradingPair
     candles: list[MarketCandle]
     last_price: float | None = None
     spread: float | None = None
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
 
 
 class AuxiliarySignal(BaseModel):
@@ -104,11 +62,6 @@ class RiskLimits(BaseModel):
 class InferenceRequest(BaseModel):
     run_id: str | None = None
     pair: TradingPair
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
     market: MarketSnapshot
     ideas: list[AuxiliarySignal] = Field(default_factory=list)
     signals: list[AuxiliarySignal] = Field(default_factory=list)
@@ -152,11 +105,6 @@ class WalkForwardConfig(BaseModel):
 
 class EvaluationRequest(BaseModel):
     pair: TradingPair
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
     period_start: datetime
     period_end: datetime
     interval: str = "1m"
@@ -189,11 +137,6 @@ class EvaluationRequest(BaseModel):
 class EvaluationReport(BaseModel):
     id: str
     pair: TradingPair
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
     win_rate: float
     net_pnl_after_fees: float
     max_drawdown: float
@@ -218,11 +161,6 @@ class HealthResponse(BaseModel):
 
 class DatasetRequest(BaseModel):
     pair: TradingPair
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
     interval: str = "1m"
     context_intervals: list[str] = Field(default_factory=list)
     start_at: datetime
@@ -237,11 +175,6 @@ class DatasetRequest(BaseModel):
 class DatasetVersionPayload(BaseModel):
     id: str
     pair: TradingPair
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
     interval: str
     start_at: datetime
     end_at: datetime
@@ -277,11 +210,6 @@ class DriftCheckResponse(BaseModel):
 
 class TrainingRequest(BaseModel):
     pair: TradingPair
-
-    @field_validator("pair", mode="before")
-    @classmethod
-    def normalize_pair(cls, v: Any) -> Any:
-        return _validate_pair(cls, v)
     period_start: datetime
     period_end: datetime
     interval: str = "1m"

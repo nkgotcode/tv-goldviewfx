@@ -77,8 +77,6 @@ export type OnlineLearningRunOverrides = {
   pair?: TradingPair;
   pairs?: TradingPair[];
   interval?: string;
-  /** Additional candle intervals to run in the batch (e.g. ["15m","1h"]). */
-  intervals?: string[];
   contextIntervals?: string[];
   trainWindowMin?: number;
   evalWindowMin?: number;
@@ -88,8 +86,6 @@ export type OnlineLearningRunOverrides = {
   timesteps?: number;
   decisionThreshold?: number;
   autoRollForward?: boolean;
-  /** When true, evaluations request full available history (no downsampling cap). */
-  fullHistory?: boolean;
   promotionGates?: Partial<PromotionGates> | null;
   rolloutPolicy?: Partial<RolloutPolicy> | null;
 };
@@ -113,40 +109,6 @@ function normalizePairs(rawPairs: string[]) {
     normalized.push(resolved as TradingPair);
   }
   return normalized;
-}
-
-export function resolveOnlineLearningIntervals(overrides?: OnlineLearningRunOverrides): string[] {
-  const env = loadEnv();
-  // Explicit override takes priority
-  if (overrides?.intervals?.length) {
-    const seen = new Set<string>();
-    const deduped: string[] = [];
-    for (const iv of overrides.intervals) {
-      const v = iv.trim();
-      if (!v || seen.has(v)) continue;
-      seen.add(v);
-      deduped.push(v);
-    }
-    if (deduped.length > 0) return deduped;
-  }
-  // Single override
-  if (overrides?.interval) return [overrides.interval.trim()];
-  // Env: RL_ONLINE_LEARNING_INTERVALS (CSV)
-  if (env.RL_ONLINE_LEARNING_INTERVALS) {
-    const parsed = env.RL_ONLINE_LEARNING_INTERVALS
-      .split(",")
-      .map((v) => v.trim())
-      .filter(Boolean);
-    if (parsed.length > 0) {
-      // Always ensure the primary interval is in the list
-      const primary = env.RL_ONLINE_LEARNING_INTERVAL;
-      const seen = new Set<string>(parsed);
-      const all = seen.has(primary) ? parsed : [primary, ...parsed];
-      return all;
-    }
-  }
-  // Fall back to single primary interval
-  return [env.RL_ONLINE_LEARNING_INTERVAL];
 }
 
 export function resolveOnlineLearningPairs(overrides?: OnlineLearningRunOverrides) {
@@ -240,8 +202,6 @@ export async function runOnlineLearningCycleForPair(
     throw new Error("Online learning training did not return an agent version id");
   }
 
-  const fullHistory = overrides?.fullHistory ?? env.RL_ONLINE_LEARNING_FULL_HISTORY;
-
   let report: Awaited<ReturnType<typeof runEvaluation>>;
   try {
     report = await runEvaluation({
@@ -254,7 +214,6 @@ export async function runOnlineLearningCycleForPair(
       windowSize,
       stride,
       decisionThreshold,
-      fullHistory,
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -285,7 +244,6 @@ export async function runOnlineLearningCycleForPair(
         windowSize,
         stride,
         decisionThreshold,
-        fullHistory,
       });
     } catch (error) {
       logWarn("online_learning.champion_eval_failed", {
@@ -349,9 +307,8 @@ export async function runOnlineLearningCycleForPair(
 export type OnlineLearningBatchResult = {
   status: "completed" | "partial" | "failed" | "skipped";
   requestedPairs: string[];
-  requestedIntervals: string[];
-  results: Array<{ pair: string; interval: string; result: OnlineLearningResult }>;
-  failures: Array<{ pair: string; interval: string; error: string }>;
+  results: Array<{ pair: string; result: OnlineLearningResult }>;
+  failures: Array<{ pair: string; error: string }>;
 };
 
 export async function runOnlineLearningBatch(
@@ -359,70 +316,71 @@ export async function runOnlineLearningBatch(
   overrides?: OnlineLearningRunOverrides,
 ): Promise<OnlineLearningBatchResult> {
   const pairs = resolveOnlineLearningPairs(overrides);
-  const intervals = resolveOnlineLearningIntervals(overrides);
-  const results: Array<{ pair: string; interval: string; result: OnlineLearningResult }> = [];
-  const failures: Array<{ pair: string; interval: string; error: string }> = [];
-
-  if (pairs.length === 0 || intervals.length === 0) {
+  const results: Array<{ pair: string; result: OnlineLearningResult }> = [];
+  const failures: Array<{ pair: string; error: string }> = [];
+  if (pairs.length === 0) {
     return {
       status: "skipped",
-      requestedPairs: pairs,
-      requestedIntervals: intervals,
+      requestedPairs: [],
       results: [],
       failures: [],
     };
   }
 
-  // Run all interval × pair combinations sequentially to avoid overwhelming the RL service.
-  for (const interval of intervals) {
-    for (const pair of pairs) {
-      const cycleOverrides: Omit<OnlineLearningRunOverrides, "pair" | "pairs" | "interval" | "intervals"> = {
-        contextIntervals: overrides?.contextIntervals,
-        trainWindowMin: overrides?.trainWindowMin,
-        evalWindowMin: overrides?.evalWindowMin,
-        evalLagMin: overrides?.evalLagMin,
-        windowSize: overrides?.windowSize,
-        stride: overrides?.stride,
-        timesteps: overrides?.timesteps,
-        decisionThreshold: overrides?.decisionThreshold,
-        autoRollForward: overrides?.autoRollForward,
-        fullHistory: overrides?.fullHistory,
-        promotionGates: overrides?.promotionGates,
-        rolloutPolicy: overrides?.rolloutPolicy,
-      };
-      try {
-        const result = await runOnlineLearningCycleForPair(pair, trigger, {
-          ...cycleOverrides,
-          interval,
-        });
-        results.push({ pair, interval, result });
-      } catch (error) {
-        failures.push({
-          pair,
-          interval,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        logWarn("online_learning.pair_interval_failed", {
-          trigger,
-          pair,
-          interval,
-          error: String(error),
-        });
-      }
+  const sharedOverrides: Omit<OnlineLearningRunOverrides, "pair" | "pairs"> = {
+    interval: overrides?.interval,
+    contextIntervals: overrides?.contextIntervals,
+    trainWindowMin: overrides?.trainWindowMin,
+    evalWindowMin: overrides?.evalWindowMin,
+    evalLagMin: overrides?.evalLagMin,
+    windowSize: overrides?.windowSize,
+    stride: overrides?.stride,
+    timesteps: overrides?.timesteps,
+    decisionThreshold: overrides?.decisionThreshold,
+    autoRollForward: overrides?.autoRollForward,
+    promotionGates: overrides?.promotionGates,
+    rolloutPolicy: overrides?.rolloutPolicy,
+  };
+
+  for (const pair of pairs) {
+    try {
+      const result = await runOnlineLearningCycleForPair(pair, trigger, sharedOverrides);
+      results.push({ pair, result });
+    } catch (error) {
+      failures.push({
+        pair,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      logWarn("online_learning.pair_failed", {
+        trigger,
+        pair,
+        error: String(error),
+      });
     }
   }
 
   if (results.length === 0 && failures.length > 0) {
-    return { status: "failed", requestedPairs: pairs, requestedIntervals: intervals, results, failures };
+    return {
+      status: "failed",
+      requestedPairs: pairs,
+      results,
+      failures,
+    };
   }
+
   if (failures.length > 0) {
-    return { status: "partial", requestedPairs: pairs, requestedIntervals: intervals, results, failures };
+    return {
+      status: "partial",
+      requestedPairs: pairs,
+      results,
+      failures,
+    };
   }
+
   const skippedOnly = results.every((entry) => entry.result.status === "skipped");
   return {
     status: skippedOnly ? "skipped" : "completed",
     requestedPairs: pairs,
-    requestedIntervals: intervals,
     results,
     failures,
   };

@@ -6,11 +6,10 @@ export async function runOnlineLearningJob() {
   try {
     const batch = await runOnlineLearningBatch("schedule");
     if (batch.failures.length > 0) {
-      const failedKeys = batch.failures.map((f) => `${f.pair}:${f.interval}`);
       await enqueueRetry({
         jobType: "online_learning",
-        payload: { pairs: [...new Set(batch.failures.map((f) => f.pair))] },
-        dedupeKey: `online_learning:schedule:${failedKeys.join(",")}`,
+        payload: { pairs: batch.failures.map((failure) => failure.pair) },
+        dedupeKey: `online_learning:schedule:${batch.failures.map((failure) => failure.pair).join(",")}`,
         error: "online_learning_partial_failure",
       });
       logWarn("Online learning partial retry queued", {

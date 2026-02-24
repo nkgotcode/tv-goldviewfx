@@ -113,14 +113,8 @@ const envSchema = z.object({
   RL_ONLINE_LEARNING_ENABLED: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_INTERVAL_MIN: z.coerce.number().int().positive().default(60),
   RL_ONLINE_LEARNING_INTERVAL: z.string().regex(/^\d+(m|h|d|w|M)$/).default("5m"),
-  // Comma-separated list of candle intervals to run in each batch (e.g. "5m,15m,1h").
-  // When set, the batch loops over all intervals × all configured pairs.
-  // If unset, only RL_ONLINE_LEARNING_INTERVAL is used.
-  RL_ONLINE_LEARNING_INTERVALS: z.string().optional(),
   RL_ONLINE_LEARNING_CONTEXT_INTERVALS: z.string().optional(),
   RL_ONLINE_LEARNING_PAIRS: z.string().optional(),
-  // When true, evaluations use the full available history (no downsampling cap).
-  RL_ONLINE_LEARNING_FULL_HISTORY: booleanFromEnv.default(false),
   RL_ONLINE_LEARNING_PAIR: z
     .string()
     .default("XAUTUSDT")

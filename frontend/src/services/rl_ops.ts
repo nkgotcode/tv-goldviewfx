@@ -263,8 +263,6 @@ export type OnlineLearningRunRequest = {
   pairs?: string[];
   useConfiguredPairs?: boolean;
   interval?: string;
-  /** Additional candle intervals to run in the batch (e.g. ["5m","15m","1h"]). */
-  intervals?: string[];
   contextIntervals?: string[];
   contextIntervalsCsv?: string;
   trainWindowMin?: number;
@@ -275,8 +273,6 @@ export type OnlineLearningRunRequest = {
   timesteps?: number;
   decisionThreshold?: number;
   autoRollForward?: boolean;
-  /** Use full available history (no downsampling cap). */
-  fullHistory?: boolean;
   promotionGates?: {
     minWinRate?: number;
     minNetPnl?: number;
