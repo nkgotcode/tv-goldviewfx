@@ -24,11 +24,49 @@ class MatrixBacktestResult:
     result: object
 
 
+# Backtest fidelity modes (phased): L1 = quotes/trades (better slippage), L2/L3 = order book sim (highest realism)
+BACKTEST_MODE_L1 = "l1"
+BACKTEST_MODE_L2 = "l2"
+BACKTEST_MODE_L3 = "l3"
+BACKTEST_MODES = (BACKTEST_MODE_L1, BACKTEST_MODE_L2, BACKTEST_MODE_L3)
+
+
 STRATEGY_REGISTRY: dict[str, dict[str, Any]] = {
     "rl_sb3_market": {
         "strategy_path": "training.rl_strategy:RLSb3Strategy",
         "config_path": "training.rl_strategy:RLSb3StrategyConfig",
         "config": {},
+    },
+    "ema_trend": {
+        "strategy_path": "training.strategies.ema_trend:EmaTrendStrategy",
+        "config_path": "training.strategies.ema_trend:EmaTrendStrategyConfig",
+        "config": {
+            "ema_fast": 20,
+            "ema_slow": 100,
+            "atr_period": 14,
+            "stop_atr_mult": 1.5,
+            "take_profit_atr_mult": 3.0,
+        },
+    },
+    "bollinger_mean_rev": {
+        "strategy_path": "training.strategies.bollinger_rev:BollingerMeanRevStrategy",
+        "config_path": "training.strategies.bollinger_rev:BollingerMeanRevStrategyConfig",
+        "config": {
+            "bb_period": 20,
+            "bb_std": 2.0,
+            "rsi_period": 14,
+            "rsi_long_threshold": 30.0,
+            "rsi_short_threshold": 70.0,
+        },
+    },
+    "funding_overlay": {
+        "strategy_path": "training.strategies.funding_overlay:FundingOverlayStrategy",
+        "config_path": "training.strategies.funding_overlay:FundingOverlayStrategyConfig",
+        "config": {
+            "funding_threshold_positive": 0.0001,
+            "funding_threshold_negative": -0.0001,
+            "exposure_reduction_factor": 0.5,
+        },
     },
 }
 
@@ -231,7 +269,11 @@ def run_backtest(
     instrument_meta: dict | None = None,
     strategy_ids: list[str] | None = None,
     venue_ids: list[str] | None = None,
+    backtest_mode: str = BACKTEST_MODE_L1,
 ) -> list[MatrixBacktestResult]:
+    if backtest_mode not in BACKTEST_MODES:
+        raise ValueError(f"backtest_mode must be one of {BACKTEST_MODES}, got {backtest_mode!r}")
+    # L2/L3 require continuous order book capture; currently we run L1 only
     resolved_strategy_ids = _resolve_requested_ids(strategy_ids, STRATEGY_REGISTRY, kind="strategy")
     resolved_venue_ids = _resolve_requested_ids(venue_ids, VENUE_REGISTRY, kind="venue")
     price_precision, size_precision, _, _ = _resolve_instrument_meta(instrument_meta)
@@ -270,18 +312,20 @@ def run_backtest(
 
             for strategy_id in resolved_strategy_ids:
                 strategy_spec = STRATEGY_REGISTRY[strategy_id]
+                base_config: dict[str, Any] = {
+                    "instrument_id": instrument.id,
+                    "bar_type": str(bar_type),
+                    "trade_size": _format_decimal(1.0, size_precision),
+                    **(strategy_spec.get("config", {}) or {}),
+                }
+                if strategy_id == "rl_sb3_market":
+                    base_config["model_path"] = model_path
+                    base_config["decision_threshold"] = decision_threshold
+                    base_config["window_size"] = window_size
                 strategy_config = ImportableStrategyConfig(
                     strategy_path=str(strategy_spec["strategy_path"]),
                     config_path=str(strategy_spec["config_path"]),
-                    config={
-                        "instrument_id": instrument.id,
-                        "bar_type": str(bar_type),
-                        "trade_size": _format_decimal(1.0, size_precision),
-                        "model_path": model_path,
-                        "decision_threshold": decision_threshold,
-                        "window_size": window_size,
-                        **(strategy_spec.get("config", {}) or {}),
-                    },
+                    config=base_config,
                 )
 
                 run_config = BacktestRunConfig(

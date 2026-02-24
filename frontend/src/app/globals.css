@@ -1619,3 +1619,119 @@ button.ghost:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* Institutional Ops */
+.institutional-ops {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-top: 24px;
+}
+
+.institutional-ops-nav {
+  position: sticky;
+  top: 24px;
+}
+
+.institutional-ops-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.institutional-ops-nav-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.institutional-ops-nav-btn:hover {
+  color: var(--ink);
+  background: var(--panel-bg);
+}
+
+.institutional-ops-nav-btn.active {
+  color: var(--brand-strong);
+  background: var(--panel-bg);
+  border-color: var(--card-edge);
+}
+
+.institutional-ops-content {
+  min-height: 320px;
+  padding: 20px 0;
+}
+
+.institutional-ops-panel {
+  max-width: 720px;
+}
+
+.institutional-ops-panel-title {
+  font-size: 1.25rem;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+
+.institutional-ops-panel .bullet-list {
+  margin: 12px 0 0;
+  padding-left: 1.25rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.overview-card {
+  padding: 14px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.overview-card h3 {
+  font-size: 0.95rem;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+
+.overview-card .bullet-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+@media (max-width: 768px) {
+  .institutional-ops {
+    grid-template-columns: 1fr;
+  }
+
+  .institutional-ops-nav {
+    position: static;
+  }
+
+  .institutional-ops-nav-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .institutional-ops-nav-btn {
+    width: auto;
+  }
+}

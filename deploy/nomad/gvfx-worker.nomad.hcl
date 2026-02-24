@@ -168,6 +168,11 @@ variable "secrets_var_path" {
   default = "nomad/jobs/gvfx/secrets"
 }
 
+variable "metrics_port" {
+  type    = number
+  default = 9091
+}
+
 job "gvfx-worker" {
   region      = var.region
   namespace   = var.namespace
@@ -203,6 +208,9 @@ job "gvfx-worker" {
 
     network {
       mode = "host"
+      port "metrics" {
+        static = var.metrics_port
+      }
     }
 
     update {
@@ -319,6 +327,7 @@ EOT
 
       env {
         NODE_ENV                = "production"
+        METRICS_PORT            = "${var.metrics_port}"
         MARKET_GOLD_PAIRS       = var.market_gold_pairs
         MARKET_CRYPTO_PAIRS     = var.market_crypto_pairs
         BINGX_MARKET_DATA_PAIRS = var.bingx_market_data_pairs

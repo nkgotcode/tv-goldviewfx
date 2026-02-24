@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { toCanonicalInstrumentId } from "../config/instrument_normalization";
 import { fromBingxSymbol, resolveSupportedPair, toBingxSymbol } from "../config/market_catalog";
 import { insertMarketInputSnapshot, listMarketInputSnapshots } from "../db/repositories/market_input_snapshots";
+import { upsertInstrumentMapping } from "../db/repositories/instrument_mappings";
 import { logWarn } from "./logger";
 import type { TradingPair } from "../types/rl";
 
@@ -250,6 +252,25 @@ async function storeSnapshot(metadata: ExchangeInstrumentMetadata) {
     });
   } catch (error) {
     logWarn("exchange_metadata.store_snapshot_failed", { pair: metadata.pair, error: String(error) });
+  }
+  try {
+    const canonicalId = toCanonicalInstrumentId("BINGX", metadata.bingxSymbol, "PERP");
+    await upsertInstrumentMapping({
+      canonical_instrument_id: canonicalId,
+      venue: "BINGX",
+      venue_symbol: metadata.bingxSymbol,
+      contract_type: "PERP",
+      tick_size: metadata.priceStep,
+      step_size: metadata.quantityStep,
+      margin_currency: "USDT",
+      maker_fee_bps: 0,
+      taker_fee_bps: 0,
+    });
+  } catch (error) {
+    logWarn("exchange_metadata.instrument_mapping_upsert_failed", {
+      pair: metadata.pair,
+      error: String(error),
+    });
   }
 }
 

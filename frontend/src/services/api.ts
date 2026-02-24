@@ -121,3 +121,37 @@ export async function fetchTradeDetail(id: string) {
     }
   >(`/trades/${id}`);
 }
+
+export type HealthStatus = { status: string };
+
+export async function fetchHealth() {
+  return fetchJson<HealthStatus>("/health");
+}
+
+export type OpsIngestionStatus = {
+  generated_at: string;
+  sources?: Array<{ source_type?: string; source_id?: string; status?: string; last_run?: string }>;
+};
+
+export async function fetchOpsIngestionStatus() {
+  return fetchJson<OpsIngestionStatus>("/ops/ingestion/status");
+}
+
+export type OpsLearningHistoryResponse = {
+  generatedAt: string;
+  items: Array<{
+    id: string;
+    status?: string;
+    pair?: string | null;
+    evaluationReport?: { status?: string; backtestRunId?: string } | null;
+  }>;
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+};
+
+export async function fetchOpsLearningHistory(params?: { page?: number; page_size?: number }) {
+  const search = new URLSearchParams();
+  if (params?.page != null) search.set("page", String(params.page));
+  if (params?.page_size != null) search.set("page_size", String(params.page_size));
+  const q = search.toString();
+  return fetchJson<OpsLearningHistoryResponse>(`/ops/learning/history${q ? `?${q}` : ""}`);
+}

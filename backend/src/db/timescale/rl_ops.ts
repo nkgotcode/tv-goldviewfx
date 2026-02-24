@@ -506,6 +506,26 @@ export async function ensureTimescaleRlOpsSchema() {
       `;
       await sql`create index if not exists idx_ops_alerts_triggered on ops_alerts (triggered_at desc)`;
 
+      await sql`
+        create table if not exists instrument_mappings (
+          canonical_instrument_id text primary key,
+          venue text not null,
+          venue_symbol text not null,
+          contract_type text not null default 'PERP',
+          tick_size double precision not null,
+          step_size double precision not null,
+          contract_multiplier double precision not null default 1,
+          margin_currency text not null default 'USDT',
+          maker_fee_bps double precision not null default 0,
+          taker_fee_bps double precision not null default 0,
+          vip_tier_metadata jsonb null,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `;
+      await sql`create unique index if not exists idx_instrument_mappings_venue_symbol on instrument_mappings (venue, venue_symbol)`;
+      await sql`create index if not exists idx_instrument_mappings_venue on instrument_mappings (venue)`;
+
       logInfo("Timescale RL/ops schema ready");
     })();
   }

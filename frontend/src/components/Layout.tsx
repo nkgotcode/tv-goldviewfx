@@ -52,6 +52,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Link href="/ingestion">Ingestion</Link>
           <Link href="/rl-ops">RL Ops</Link>
           <Link href="/rl-evaluations">RL Evaluations</Link>
+          <Link href="/institutional-ops">Institutional Ops</Link>
         </nav>
         <div className="header-actions">
           <div className="status-pill">Live Signal Console</div>

@@ -24,6 +24,7 @@ import type { TradingPair } from "../types/rl";
 import { getOrCreateSource } from "../db/repositories/sources";
 import { completeSyncRun, createSyncRun } from "../db/repositories/sync_runs";
 import { shouldRunIngestion } from "./ingestion_control";
+import { isRawLakeEnabled, writeRawPayload } from "./data_lake/raw_lake";
 
 const DEFAULT_BASE_URL = "https://open-api.bingx.com";
 const DEFAULT_INTERVALS = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "3d", "1w", "1M"];
@@ -889,6 +890,10 @@ async function requestBingx(
     }
 
     if (response.ok && (!body?.code || body.code === 0)) {
+      if (isRawLakeEnabled() && body != null) {
+        const endpoint = path.replace(/^\//, "").replace(/\//g, "_");
+        void writeRawPayload("BINGX", endpoint, body, { suffix: `${Date.now()}` });
+      }
       return body?.data ?? body ?? {};
     }
 

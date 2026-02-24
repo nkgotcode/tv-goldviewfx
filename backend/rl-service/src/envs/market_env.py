@@ -12,6 +12,14 @@ try:  # pragma: no cover - optional dependency guard
 except Exception as exc:  # pragma: no cover
     raise RuntimeError("gymnasium is required for RL environments") from exc
 
+# Default observation: rolling window N bars (1 step = 1 bar)
+DEFAULT_OBSERVATION_WINDOW = 120
+# Default reward coefficients: risk_penalty = lambda_risk * |position| * realized_vol, turnover_penalty = kappa * |Δposition|
+DEFAULT_RISK_PENALTY_LAMBDA = 0.1
+DEFAULT_TURNOVER_PENALTY_KAPPA = 0.01
+# Discrete actions: 0=Flat, 1=Long, 2=Short (interpreted as target position; trade at next bar open)
+ACTION_FLAT, ACTION_LONG, ACTION_SHORT = 0, 1, 2
+
 
 @dataclass
 class WindowFeatures:
@@ -208,4 +216,128 @@ class MarketWindowEnv(gym.Env):
         self._last_close = next_close
 
         next_features = _compute_window_features(next_window, self._feature_keys)
+        return next_features.observation, float(reward), False, False, {"gross_pnl": gross_pnl}
+
+
+def _realized_volatility(closes: list[float], window: int = 20) -> float:
+    if len(closes) < 2 or window < 2:
+        return 0.0
+    import math
+    recent = closes[-window:]
+    returns = []
+    for i in range(1, len(recent)):
+        if recent[i - 1] and recent[i - 1] != 0:
+            returns.append((recent[i] - recent[i - 1]) / recent[i - 1])
+    if not returns:
+        return 0.0
+    mean_ret = sum(returns) / len(returns)
+    var = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
+    return math.sqrt(max(0, var))
+
+
+class MarketWindowDiscreteEnv(gym.Env):
+    """
+    Gymnasium env with discrete action space: 0=Flat, 1=Long, 2=Short.
+    Reward = ΔEquity - fees - funding - risk_penalty - turnover_penalty.
+    Execution convention: interpret action as target position; trade at next bar open.
+    """
+
+    metadata = {"render_modes": []}
+
+    def __init__(
+        self,
+        windows: list[list[dict]],
+        feature_keys: list[str],
+        leverage: float = 1.0,
+        taker_fee_bps: float = 0.0,
+        slippage_bps: float = 0.0,
+        funding_weight: float = 1.0,
+        drawdown_penalty: float = 0.0,
+        risk_penalty_lambda: float = DEFAULT_RISK_PENALTY_LAMBDA,
+        turnover_penalty_kappa: float = DEFAULT_TURNOVER_PENALTY_KAPPA,
+        technical_config: dict | None = None,
+    ):
+        super().__init__()
+        if not windows:
+            raise ValueError("windows must not be empty")
+        self._windows = windows
+        self._feature_keys = list(feature_keys)
+        self._technical_config = technical_config
+        self._index = 0
+        self._leverage = max(0.0, float(leverage))
+        self._taker_fee_rate = max(0.0, float(taker_fee_bps)) / 10_000.0
+        self._slippage_rate = max(0.0, float(slippage_bps)) / 10_000.0
+        self._funding_weight = max(0.0, float(funding_weight))
+        self._drawdown_penalty = max(0.0, float(drawdown_penalty))
+        self._risk_lambda = max(0.0, float(risk_penalty_lambda))
+        self._turnover_kappa = max(0.0, float(turnover_penalty_kappa))
+        self._prev_position = 0.0
+        self._equity = 1.0
+        self._equity_peak = 1.0
+
+        self.action_space = gym.spaces.Discrete(3)  # 0=Flat, 1=Long, 2=Short
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(len(self._feature_keys),),
+            dtype=np.float32,
+        )
+
+    def _action_to_position(self, action: int) -> float:
+        if action == ACTION_LONG:
+            return 1.0
+        if action == ACTION_SHORT:
+            return -1.0
+        return 0.0
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
+        super().reset(seed=seed)
+        self._index = 0
+        self._prev_position = 0.0
+        self._equity = 1.0
+        self._equity_peak = 1.0
+        features = _compute_window_features(
+            self._windows[self._index], self._feature_keys, self._technical_config
+        )
+        return features.observation, {}
+
+    def step(self, action: int | np.ndarray):
+        if isinstance(action, np.ndarray):
+            action = int(np.ravel(action)[0])
+        target_position = self._action_to_position(action)
+        current_window = self._windows[self._index]
+        features = _compute_window_features(
+            current_window, self._feature_keys, self._technical_config
+        )
+        current_close = features.current_close
+
+        self._index += 1
+        done = self._index >= len(self._windows)
+        if done:
+            return features.observation, 0.0, True, False, {}
+
+        next_window = self._windows[self._index]
+        next_close = _safe_float(next_window[-1].get("close"), current_close)
+        gross_pnl = 0.0
+        if current_close > 0:
+            pct_move = (next_close - current_close) / current_close
+            gross_pnl = target_position * pct_move * self._leverage
+        turnover = abs(target_position - self._prev_position)
+        transaction_cost = turnover * (self._taker_fee_rate + self._slippage_rate)
+        funding_cost = target_position * features.funding_rate * self._funding_weight * self._leverage
+        # Realized vol from recent closes for risk penalty
+        closes = [float(b.get("close", 0.0)) for b in current_window]
+        realized_vol = _realized_volatility(closes, 20)
+        risk_penalty = self._risk_lambda * abs(target_position) * realized_vol
+        turnover_penalty = self._turnover_kappa * turnover
+        step_pnl = gross_pnl - transaction_cost - funding_cost - risk_penalty - turnover_penalty
+        self._equity += step_pnl
+        self._equity_peak = max(self._equity_peak, self._equity)
+        drawdown = max(0.0, self._equity_peak - self._equity)
+        reward = step_pnl - self._drawdown_penalty * drawdown
+        self._prev_position = target_position
+
+        next_features = _compute_window_features(
+            next_window, self._feature_keys, self._technical_config
+        )
         return next_features.observation, float(reward), False, False, {"gross_pnl": gross_pnl}

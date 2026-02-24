@@ -5,6 +5,9 @@ export async function authMiddleware(c: Context, next: Next) {
   if (path === "/health" || path.startsWith("/health/")) {
     return next();
   }
+  if (path === "/metrics" || path === "/metrics/") {
+    return next();
+  }
 
   const token = process.env.API_TOKEN;
   if (!token) {

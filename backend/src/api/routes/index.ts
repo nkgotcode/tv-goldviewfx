@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { errorHandler } from "../middleware/error";
 import { loadEnv } from "../../config/env";
 import { healthRoutes } from "./health";
+import { metricsRoutes } from "./metrics";
 import { syncRoutes } from "./sync_tradingview";
 import { syncRunsRoutes } from "./sync_runs";
 import { ideasRoutes } from "./ideas";
@@ -39,6 +40,7 @@ import { featureSetsRoutes } from "./feature_sets";
 import { dataQualityRoutes } from "./data_quality";
 import { driftAlertsRoutes } from "./drift_alerts";
 import { rlGovernanceRoutes } from "./rl_governance";
+import { instrumentMappingsRoutes } from "./instrument_mappings";
 
 const app = new Hono();
 const env = loadEnv();
@@ -56,6 +58,7 @@ app.use("*", errorHandler);
 app.use("*", authMiddleware);
 
 app.route("/health", healthRoutes);
+app.route("/metrics", metricsRoutes);
 app.route("/sync", syncRoutes);
 app.route("/sync/runs", syncRunsRoutes);
 app.route("/ideas", ideasRoutes);
@@ -92,5 +95,6 @@ app.route("/bingx/market-data", bingxMarketDataRoutes);
 app.route("/datasets", datasetsRoutes);
 app.route("/feature-sets", featureSetsRoutes);
 app.route("/data-quality", dataQualityRoutes);
+app.route("/instrument-mappings", instrumentMappingsRoutes);
 
 export default app;

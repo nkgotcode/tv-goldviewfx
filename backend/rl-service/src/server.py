@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 import uvicorn
 
 from config import load_config
@@ -33,6 +34,21 @@ def create_app() -> FastAPI:
     @app.get("/")
     def root() -> dict[str, str]:
         return {"status": "ready"}
+
+    @app.get("/metrics")
+    def metrics() -> Response:
+        try:
+            from prometheus_client import REGISTRY, generate_latest
+            body = generate_latest(REGISTRY)
+            return Response(
+                content=body,
+                media_type="text/plain; version=0.0.4; charset=utf-8",
+            )
+        except Exception:
+            return Response(
+                content="# RL service metrics unavailable\n",
+                media_type="text/plain; charset=utf-8",
+            )
 
     return app
 
