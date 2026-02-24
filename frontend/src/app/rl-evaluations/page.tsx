@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_PAIRS } from "../../config/marketCatalog";
 import Layout from "../../components/Layout";
 import EvaluationReportPanel from "../../components/rl-agent/EvaluationReportPanel";
@@ -236,24 +236,32 @@ export default function RlEvaluationsPage() {
   const [actionNote, setActionNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Refs to avoid stale closure deps while preventing re-fetch loops on init
+  const versionIdRef = useRef(versionId);
+  const selectedReportIdRef = useRef(selectedReportId);
+  useEffect(() => { versionIdRef.current = versionId; }, [versionId]);
+  useEffect(() => { selectedReportIdRef.current = selectedReportId; }, [selectedReportId]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [agentVersions, evaluationReports, learning] = await Promise.all([
         listAgentVersions(),
-        listEvaluationReports("gold-rl-agent", versionId || undefined),
+        listEvaluationReports("gold-rl-agent", versionIdRef.current || undefined),
         fetchOnlineLearningStatus(1).catch(() => null),
       ]);
       setVersions(agentVersions);
       setReports(evaluationReports);
       setLearningStatus(learning);
       const firstVersion = agentVersions[0];
-      if (!versionId && firstVersion) {
+      if (!versionIdRef.current && firstVersion) {
+        versionIdRef.current = firstVersion.id;
         setVersionId(firstVersion.id);
       }
       const firstReport = evaluationReports[0];
-      if (!selectedReportId && firstReport) {
+      if (!selectedReportIdRef.current && firstReport) {
+        selectedReportIdRef.current = firstReport.id;
         setSelectedReportId(firstReport.id);
       }
     } catch (err) {
@@ -261,7 +269,7 @@ export default function RlEvaluationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedReportId, versionId]);
+  }, []); // stable — reads latest values via refs
 
   useEffect(() => {
     refresh();

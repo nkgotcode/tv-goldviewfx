@@ -129,6 +129,16 @@ def _decimal_places(step: float) -> int:
     return len(text.split(".")[1])
 
 
+def _str_decimal_places(s: str) -> int:
+    """Count decimal digits in a formatted numeric string as Nautilus Price/Quantity.from_str would.
+    Unlike _decimal_places (which converts to float first and strips trailing zeros), this
+    counts the raw digits after the decimal point so that '1.0' → 1, matching Quantity.from_str precision.
+    """
+    if "." in s:
+        return len(s.split(".")[1])
+    return 0
+
+
 def _canonical_step(step: float | None, precision: int) -> float:
     if step is not None and step > 0:
         return float(f"{step:.12f}")
@@ -154,15 +164,25 @@ def _resolve_instrument_meta(instrument_meta: dict | None) -> tuple[int, int, st
     )
 
     resolved_price_precision = price_precision if price_precision is not None else _decimal_places(price_step or 0.01)
-    resolved_size_precision = size_precision if size_precision is not None else _decimal_places(size_step or 0.001)
-    resolved_price_step = _canonical_step(price_step, resolved_price_precision)
-    resolved_size_step = _canonical_step(size_step, resolved_size_precision)
 
+    # size_precision=0 from BingX quantityPrecision means "integer quantity", but Nautilus always
+    # formats size_increment with at least 1 decimal place (max(1, ...)), which gives string precision=1
+    # via Quantity.from_str. Nautilus then asserts size_precision == size_increment.precision and
+    # raises ValueError when they mismatch. Fix: derive precision from the final increment string
+    # using _str_decimal_places (counts raw string digits, not float digits) and take the max.
+    base_size_precision = size_precision if size_precision is not None else _decimal_places(size_step or 0.001)
+    resolved_price_step = _canonical_step(price_step, resolved_price_precision)
+    resolved_size_step = _canonical_step(size_step, base_size_precision)
+    final_size_increment = f"{resolved_size_step:.{max(1, _decimal_places(resolved_size_step))}f}"
+    # Align size_precision with the actual string decimal places of the increment
+    resolved_size_precision = max(base_size_precision, _str_decimal_places(final_size_increment))
+
+    price_increment = f"{resolved_price_step:.{max(1, _decimal_places(resolved_price_step))}f}"
     return (
         resolved_price_precision,
         resolved_size_precision,
-        f"{resolved_price_step:.{max(1, _decimal_places(resolved_price_step))}f}",
-        f"{resolved_size_step:.{max(1, _decimal_places(resolved_size_step))}f}",
+        price_increment,
+        final_size_increment,
     )
 
 
