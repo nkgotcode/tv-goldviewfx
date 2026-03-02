@@ -155,6 +155,24 @@ const envSchema = z.object({
   RL_FEATURE_MAX_MISSING_CRITICAL: z.coerce.number().int().nonnegative().default(0),
   RL_FEATURE_MAX_FRESHNESS_SEC: z.coerce.number().int().positive().default(180),
   ACCOUNT_RISK_MIN_LIQUIDATION_BUFFER_BPS: z.coerce.number().nonnegative().default(50),
+
+  // ─── Binance ───
+  BINANCE_API_KEY: z.string().optional(),
+  BINANCE_SECRET_KEY: z.string().optional(),
+  BINANCE_SPOT_BASE_URL: z.string().url().default("https://api.binance.com"),
+  BINANCE_FUTURES_BASE_URL: z.string().url().default("https://fapi.binance.com"),
+  BINANCE_SPOT_WS_URL: z.string().default("wss://stream.binance.com:9443"),
+  BINANCE_FUTURES_WS_URL: z.string().default("wss://fstream.binance.com"),
+  BINANCE_MARKET_DATA_ENABLED: booleanFromEnv.default(false),
+  BINANCE_WS_ENABLED: booleanFromEnv.default(false),
+  BINANCE_BACKFILL_ENABLED: booleanFromEnv.default(false),
+  BINANCE_MARKET_DATA_PAIRS: z.string().optional(),
+  BINANCE_INGEST_INTERVALS: z.string().optional(),
+  BINANCE_BACKFILL_MAX_BATCHES: z.coerce.number().int().positive().default(50000),
+  BINANCE_WS_FLUSH_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+  BINANCE_WS_RECONNECT_MIN_MS: z.coerce.number().int().positive().default(1000),
+  BINANCE_WS_RECONNECT_MAX_MS: z.coerce.number().int().positive().default(30000),
+  BINANCE_REST_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(300000),
 });
 
 export type Env = z.infer<typeof envSchema>;

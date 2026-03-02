@@ -43,6 +43,11 @@ API_TOKEN = "replace-me"
 BINGX_API_KEY = "replace-me"
 BINGX_SECRET_KEY = "replace-me"
 
+# ─── Binance ───
+BINANCE_MARKET_DATA_PAIRS = "ALGOUSDT,BNBUSDT,BTCUSDT,ETHUSDT,PAXGUSDT,SOLUSDT,XRPUSDT"
+BINANCE_API_KEY = "replace-me"
+BINANCE_SECRET_KEY = "replace-me"
+
 TELEGRAM_API_ID = "replace-me"
 TELEGRAM_API_HASH = "replace-me"
 TELEGRAM_SESSION = "replace-me"
