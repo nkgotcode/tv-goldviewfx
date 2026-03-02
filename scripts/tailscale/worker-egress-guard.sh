@@ -134,6 +134,7 @@ up_with_exit_node() {
     --accept-routes="$TS_ACCEPT_ROUTES" \
     --accept-dns="$TS_ACCEPT_DNS" \
     --exit-node="$exit_node" \
+    --ephemeral \
     --reset
 }
 

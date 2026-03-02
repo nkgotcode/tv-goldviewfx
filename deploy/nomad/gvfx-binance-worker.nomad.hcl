@@ -15,7 +15,7 @@ variable "datacenters" {
 
 variable "backend_image" {
   type    = string
-  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-20260302-binance.8"
+  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:78fcfa7be3f29a50845dbb4cdaff5be23aa677bf"
 }
 
 variable "backend_work_dir" {
