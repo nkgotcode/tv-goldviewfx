@@ -47,15 +47,19 @@ def test_nautilus_backtest_returns_result():
         handle.write(payload)
         handle.flush()
 
-        result = run_backtest(
+        results = run_backtest(
             pair="Gold-USDT",
             interval="1m",
             features=_features(start, 120),
             model_path=handle.name,
             window_size=5,
             decision_threshold=999,
+            strategy_ids=["rl_sb3_market"],
+            venue_ids=["bingx_margin"],
         )
 
-    assert result.run_id
+    assert len(results) == 1
+    result = results[0].result
+    assert getattr(result, "run_id", None)
     assert hasattr(result, "stats_returns")
     assert hasattr(result, "stats_pnls")

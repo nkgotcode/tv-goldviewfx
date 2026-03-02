@@ -16,9 +16,29 @@ const policySchema = z.object({
 
 export const sourcePoliciesRoutes = new Hono();
 
+const OPS_READ_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(process.env.OPS_READ_TIMEOUT_MS ?? "4000", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 4000;
+  return parsed;
+})();
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}_timeout_${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 sourcePoliciesRoutes.get("/", async (c) => {
   try {
-    const policies = await listSourcePolicies();
+    const policies = await withTimeout(listSourcePolicies(), OPS_READ_TIMEOUT_MS, "source_policies_read");
     return c.json({ data: policies });
   } catch (error) {
     logWarn("Failed to load source policies", { error: String(error) });

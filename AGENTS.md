@@ -54,10 +54,15 @@ Dependencies: keep all libraries and runtimes on the latest stable releases.
 - Nomad deploy workflow:
   - Build/push immutable GHCR tags (linux/amd64) for backend + RL only: `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-backend:<tag> -f deploy/docker/backend-overlay.Dockerfile --push .`, `docker buildx build --platform linux/amd64 -t ghcr.io/<owner>/tv-goldviewfx-rl-service:<tag> -f deploy/docker/rl-service-overlay.Dockerfile --push .`.
   - Verify manifest exists before rollout: `docker manifest inspect ghcr.io/<owner>/tv-goldviewfx-backend:<tag> >/dev/null` (repeat for each image).
+  - Never deploy Nomad jobs with placeholder defaults like `ghcr.io/your-org/...:replace-with-git-sha`; always pass real image refs via `-var`.
+  - Recommended tag flow: `TAG="nomad-$(date +%Y%m%d-%H%M)-$(git rev-parse --short=12 HEAD)"`; backend image: `ghcr.io/nkgotcode/tv-goldviewfx-backend:$TAG`; RL image: `ghcr.io/nkgotcode/tv-goldviewfx-rl-service:$TAG`.
+  - API deploy example: `nomad job plan -var "backend_image=ghcr.io/nkgotcode/tv-goldviewfx-backend:$TAG" deploy/nomad/gvfx-api.nomad.hcl` then `nomad job run -var "backend_image=ghcr.io/nkgotcode/tv-goldviewfx-backend:$TAG" deploy/nomad/gvfx-api.nomad.hcl`.
+  - RL deploy example: `nomad job plan -var "rl_service_image=ghcr.io/nkgotcode/tv-goldviewfx-rl-service:$TAG" deploy/nomad/gvfx-rl-service.nomad.hcl` then `nomad job run -var "rl_service_image=ghcr.io/nkgotcode/tv-goldviewfx-rl-service:$TAG" deploy/nomad/gvfx-rl-service.nomad.hcl`.
+  - Worker deploy example: `nomad job plan -var "backend_image=ghcr.io/nkgotcode/tv-goldviewfx-backend:$TAG" -var ts_exit_node_primary=<tailnet-ip> -var ts_egress_expected_ips=<csv> deploy/nomad/gvfx-worker.nomad.hcl` then matching `nomad job run`.
   - Always `nomad job plan` before `nomad job run` for each job.
   - Stateless rollout order: `gvfx-rl-service` -> `gvfx-api` -> `gvfx-worker` (frontend now hosted on Cloudflare Workers by default).
   - Worker deploy requires egress vars when running job plan/run: `-var ts_exit_node_primary=<tailnet-ip> -var ts_egress_expected_ips=<csv>`.
-  - Verify deployment image pin: `nomad job inspect -json <job> | jq -r '.TaskGroups[].Tasks[].Config.image'`.
+  - Verify deployment image pin after rollout: `nomad job inspect -json <job> | jq -r '.TaskGroups[].Tasks[].Config.image'`.
 - Cloudflare frontend deploy workflow:
   - One-time auth: `cd frontend && npx wrangler login`.
   - Deploy worker: `./scripts/deploy-frontend-cloudflare.sh` (reads `API_BASE_URL`/`API_TOKEN` from env, prefers active Tailscale Funnel URL, and rejects private-only upstreams).

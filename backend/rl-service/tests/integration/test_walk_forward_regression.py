@@ -76,3 +76,6 @@ def test_nautilus_backtest_regression_is_deterministic_for_fixed_inputs(client):
     second_metadata = second_payload.get("metadata") or {}
     assert first_metadata.get("evaluation_mode") == "nautilus_backtest_only"
     assert second_metadata.get("evaluation_mode") == "nautilus_backtest_only"
+    assert first_metadata.get("walk_forward", {}).get("ignored") is False
+    assert second_metadata.get("walk_forward", {}).get("ignored") is False
+    assert len(first_metadata.get("fold_metrics", [])) == len(second_metadata.get("fold_metrics", []))

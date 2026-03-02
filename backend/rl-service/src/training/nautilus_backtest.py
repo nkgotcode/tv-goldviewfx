@@ -70,6 +70,13 @@ STRATEGY_REGISTRY: dict[str, dict[str, Any]] = {
     },
 }
 
+# Nautilus-first defaults intentionally exclude RL/SB3 strategy.
+DEFAULT_STRATEGY_IDS: tuple[str, ...] = (
+    "ema_trend",
+    "bollinger_mean_rev",
+    "funding_overlay",
+)
+
 VENUE_REGISTRY: dict[str, dict[str, Any]] = {
     "bingx_margin": {
         "name": "BINGX",
@@ -227,8 +234,11 @@ def _resolve_requested_ids(
     registry: Mapping[str, Any],
     *,
     kind: str,
+    default_ids: list[str] | None = None,
 ) -> list[str]:
     if not requested_ids:
+        if default_ids:
+            return list(default_ids)
         return list(registry.keys())
 
     deduped: list[str] = []
@@ -263,7 +273,7 @@ def run_backtest(
     pair: str,
     interval: str,
     features: list[dict],
-    model_path: str,
+    model_path: str | None,
     window_size: int,
     decision_threshold: float,
     instrument_meta: dict | None = None,
@@ -274,7 +284,12 @@ def run_backtest(
     if backtest_mode not in BACKTEST_MODES:
         raise ValueError(f"backtest_mode must be one of {BACKTEST_MODES}, got {backtest_mode!r}")
     # L2/L3 require continuous order book capture; currently we run L1 only
-    resolved_strategy_ids = _resolve_requested_ids(strategy_ids, STRATEGY_REGISTRY, kind="strategy")
+    resolved_strategy_ids = _resolve_requested_ids(
+        strategy_ids,
+        STRATEGY_REGISTRY,
+        kind="strategy",
+        default_ids=list(DEFAULT_STRATEGY_IDS),
+    )
     resolved_venue_ids = _resolve_requested_ids(venue_ids, VENUE_REGISTRY, kind="venue")
     price_precision, size_precision, _, _ = _resolve_instrument_meta(instrument_meta)
     bar_spec = _resolve_bar_spec(interval)
@@ -319,6 +334,8 @@ def run_backtest(
                     **(strategy_spec.get("config", {}) or {}),
                 }
                 if strategy_id == "rl_sb3_market":
+                    if not model_path:
+                        raise ValueError("model_path is required when strategy_id includes rl_sb3_market")
                     base_config["model_path"] = model_path
                     base_config["decision_threshold"] = decision_threshold
                     base_config["window_size"] = window_size

@@ -9,7 +9,11 @@ function formatDate(value: string) {
   return date.toLocaleString();
 }
 
-export default function OpsAuditLog() {
+type OpsAuditLogProps = {
+  scope?: "all" | "trading";
+};
+
+export default function OpsAuditLog({ scope = "all" }: OpsAuditLogProps) {
   const [events, setEvents] = useState<OpsAuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +40,15 @@ export default function OpsAuditLog() {
     };
   }, []);
 
+  const visibleEvents =
+    scope === "trading"
+      ? events.filter((event) => {
+          if (event.action.startsWith("retry_queue.")) return false;
+          if (event.resource_type === "retry_queue") return false;
+          return true;
+        })
+      : events;
+
   return (
     <div className="table-card">
       <h3>Ops Audit Log</h3>
@@ -44,7 +57,7 @@ export default function OpsAuditLog() {
         <div className="empty">Loading audit log…</div>
       ) : error ? (
         <div className="empty">{error}</div>
-      ) : events.length === 0 ? (
+      ) : visibleEvents.length === 0 ? (
         <div className="empty">No audit events recorded.</div>
       ) : (
         <div className="table-scroll">
@@ -60,7 +73,7 @@ export default function OpsAuditLog() {
               </tr>
             </thead>
             <tbody>
-              {events.map((event) => (
+              {visibleEvents.map((event) => (
                 <tr key={event.id}>
                   <td>{formatDate(event.created_at)}</td>
                   <td>{event.actor}</td>

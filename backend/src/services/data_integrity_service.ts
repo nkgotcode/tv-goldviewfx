@@ -11,6 +11,40 @@ type IntegrityResult = {
   provenance: Record<string, unknown>;
 };
 
+function parseConfiguredIntervals(value: string | undefined) {
+  if (!value) return null;
+  const intervals = value
+    .split(",")
+    .map((interval) => interval.trim())
+    .filter(Boolean);
+  return intervals.length > 0 ? intervals : null;
+}
+
+function normalizeIntervals(intervals: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      intervals
+        .map((interval) => (typeof interval === "string" ? interval.trim() : ""))
+        .filter((interval) => interval.length > 0),
+    ),
+  );
+}
+
+async function listScopedOpenCandleGapEvents(pair: TradingPair, intervals: string[]) {
+  if (intervals.length === 0) return [];
+  const scoped = await Promise.all(
+    intervals.map((interval) =>
+      listOpenDataGapEvents({
+        pair,
+        source_type: "bingx_candles",
+        interval,
+        limit: 20,
+      }),
+    ),
+  );
+  return scoped.flat();
+}
+
 function parseIntervalMsFromCandles(timestamps: string[]) {
   if (timestamps.length < 2) return null;
   const sorted = [...timestamps].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
@@ -51,6 +85,7 @@ function checkAlignment(timestamps: string[], intervalMs: number) {
 export async function evaluateDataIntegrityGate(params: {
   pair: TradingPair;
   candles: Array<{ timestamp: string }> | undefined;
+  intervals?: string[];
   now?: Date;
 }): Promise<IntegrityResult> {
   const now = params.now ?? new Date();
@@ -93,7 +128,12 @@ export async function evaluateDataIntegrityGate(params: {
     blockingReasons.push("candle_gaps_detected");
   }
 
-  const openGaps = await listOpenDataGapEvents({ pair: params.pair, source_type: "bingx_candles", limit: 5 });
+  const monitoredIntervals = normalizeIntervals(
+    params.intervals?.length
+      ? params.intervals
+      : (parseConfiguredIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? ["1m"]),
+  );
+  const openGaps = await listScopedOpenCandleGapEvents(params.pair, monitoredIntervals);
   if (openGaps.length > 0) {
     blockingReasons.push("open_gap_events");
   }
@@ -129,6 +169,7 @@ export async function evaluateDataIntegrityGate(params: {
       alignment,
       gapCount: gaps.length,
       openGapEvents: openGaps.length,
+      gapIntervals: monitoredIntervals,
       crossSourceSamples: times,
     },
   };

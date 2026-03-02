@@ -42,11 +42,11 @@ Include:
 - Notes: Awaiting implementation target.
 
 ## 2026-01-23 23:06 +07
-- Task: Produce planned vs implemented audit report and stop Supabase containers.
-- Changes: Added `docs/audit-planned-vs-implemented.md` with ranked backlog; stopped tv-goldviewfx Supabase Docker containers.
+- Task: Produce planned vs implemented audit report and stop local database containers.
+- Changes: Added `docs/audit-planned-vs-implemented.md` with ranked backlog; stopped tv-goldviewfx local database Docker containers.
 - Commands: docker ps; docker stop; date
 - Verification: Not run (docs/ops update).
-- Notes: Supabase local containers for tv-goldviewfx are stopped.
+- Notes: Local database containers for tv-goldviewfx are stopped.
 
 ## 2026-01-24 00:33 +07
 - Task: Restore Convex local dev, fix idempotency lookup, and re-run tests.

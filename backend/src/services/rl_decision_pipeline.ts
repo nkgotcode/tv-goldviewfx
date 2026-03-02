@@ -21,7 +21,7 @@ import { recordDecisionConfidenceMetric } from "./observability_service";
 import { applySourceGates } from "./source_gating_service";
 import { loadFeatureInputs } from "../rl/data_loader";
 import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
-import { resolveArtifactUrl } from "./model_artifact_service";
+import { resolveArtifactUrl, resolveEmbeddedArtifactPayload } from "./model_artifact_service";
 import { isInstrumentAllowed } from "./instrument_policy";
 import { evaluateFeatureQualityGate } from "./feature_quality_gate";
 
@@ -166,6 +166,7 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
   const artifactUri = agentVersion.artifact_uri ?? null;
   const artifactChecksum = agentVersion.artifact_checksum ?? null;
   const artifactDownloadUrl = artifactUri ? await resolveArtifactUrl(artifactUri) : null;
+  const embeddedArtifact = artifactUri ? await resolveEmbeddedArtifactPayload(artifactUri) : null;
 
   const riskLimitSet = await fetchRiskLimitSet(run.risk_limit_set_id);
 
@@ -240,8 +241,9 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
     learningWindowMinutes: run.learning_window_minutes ?? undefined,
     policyVersion: agentVersion.id,
     artifactUri: artifactUri ?? undefined,
-    artifactChecksum: artifactChecksum ?? undefined,
+    artifactChecksum: (artifactChecksum ?? embeddedArtifact?.artifactChecksum) ?? undefined,
     artifactDownloadUrl: artifactDownloadUrl ?? undefined,
+    artifactBase64: embeddedArtifact?.artifactBase64 ?? undefined,
     featureSchemaFingerprint,
   };
 
@@ -269,7 +271,7 @@ export async function runDecisionPipeline(request: DecisionRequest): Promise<Dec
     if (!artifactUri || !artifactChecksum) {
       warnings.push("provenance_artifact_missing");
       setForcedHoldReason("provenance_artifact_missing");
-    } else if (!artifactDownloadUrl) {
+    } else if (!artifactDownloadUrl && !embeddedArtifact?.artifactBase64) {
       warnings.push("provenance_artifact_unavailable");
       setForcedHoldReason("provenance_artifact_unavailable");
     }

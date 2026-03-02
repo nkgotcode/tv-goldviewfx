@@ -1,4 +1,5 @@
 import { convex } from "../db/client";
+import { logWarn } from "../services/logger";
 
 export type OpsRole = "operator" | "analyst";
 
@@ -22,13 +23,21 @@ export async function resolveRole(actor?: string | null, headerRole?: string | n
   if (!actor) {
     return "operator";
   }
-  const result = await convex
-    .from("role_assignments")
-    .select("role")
-    .eq("actor", actor)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const role = normalizeRole(result.data?.role ?? null);
-  return role ?? "operator";
+  try {
+    const result = await convex
+      .from("role_assignments")
+      .select("role")
+      .eq("actor", actor)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const role = normalizeRole(result.data?.role ?? null);
+    return role ?? "operator";
+  } catch (error) {
+    logWarn("Failed to resolve role assignment, defaulting to operator", {
+      actor,
+      error: String(error),
+    });
+    return "operator";
+  }
 }

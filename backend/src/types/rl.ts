@@ -295,6 +295,7 @@ export type EvaluationRequest = {
   fullHistory?: boolean | null;
   maxFeatureRows?: number | null;
   strategyIds?: string[] | null;
+  backtestMode?: "l1" | "l2" | "l3" | null;
   venueIds?: string[] | null;
   instrumentMeta?: {
     bingxSymbol: string;

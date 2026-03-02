@@ -48,7 +48,7 @@ export default function RlOpsPage() {
         listRiskLimitSets(),
         fetchOpsIngestionStatus(),
         fetchDataSourceRuns({ limit: 50 }),
-        fetchOnlineLearningStatus(),
+        fetchOnlineLearningStatus({ limit: 1, includeHealth: false }),
       ]);
       setAgentStatus(agent);
       setRiskLimits(limits);

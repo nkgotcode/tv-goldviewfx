@@ -103,6 +103,12 @@ class WalkForwardConfig(BaseModel):
     strict: bool = True
 
 
+class BacktestMode(str, Enum):
+    L1 = "l1"
+    L2 = "l2"
+    L3 = "l3"
+
+
 class EvaluationRequest(BaseModel):
     pair: TradingPair
     period_start: datetime
@@ -128,6 +134,7 @@ class EvaluationRequest(BaseModel):
     drawdown_penalty: float = 0.0
     instrument_meta: dict[str, Any] | None = None
     strategy_ids: list[str] | None = None
+    backtest_mode: BacktestMode = BacktestMode.L1
     venue_ids: list[str] | None = None
     walk_forward: WalkForwardConfig | None = None
     feature_schema_fingerprint: str | None = None

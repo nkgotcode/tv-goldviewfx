@@ -3,6 +3,7 @@
 
 # Backend API endpoint reachable from your local machine / Worker dev runtime.
 API_BASE_URL=http://10.0.0.112:8787
+BACKEND_PROXY_TIMEOUT_MS=45000
 
 # Optional: backend bearer token if API auth is enabled.
 # API_TOKEN=replace-me

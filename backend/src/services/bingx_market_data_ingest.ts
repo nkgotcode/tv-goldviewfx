@@ -45,6 +45,7 @@ const DEFAULT_LIMITS = {
   trades: 1000,
   funding: 1000,
 };
+const DEFAULT_BINGX_HTTP_TIMEOUT_MS = 20_000;
 
 const FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1000;
 const MAX_TRADES_BATCHES_PER_RUN = 3;
@@ -880,8 +881,31 @@ async function requestBingx(
   }
 
   const maxRetries = 3;
+  const timeoutMsRaw = Number.parseInt(process.env.BINGX_HTTP_TIMEOUT_MS ?? "", 10);
+  const timeoutMs =
+    Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : DEFAULT_BINGX_HTTP_TIMEOUT_MS;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const response = await fetcher(url, { method: "GET" });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetcher(url, { method: "GET", signal: controller.signal });
+    } catch (error) {
+      const message =
+        error instanceof Error && error.name === "AbortError"
+          ? `timeout after ${timeoutMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      if (attempt < maxRetries) {
+        await sleep(500 * (attempt + 1));
+        continue;
+      }
+      throw new Error(`BingX request failed (${path}): ${message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     let body: BingxResponse | undefined;
     try {
       body = (await response.json()) as BingxResponse;

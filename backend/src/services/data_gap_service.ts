@@ -38,6 +38,16 @@ type CandleGap = {
   expectedIntervalSeconds: number;
 };
 
+export type DataGapMonitorOptions = {
+  pairs?: TradingPair[];
+  intervals?: string[];
+  healEnabled?: boolean;
+  healMaxGaps?: number;
+  healMaxBatches?: number;
+  skipStaleSourceHealing?: boolean;
+  skipFullBackfillCheck?: boolean;
+};
+
 function parseIntervalMs(interval: string) {
   const match = interval.match(/^(\d+)([mhdwM])$/);
   if (!match) return 60_000;
@@ -110,6 +120,22 @@ export function hasOverlappingCandleGap(params: {
     if (!Number.isFinite(gapStartMs) || !Number.isFinite(gapEndMs)) return false;
     return gapStartMs <= rangeEndMs && gapEndMs >= rangeStartMs;
   });
+}
+
+function inPairScope(pair: TradingPair, pairScope: Set<TradingPair> | null) {
+  if (!pairScope) return true;
+  return pairScope.has(pair);
+}
+
+function inIntervalScope(
+  sourceType: string,
+  interval: string | null | undefined,
+  intervalScope: Set<string> | null,
+) {
+  if (!intervalScope) return true;
+  if (sourceType !== "bingx_candles") return true;
+  if (!interval) return false;
+  return intervalScope.has(interval);
 }
 
 function gapKey(payload: { pair: TradingPair; source: string; interval?: string | null; start: string; end: string }) {
@@ -205,10 +231,10 @@ async function healStaleSources(statuses: Awaited<ReturnType<typeof listDataSour
   }
 }
 
-export async function runDataGapMonitor() {
+export async function runDataGapMonitor(options: DataGapMonitorOptions = {}) {
   const env = loadEnv();
   const now = new Date();
-  const intervals = parseIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? [
+  const configuredIntervals = parseIntervals(env.BINGX_MARKET_DATA_INTERVALS) ?? [
     "1m",
     "3m",
     "5m",
@@ -224,15 +250,18 @@ export async function runDataGapMonitor() {
     "1w",
     "1M",
   ];
+  const intervals = options.intervals?.length ? options.intervals : configuredIntervals;
   const lookbackDays = env.DATA_GAP_LOOKBACK_DAYS;
   const maxPoints = env.DATA_GAP_MAX_POINTS;
   const minMissingPoints = env.DATA_GAP_MIN_MISSING_POINTS;
-  const healEnabled = env.DATA_GAP_HEAL_ENABLED;
+  const healEnabled = options.healEnabled ?? env.DATA_GAP_HEAL_ENABLED;
   const healCooldownMs = env.DATA_GAP_HEAL_COOLDOWN_MIN * 60 * 1000;
-  const healMaxGaps = env.DATA_GAP_HEAL_MAX_GAPS_PER_RUN;
-  const healMaxBatches = env.DATA_GAP_HEAL_MAX_BATCHES;
+  const healMaxGaps = options.healMaxGaps ?? env.DATA_GAP_HEAL_MAX_GAPS_PER_RUN;
+  const healMaxBatches = options.healMaxBatches ?? env.DATA_GAP_HEAL_MAX_BATCHES;
   const healMaxAttempts = env.DATA_GAP_HEAL_MAX_ATTEMPTS;
-  const supportedPairs = getSupportedPairs();
+  const pairScope = options.pairs?.length ? new Set(options.pairs) : null;
+  const intervalScope = options.intervals?.length ? new Set(options.intervals) : null;
+  const supportedPairs = getSupportedPairs().filter((pair) => inPairScope(pair, pairScope));
 
   const detectedKeys = new Set<string>();
   const healQueue: Array<{ id: string; pair: TradingPair; interval: string; gapStart: string; gapEnd: string }> = [];
@@ -309,7 +338,9 @@ export async function runDataGapMonitor() {
     }
   }
 
-  const statusViews = await listDataSourceStatusWithConfig();
+  const statusViews = (await listDataSourceStatusWithConfig()).filter((status) =>
+    inPairScope(status.pair as TradingPair, pairScope),
+  );
   for (const status of statusViews) {
     if (!status.enabled || status.status === "ok") {
       continue;
@@ -346,6 +377,12 @@ export async function runDataGapMonitor() {
 
   const openEvents = await listOpenDataGapEvents();
   for (const event of openEvents) {
+    if (!inPairScope(event.pair as TradingPair, pairScope)) {
+      continue;
+    }
+    if (!inIntervalScope(event.source_type, event.interval, intervalScope)) {
+      continue;
+    }
     const key = gapKey({
       pair: event.pair,
       source: event.source_type,
@@ -448,21 +485,30 @@ export async function runDataGapMonitor() {
     }
   }
 
-  try {
-    await healStaleSources(statusViews);
-  } catch (error) {
-    logWarn("Failed to heal stale sources", { error: String(error) });
+  if (!options.skipStaleSourceHealing) {
+    try {
+      await healStaleSources(statusViews);
+    } catch (error) {
+      logWarn("Failed to heal stale sources", { error: String(error) });
+    }
   }
 
-  try {
-    await runBingxFullBackfillIfNeeded({
-      source: "data_gap_monitor",
-      openGapCountHint: healQueue.length,
-      statusesHint: statusViews,
-    });
-  } catch (error) {
-    logWarn("Failed to run BingX full backfill check", { error: String(error) });
+  if (!options.skipFullBackfillCheck) {
+    try {
+      await runBingxFullBackfillIfNeeded({
+        source: "data_gap_monitor",
+        openGapCountHint: healQueue.length,
+        statusesHint: statusViews,
+      });
+    } catch (error) {
+      logWarn("Failed to run BingX full backfill check", { error: String(error) });
+    }
   }
 
-  logInfo("Data gap monitor completed", { gaps: detectedKeys.size, heal_queue: healQueue.length });
+  logInfo("Data gap monitor completed", {
+    gaps: detectedKeys.size,
+    heal_queue: healQueue.length,
+    scoped_pairs: pairScope ? Array.from(pairScope) : null,
+    scoped_intervals: intervalScope ? Array.from(intervalScope) : null,
+  });
 }

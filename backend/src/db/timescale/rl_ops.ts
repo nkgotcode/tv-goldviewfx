@@ -1,5 +1,5 @@
-import postgres from "postgres";
 import { logInfo } from "../../services/logger";
+import { getTimescaleSql } from "./client";
 
 type Direction = "asc" | "desc";
 
@@ -9,7 +9,6 @@ type Filter = {
   value: unknown;
 };
 
-let sqlClient: postgres.Sql | null = null;
 let schemaReadyPromise: Promise<void> | null = null;
 
 function envBool(name: string, defaultValue = false) {
@@ -49,21 +48,52 @@ export function rlOpsUsesTimescale() {
   return enabled && hasUrl;
 }
 
+export function requireRlOpsTimescaleEnabled(context = "RL/ops repository") {
+  if (!rlOpsUsesTimescale()) {
+    throw new Error(`${context} requires TIMESCALE_RL_OPS_ENABLED=true; Convex fallback is disabled.`);
+  }
+}
+
 function getSql() {
-  const url = process.env.TIMESCALE_URL;
-  if (!url) {
-    throw new Error("TIMESCALE_URL is required when TIMESCALE_RL_OPS_ENABLED=true");
+  return getTimescaleSql("TIMESCALE_RL_OPS_ENABLED=true");
+}
+
+export async function assertTimescaleRlOpsReady() {
+  if (!rlOpsUsesTimescale()) {
+    return {
+      enabled: false,
+      reachable: false,
+      tables: [] as string[],
+    };
   }
-  if (!sqlClient) {
-    sqlClient = postgres(url, {
-      max: 8,
-      idle_timeout: 20,
-      connect_timeout: 10,
-      prepare: false,
-      onnotice: () => {},
-    });
+  await ensureTimescaleRlOpsSchema();
+  const sql = getSql();
+  await sql`select 1`;
+  const requiredTables = [
+    "evaluation_reports",
+    "agent_versions",
+    "feature_set_versions",
+    "dataset_versions",
+    "model_artifacts",
+  ];
+  const rows = (await sql`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = any(${requiredTables})
+  `) as Array<{ tablename: string }>;
+  const found = new Set(rows.map((row) => row.tablename));
+  const missing = requiredTables.filter((table) => !found.has(table));
+  if (missing.length > 0) {
+    throw new Error(
+      `Timescale RL ops schema is incomplete; missing tables: ${missing.join(", ")}`,
+    );
   }
-  return sqlClient;
+  return {
+    enabled: true,
+    reachable: true,
+    tables: requiredTables,
+  };
 }
 
 export async function ensureTimescaleRlOpsSchema() {
@@ -137,6 +167,8 @@ export async function ensureTimescaleRlOpsSchema() {
         )
       `;
       await sql`create index if not exists idx_eval_reports_agent_created on evaluation_reports (agent_version_id, created_at desc)`;
+      await sql`create index if not exists idx_eval_reports_pair_created on evaluation_reports (pair, created_at desc)`;
+      await sql`create index if not exists idx_eval_reports_pair_status on evaluation_reports (pair, status, created_at desc)`;
       await sql`alter table evaluation_reports add column if not exists metadata jsonb not null default '{}'::jsonb`;
 
       await sql`
@@ -146,6 +178,7 @@ export async function ensureTimescaleRlOpsSchema() {
           artifact_uri text not null,
           artifact_checksum text not null,
           artifact_size_bytes bigint not null,
+          artifact_base64 text null,
           content_type text null,
           training_window_start timestamptz null,
           training_window_end timestamptz null,
@@ -153,6 +186,7 @@ export async function ensureTimescaleRlOpsSchema() {
         )
       `;
       await sql`create unique index if not exists idx_model_artifacts_uri on model_artifacts (artifact_uri)`;
+      await sql`alter table model_artifacts add column if not exists artifact_base64 text null`;
 
       await sql`
         create table if not exists learning_updates (
@@ -173,6 +207,8 @@ export async function ensureTimescaleRlOpsSchema() {
         )
       `;
       await sql`create index if not exists idx_learning_updates_agent_started on learning_updates (agent_version_id, started_at desc)`;
+      await sql`create index if not exists idx_learning_updates_started on learning_updates (started_at desc)`;
+      await sql`create index if not exists idx_learning_updates_status_started on learning_updates (status, started_at desc)`;
       await sql`alter table learning_updates add column if not exists champion_evaluation_report_id text null`;
       await sql`alter table learning_updates add column if not exists promoted boolean null`;
       await sql`alter table learning_updates add column if not exists decision_reasons jsonb not null default '[]'::jsonb`;
@@ -413,6 +449,32 @@ export async function ensureTimescaleRlOpsSchema() {
         )
       `;
       await sql`create index if not exists idx_data_source_configs_pair_type on data_source_configs (pair, source_type)`;
+
+      await sql`
+        create table if not exists data_gap_events (
+          id text primary key,
+          pair text not null,
+          source_type text not null,
+          interval text null,
+          gap_start timestamptz not null,
+          gap_end timestamptz not null,
+          expected_interval_seconds integer null,
+          gap_seconds integer not null,
+          missing_points integer null,
+          status text not null default 'open',
+          detected_at timestamptz not null default now(),
+          last_seen_at timestamptz not null default now(),
+          resolved_at timestamptz null,
+          heal_attempts integer not null default 0,
+          last_heal_at timestamptz null,
+          details jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `;
+      await sql`create index if not exists idx_data_gap_events_status_detected on data_gap_events (status, detected_at desc)`;
+      await sql`create index if not exists idx_data_gap_events_pair_source on data_gap_events (pair, source_type, detected_at desc)`;
+      await sql`create index if not exists idx_data_gap_events_lookup on data_gap_events (pair, source_type, interval, gap_start, gap_end)`;
 
       await sql`
         create table if not exists dataset_lineage (
@@ -699,4 +761,30 @@ export async function listRlOpsRows<T extends Record<string, unknown>>(
 export async function getRlOpsRowByField<T extends Record<string, unknown>>(table: string, field: string, value: unknown) {
   const rows = await listRlOpsRows<T>(table, { filters: [{ field, value }], limit: 1 });
   return rows[0] ?? null;
+}
+
+export async function countRlOpsRows(table: string) {
+  await ensureTimescaleRlOpsSchema();
+  const sql = getSql();
+  const quotedTable = quoteIdent(table);
+  const rows = (await sql.unsafe(`select count(*)::bigint as count from ${quotedTable}`)) as Array<{
+    count: string | number;
+  }>;
+  const value = rows[0]?.count ?? 0;
+  if (typeof value === "number") return value;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export async function listRlOpsTableColumns(table: string) {
+  await ensureTimescaleRlOpsSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = ${table}
+    order by ordinal_position
+  `) as Array<{ column_name: string }>;
+  return rows.map((row) => row.column_name);
 }

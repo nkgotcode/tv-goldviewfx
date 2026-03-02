@@ -25,7 +25,7 @@ variable "api_port" {
 
 variable "backend_image" {
   type    = string
-  default = "ghcr.io/your-org/tv-goldviewfx-backend:replace-with-git-sha"
+  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-202602270745-fc59982-timescalehardening5"
 }
 
 variable "backend_work_dir" {
@@ -88,6 +88,11 @@ variable "timescale_market_data_enabled" {
   default = "true"
 }
 
+variable "timescale_rl_ops_enabled" {
+  type    = string
+  default = "true"
+}
+
 variable "rl_online_learning_enabled" {
   type    = string
   default = "true"
@@ -95,7 +100,7 @@ variable "rl_online_learning_enabled" {
 
 variable "rl_service_timeout_ms" {
   type    = number
-  default = 300000
+  default = 1200000
 }
 
 variable "rl_online_learning_decision_threshold" {
@@ -242,6 +247,8 @@ job "gvfx-api" {
         MARKET_CRYPTO_PAIRS     = var.market_crypto_pairs
         BINGX_MARKET_DATA_PAIRS = var.bingx_market_data_pairs
         TIMESCALE_MARKET_DATA_ENABLED = var.timescale_market_data_enabled
+        TIMESCALE_RL_OPS_ENABLED = var.timescale_rl_ops_enabled
+        TIMESCALE_POOL_MAX = "2"
         RL_ONLINE_LEARNING_ENABLED = var.rl_online_learning_enabled
         RL_ONLINE_LEARNING_INTERVAL_MIN = "${var.rl_online_learning_interval_min}"
         RL_ONLINE_LEARNING_INTERVAL = var.rl_online_learning_interval
@@ -308,7 +315,7 @@ EOT
 
       resources {
         cpu    = 1000
-        memory = 1024
+        memory = 4096
       }
 
       service {

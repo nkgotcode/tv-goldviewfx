@@ -1,13 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { convex } from "../src/db/client";
-import { insertAgentVersion } from "../src/db/repositories/agent_versions";
 import { updateAgentConfig } from "../src/db/repositories/agent_config";
 import { upsertDataSourceStatus } from "../src/db/repositories/data_source_status";
-import { insertDatasetVersion } from "../src/db/repositories/dataset_versions";
-import { insertFeatureSetVersion } from "../src/db/repositories/feature_set_versions";
-import { insertModelArtifact } from "../src/db/repositories/model_artifacts";
-import { insertRiskLimitSet } from "../src/db/repositories/risk_limit_sets";
 import { listRlOpsRows, rlOpsUsesTimescale, upsertRlOpsRow } from "../src/db/timescale/rl_ops";
 
 function loadTestEnv() {
@@ -158,51 +153,88 @@ async function seedTestData() {
       ["id"],
     );
   } else {
-    await insertRiskLimitSet({
-      name: "Baseline Risk Limits",
-      max_position_size: 1.5,
-      leverage_cap: 3,
-      max_daily_loss: 200,
-      max_drawdown: 300,
-      max_open_positions: 3,
-      effective_from: now,
-      active: true,
-    });
-    const featureSet = await insertFeatureSetVersion({
-      label: `Seeded Features ${Date.now()}`,
-      description: "Seeded feature set",
-    });
-    const datasetVersion = await insertDatasetVersion({
-      pair: "Gold-USDT",
-      interval: "1m",
-      start_at: new Date(Date.now() - 3600000).toISOString(),
-      end_at: now,
-      checksum: datasetHash,
-      dataset_hash: datasetHash,
-      window_size: 30,
-      stride: 1,
-      feature_set_version_id: featureSet.id,
-    });
-    const agentVersion = await insertAgentVersion({
-      name: `Seeded Version ${Date.now()}`,
-      status: "promoted",
-      dataset_version_id: datasetVersion.id,
-      dataset_hash: datasetHash,
-      feature_set_version_id: featureSet.id,
-      artifact_uri: artifactUri,
-      artifact_checksum: artifactChecksum,
-      artifact_size_bytes: 16,
-      promoted_at: now,
-    });
-    await insertModelArtifact({
-      agent_version_id: agentVersion.id,
-      artifact_uri: artifactUri,
-      artifact_checksum: artifactChecksum,
-      artifact_size_bytes: 16,
-      content_type: "application/zip",
-      training_window_start: new Date(Date.now() - 7200000).toISOString(),
-      training_window_end: now,
-    });
+    const riskLimitResult = await convex
+      .from("risk_limit_sets")
+      .insert({
+        name: "Baseline Risk Limits",
+        max_position_size: 1.5,
+        leverage_cap: 3,
+        max_daily_loss: 200,
+        max_drawdown: 300,
+        max_open_positions: 3,
+        effective_from: now,
+        active: true,
+      })
+      .select("*")
+      .single();
+    if (riskLimitResult.error || !riskLimitResult.data) {
+      throw new Error(`seed risk_limit_sets failed: ${riskLimitResult.error?.message ?? "missing data"}`);
+    }
+    const featureSetResult = await convex
+      .from("feature_set_versions")
+      .insert({
+        label: `Seeded Features ${Date.now()}`,
+        description: "Seeded feature set",
+      })
+      .select("*")
+      .single();
+    if (featureSetResult.error || !featureSetResult.data) {
+      throw new Error(`seed feature_set_versions failed: ${featureSetResult.error?.message ?? "missing data"}`);
+    }
+    const featureSet = featureSetResult.data;
+    const datasetVersionResult = await convex
+      .from("dataset_versions")
+      .insert({
+        pair: "Gold-USDT",
+        interval: "1m",
+        start_at: new Date(Date.now() - 3600000).toISOString(),
+        end_at: now,
+        checksum: datasetHash,
+        dataset_hash: datasetHash,
+        window_size: 30,
+        stride: 1,
+        feature_set_version_id: featureSet.id,
+      })
+      .select("*")
+      .single();
+    if (datasetVersionResult.error || !datasetVersionResult.data) {
+      throw new Error(`seed dataset_versions failed: ${datasetVersionResult.error?.message ?? "missing data"}`);
+    }
+    const datasetVersion = datasetVersionResult.data;
+    const agentVersionResult = await convex
+      .from("agent_versions")
+      .insert({
+        name: `Seeded Version ${Date.now()}`,
+        status: "promoted",
+        dataset_version_id: datasetVersion.id,
+        dataset_hash: datasetHash,
+        feature_set_version_id: featureSet.id,
+        artifact_uri: artifactUri,
+        artifact_checksum: artifactChecksum,
+        artifact_size_bytes: 16,
+        promoted_at: now,
+      })
+      .select("*")
+      .single();
+    if (agentVersionResult.error || !agentVersionResult.data) {
+      throw new Error(`seed agent_versions failed: ${agentVersionResult.error?.message ?? "missing data"}`);
+    }
+    const modelArtifactResult = await convex
+      .from("model_artifacts")
+      .insert({
+        agent_version_id: agentVersionResult.data.id,
+        artifact_uri: artifactUri,
+        artifact_checksum: artifactChecksum,
+        artifact_size_bytes: 16,
+        content_type: "application/zip",
+        training_window_start: new Date(Date.now() - 7200000).toISOString(),
+        training_window_end: now,
+      })
+      .select("*")
+      .single();
+    if (modelArtifactResult.error || !modelArtifactResult.data) {
+      throw new Error(`seed model_artifacts failed: ${modelArtifactResult.error?.message ?? "missing data"}`);
+    }
   }
 
   const bingxSources = [
@@ -229,7 +261,7 @@ async function seedTestData() {
     }
   }
 
-  await updateAgentConfig({
+  const configPayload = {
     enabled: true,
     mode: "paper",
     max_position_size: 1.5,
@@ -244,7 +276,32 @@ async function seedTestData() {
     promotion_min_win_rate: 0,
     promotion_min_net_pnl: 0,
     promotion_max_drawdown: 0,
-  });
+  };
+
+  if (rlOpsUsesTimescale()) {
+    await updateAgentConfig(configPayload);
+  } else {
+    const existing = await convex.from("agent_configurations").select("id").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (existing.error) {
+      throw new Error(`seed agent_configurations probe failed: ${existing.error.message}`);
+    }
+    if (existing.data?.id) {
+      const updated = await convex
+        .from("agent_configurations")
+        .update({ ...configPayload, updated_at: now })
+        .eq("id", existing.data.id)
+        .select("*")
+        .single();
+      if (updated.error) {
+        throw new Error(`seed agent_configurations update failed: ${updated.error.message}`);
+      }
+    } else {
+      const created = await convex.from("agent_configurations").insert(configPayload).select("*").single();
+      if (created.error) {
+        throw new Error(`seed agent_configurations insert failed: ${created.error.message}`);
+      }
+    }
+  }
 }
 
 const [timescaleAvailable, convexAvailable] = await Promise.all([hasTimescaleConnectivity(), hasConvexConnectivity()]);

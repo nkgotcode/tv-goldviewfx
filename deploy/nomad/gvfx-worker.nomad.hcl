@@ -15,7 +15,7 @@ variable "datacenters" {
 
 variable "backend_image" {
   type    = string
-  default = "ghcr.io/your-org/tv-goldviewfx-backend:replace-with-git-sha"
+  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-202602270745-fc59982-timescalehardening5"
 }
 
 variable "backend_work_dir" {
@@ -83,6 +83,11 @@ variable "timescale_market_data_enabled" {
   default = "true"
 }
 
+variable "timescale_rl_ops_enabled" {
+  type    = string
+  default = "true"
+}
+
 variable "rl_online_learning_enabled" {
   type    = string
   default = "true"
@@ -90,7 +95,7 @@ variable "rl_online_learning_enabled" {
 
 variable "rl_service_timeout_ms" {
   type    = number
-  default = 300000
+  default = 1200000
 }
 
 variable "rl_online_learning_decision_threshold" {
@@ -140,7 +145,7 @@ variable "rl_online_learning_min_trade_count" {
 
 variable "ts_exit_node_primary" {
   type    = string
-  default = ""
+  default = "100.110.26.124"
 }
 
 variable "ts_exit_node_fallbacks" {
@@ -150,7 +155,7 @@ variable "ts_exit_node_fallbacks" {
 
 variable "ts_egress_expected_ips" {
   type    = string
-  default = ""
+  default = "98.215.103.11,216.238.95.214,14.169.120.106"
 }
 
 variable "ts_hostname" {
@@ -333,6 +338,8 @@ EOT
         BINGX_MARKET_DATA_PAIRS = var.bingx_market_data_pairs
         BINGX_WS_ENABLED        = "true"
         TIMESCALE_MARKET_DATA_ENABLED = var.timescale_market_data_enabled
+        TIMESCALE_RL_OPS_ENABLED = var.timescale_rl_ops_enabled
+        TIMESCALE_POOL_MAX = "2"
         RL_ONLINE_LEARNING_ENABLED = var.rl_online_learning_enabled
         RL_ONLINE_LEARNING_INTERVAL_MIN = "${var.rl_online_learning_interval_min}"
         RL_ONLINE_LEARNING_INTERVAL = var.rl_online_learning_interval

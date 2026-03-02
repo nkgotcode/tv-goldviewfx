@@ -3,7 +3,11 @@ import { z } from "zod";
 import { loadEnv } from "../../config/env";
 import { resolveSupportedPair } from "../../config/market_catalog";
 import { loadRlServiceConfig } from "../../config/rl_service";
-import { getEvaluationReport, getLatestEvaluationReport } from "../../db/repositories/evaluation_reports";
+import {
+  getEvaluationReport,
+  getLatestEvaluationReport,
+  getLatestEvaluationReportsByPairs,
+} from "../../db/repositories/evaluation_reports";
 import { listLearningUpdatesHistory, listRecentLearningUpdates } from "../../db/repositories/learning_updates";
 import {
   resolveOnlineLearningPairs,
@@ -144,6 +148,31 @@ function canonicalPair(value: unknown) {
   return resolveSupportedPair(value) ?? value;
 }
 
+function parseBooleanQueryParam(value: string | undefined, fallback = false) {
+  if (!value) return fallback;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+const OPS_READ_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(process.env.OPS_READ_TIMEOUT_MS ?? "4000", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 4000;
+  return parsed;
+})();
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}_timeout_${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 type RlServiceHealthSnapshot = {
   status: "ok" | "error" | "unavailable";
   checkedAt: string;
@@ -155,6 +184,21 @@ type RlServiceHealthSnapshot = {
 };
 
 async function loadRlServiceHealthSnapshot(mock: boolean): Promise<RlServiceHealthSnapshot> {
+  return loadRlServiceHealthSnapshotWithTimeout(mock, 1200);
+}
+
+function buildUnavailableHealthSnapshot(error: string) {
+  return {
+    status: "unavailable",
+    checkedAt: new Date().toISOString(),
+    error,
+  } as RlServiceHealthSnapshot;
+}
+
+async function loadRlServiceHealthSnapshotWithTimeout(
+  mock: boolean,
+  timeoutMs: number,
+): Promise<RlServiceHealthSnapshot> {
   const checkedAt = new Date().toISOString();
   if (mock) {
     return {
@@ -165,7 +209,7 @@ async function loadRlServiceHealthSnapshot(mock: boolean): Promise<RlServiceHeal
   }
 
   try {
-    const health = await rlServiceClient.health();
+    const health = await rlServiceClient.health(timeoutMs);
     return {
       status: "ok",
       checkedAt,
@@ -273,22 +317,27 @@ async function enrichLearningUpdates(updates: any[]) {
 opsLearningRoutes.get("/status", async (c) => {
   const env = loadEnv();
   const rlConfig = loadRlServiceConfig();
+  const includeHealth = parseBooleanQueryParam(c.req.query("include_health"), true);
   const limit = Number.parseInt(c.req.query("limit") ?? "5", 10);
+  const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 25)) : 5;
   const configuredPairs = resolveOnlineLearningPairs();
   const pair = (c.req.query("pair") ?? configuredPairs[0] ?? env.RL_ONLINE_LEARNING_PAIR) as string;
-  const health = await loadRlServiceHealthSnapshot(rlConfig.mock);
+  const includePairReports = parseBooleanQueryParam(c.req.query("include_pair_reports"));
+  const health = includeHealth
+    ? await loadRlServiceHealthSnapshotWithTimeout(rlConfig.mock, 1200)
+    : buildUnavailableHealthSnapshot("RL service health check skipped.");
 
   try {
-    const updates = await listRecentLearningUpdates(Number.isFinite(limit) ? limit : 5);
+    const updates = await listRecentLearningUpdates(normalizedLimit);
     const enriched = await enrichLearningUpdates(updates);
 
     const latestReport = await getLatestEvaluationReport({ pair });
-    const latestReportsByPair = await Promise.all(
-      configuredPairs.map(async (configuredPair) => ({
-        pair: configuredPair,
-        report: formatEvaluation(await getLatestEvaluationReport({ pair: configuredPair })),
-      })),
-    );
+    const latestReportsByPair = includePairReports
+      ? (await getLatestEvaluationReportsByPairs(configuredPairs)).map((report) => ({
+          pair: report.pair,
+          report: formatEvaluation(report),
+        }))
+      : [];
 
     return c.json({
       generatedAt: new Date().toISOString(),
@@ -329,15 +378,61 @@ opsLearningRoutes.get("/history", async (c) => {
   const pairRaw = (c.req.query("pair") ?? "").trim();
   const pairFilter = pairRaw ? resolveSupportedPair(pairRaw) ?? pairRaw : "";
   const search = (c.req.query("search") ?? "").trim().toLowerCase();
-  const scanLimitRaw = Number.parseInt(c.req.query("scan_limit") ?? "2000", 10);
-  const scanLimit = Math.max(100, Math.min(Number.isFinite(scanLimitRaw) ? scanLimitRaw : 2000, 10000));
+  const scanLimitRaw = Number.parseInt(c.req.query("scan_limit") ?? "500", 10);
+  const scanLimit = Math.max(100, Math.min(Number.isFinite(scanLimitRaw) ? scanLimitRaw : 500, 5000));
+  const offset = (page - 1) * pageSize;
+  const requiresFullScan = Boolean(pairFilter || search);
 
   try {
-    const updates = await listLearningUpdatesHistory({
-      status: statusFilter,
-      limit: scanLimit,
-    });
-    const enriched = await enrichLearningUpdates(updates);
+    if (!requiresFullScan) {
+      const rows = await withTimeout(
+        listLearningUpdatesHistory({
+          status: statusFilter,
+          limit: pageSize + 1,
+          offset,
+        }),
+        OPS_READ_TIMEOUT_MS,
+        "learning_history_page",
+      );
+      const hasMore = rows.length > pageSize;
+      const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+      const enriched = await withTimeout(
+        enrichLearningUpdates(pageRows),
+        OPS_READ_TIMEOUT_MS,
+        "learning_history_page_enrich",
+      );
+      const total = hasMore ? offset + pageSize + 1 : offset + pageRows.length;
+      const totalPages = Math.max(page, Math.ceil(total / pageSize));
+      return c.json({
+        generatedAt: new Date().toISOString(),
+        items: enriched,
+        filters: {
+          search,
+          status: statusFilter ?? null,
+          pair: pairFilter || null,
+        },
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages,
+        },
+        scan: {
+          limit: pageSize + 1,
+          truncated: hasMore,
+        },
+      });
+    }
+
+    const updates = await withTimeout(
+      listLearningUpdatesHistory({
+        status: statusFilter,
+        limit: scanLimit,
+      }),
+      OPS_READ_TIMEOUT_MS,
+      "learning_history_scan",
+    );
+    const enriched = await withTimeout(enrichLearningUpdates(updates), OPS_READ_TIMEOUT_MS, "learning_history_enrich_scan");
     const filtered = enriched.filter((update) => {
       if (pairFilter && (update.pair ?? "") !== pairFilter) return false;
       if (!search) return true;
@@ -383,7 +478,25 @@ opsLearningRoutes.get("/history", async (c) => {
     });
   } catch (error) {
     logWarn("Failed to load online learning history", { error: String(error) });
-    return c.json({ error: "online_learning_history_failed" }, 500);
+    return c.json({
+      generatedAt: new Date().toISOString(),
+      items: [],
+      filters: {
+        search,
+        status: statusFilter ?? null,
+        pair: pairFilter || null,
+      },
+      pagination: {
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 1,
+      },
+      scan: {
+        limit: scanLimit,
+        truncated: false,
+      },
+    });
   }
 });
 

@@ -417,7 +417,7 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
       }
     }),
   );
-  const convexCandles = mergeCandles(...candleResults.map((result) => result.rows));
+  const storedCandles = mergeCandles(...candleResults.map((result) => result.rows));
   const storedPairsUsed = candleResults.filter((result) => result.rows.length > 0).map((result) => result.pair);
 
   const liveCandles: CandleRow[] = [];
@@ -468,31 +468,31 @@ export async function buildDatasetFeaturesWithProvenance(input: DatasetPreviewRe
     }
   };
 
-  if (convexCandles.length === 0) {
-    await requestLiveRange(startMs, endMs, "convex_empty");
+  if (storedCandles.length === 0) {
+    await requestLiveRange(startMs, endMs, "stored_empty");
   } else {
-    const sortedConvex = [...convexCandles].sort(
+    const sortedStored = [...storedCandles].sort(
       (a, b) => new Date(a.open_time).getTime() - new Date(b.open_time).getTime(),
     );
-    const earliestMs = new Date(sortedConvex[0]?.open_time ?? input.startAt).getTime();
-    const latestMs = new Date(sortedConvex[sortedConvex.length - 1]?.open_time ?? input.endAt).getTime();
+    const earliestMs = new Date(sortedStored[0]?.open_time ?? input.startAt).getTime();
+    const latestMs = new Date(sortedStored[sortedStored.length - 1]?.open_time ?? input.endAt).getTime();
 
     if (Number.isFinite(earliestMs) && earliestMs - startMs > intervalMs) {
-      await requestLiveRange(startMs, Math.min(earliestMs - intervalMs, endMs), "convex_missing_head");
+      await requestLiveRange(startMs, Math.min(earliestMs - intervalMs, endMs), "stored_missing_head");
     }
     if (Number.isFinite(latestMs) && endMs - latestMs > intervalMs) {
-      await requestLiveRange(Math.max(latestMs + intervalMs, endMs - maxLiveWindowMs), endMs, "convex_missing_tail");
+      await requestLiveRange(Math.max(latestMs + intervalMs, endMs - maxLiveWindowMs), endMs, "stored_missing_tail");
     }
   }
 
-  const candles = mergeCandles(convexCandles, liveCandles);
+  const candles = mergeCandles(storedCandles, liveCandles);
   const resolvedBingxSymbol = liveUsedSymbol ?? requestedBingxSymbol;
   const resolvedPair =
     storedPairsUsed[0] ??
     resolvePairFromSymbol(resolvedBingxSymbol, candidatePairs[0] ?? input.pair);
   let candlesOrigin: DatasetFeatureProvenance["candlesOrigin"] = "stored";
-  if (convexCandles.length > 0 && liveCandles.length > 0) candlesOrigin = "stored+live";
-  if (convexCandles.length === 0 && liveCandles.length > 0) candlesOrigin = "live";
+  if (storedCandles.length > 0 && liveCandles.length > 0) candlesOrigin = "stored+live";
+  if (storedCandles.length === 0 && liveCandles.length > 0) candlesOrigin = "live";
 
   const contextCandlesByInterval = new Map<string, CandleRow[]>();
   const contextRowCounts: Record<string, number> = {};

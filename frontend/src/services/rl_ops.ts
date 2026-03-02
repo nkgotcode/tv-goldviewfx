@@ -24,6 +24,38 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function fetchJsonWithTimeout<T>(path: string, init: RequestInit = {}, timeoutMs = 4000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new DOMException("Request timed out", "TimeoutError"));
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        ...getApiHeaders(),
+        ...(init.headers ?? {}),
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      let parsed: { message?: string; error?: string } | null = null;
+      try {
+        parsed = JSON.parse(body) as { message?: string; error?: string };
+      } catch {
+        parsed = null;
+      }
+      const message = parsed?.message ?? parsed?.error ?? body;
+      throw new Error(message || `API error: ${response.status}`);
+    }
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function fetchOpsIngestionStatus() {
   return fetchJson<IngestionStatus>("/ingestion/status");
 }
@@ -76,6 +108,65 @@ export async function triggerBingxRefresh(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+export type DataGapHealthTotals = {
+  open: number;
+  healing: number;
+  last_detected_at: string | null;
+  last_seen_at: string | null;
+  oldest_open_at: string | null;
+};
+
+export type DataGapHealthByPair = DataGapHealthTotals & {
+  pair: string;
+};
+
+export type DataGapHealthBySource = DataGapHealthTotals & {
+  source_type: string;
+};
+
+export type DataGapOpenEvent = {
+  id: string;
+  pair: string;
+  source_type: string;
+  interval: string | null;
+  gap_start: string;
+  gap_end: string;
+  expected_interval_seconds: number | null;
+  gap_seconds: number;
+  missing_points: number | null;
+  status: "open" | "healing";
+  detected_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  heal_attempts: number;
+  last_heal_at: string | null;
+};
+
+export type DataGapHealth = {
+  generated_at: string;
+  totals: DataGapHealthTotals;
+  by_pair: DataGapHealthByPair[];
+  by_source: DataGapHealthBySource[];
+  open_events: DataGapOpenEvent[];
+};
+
+export async function fetchDataGapHealth(params?: { pair?: string; sourceType?: string; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.pair) query.set("pair", params.pair);
+  if (params?.sourceType) query.set("source_type", params.sourceType);
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit) && params.limit > 0) {
+    query.set("limit", String(params.limit));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchJsonWithTimeout<DataGapHealth>(`/ops/gaps/health${suffix}`, {}, 3500);
+}
+
+export type FetchOnlineLearningStatusOptions = {
+  limit?: number;
+  includePairReports?: boolean;
+  includeHealth?: boolean;
+};
 
 export async function fetchAgentStatus(agentId = "gold-rl-agent") {
   return fetchJson<AgentStatus>(`/agents/${agentId}`);
@@ -203,10 +294,26 @@ export type OnlineLearningStatus = {
   latestReportsByPair?: Array<{ pair: string; report: OnlineLearningReport | null }>;
 };
 
-export async function fetchOnlineLearningStatus(limit = 5): Promise<OnlineLearningStatus | null> {
-  const query = limit ? `?limit=${limit}` : "";
+export async function fetchOnlineLearningStatus(
+  options: number | FetchOnlineLearningStatusOptions = 5,
+): Promise<OnlineLearningStatus | null> {
+  const parsedOptions =
+    typeof options === "number"
+      ? { limit: options }
+      : options ?? {};
+  const query = new URLSearchParams();
+  if (typeof parsedOptions.limit === "number" && Number.isFinite(parsedOptions.limit) && parsedOptions.limit > 0) {
+    query.set("limit", String(parsedOptions.limit));
+  }
+  if (parsedOptions.includePairReports) {
+    query.set("include_pair_reports", "true");
+  }
+  if (parsedOptions.includeHealth) {
+    query.set("include_health", "true");
+  }
+  const querySuffix = query.toString() ? `?${query.toString()}` : "";
   try {
-    return await fetchJson<OnlineLearningStatus>(`/ops/learning/status${query}`);
+    return await fetchJsonWithTimeout<OnlineLearningStatus>(`/ops/learning/status${querySuffix}`, {}, 3500);
   } catch (err) {
     if (err instanceof Error && err.message.includes("404")) {
       return null;

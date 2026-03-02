@@ -34,6 +34,11 @@ export type DriftAlert = {
   action_taken?: string | null;
 };
 
+export type DriftAlertUpdate = {
+  status: "open" | "acknowledged" | "resolved";
+  action_taken?: string | null;
+};
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
@@ -87,4 +92,23 @@ export async function updateSourcePolicies(agentId: string, policies: SourcePoli
 
 export async function listDriftAlerts(agentId = "gold-rl-agent") {
   return fetchJson<DriftAlert[]>(`/agents/${agentId}/drift-alerts`);
+}
+
+export async function updateDriftAlert(agentId: string, alertId: string, payload: DriftAlertUpdate) {
+  return fetchJson<DriftAlert>(`/agents/${agentId}/drift-alerts/${alertId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resolveOpenDriftAlerts(
+  agentId: string,
+  payload?: { before?: string; action_taken?: string },
+) {
+  return fetchJson<{ resolved: number; ids: string[] }>(`/agents/${agentId}/drift-alerts/resolve-open`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
 }

@@ -90,7 +90,7 @@ The following production blockers have been addressed and are tracked in `specs/
 ## Data hygiene
 
 - Use the Convex dashboard data view to inspect/remove Convex-backed test records.
-- Use SQL (`psql`, Supabase SQL editor, or equivalent) to inspect/remove Timescale-backed RL/ops and market-data records.
+- Use SQL (`psql`, a Postgres SQL editor, or equivalent) to inspect/remove Timescale-backed RL/ops and market-data records.
 - For full table resets, import an empty JSONL file with `--replace`:
 
 ```bash

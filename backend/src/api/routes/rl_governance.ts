@@ -6,6 +6,7 @@ import { getAgentConfig, updateAgentConfig } from "../../db/repositories/agent_c
 import { listSourcePolicies, upsertSourcePolicy } from "../../db/repositories/source_policies";
 import { auditRlEvent } from "../../services/rl_audit";
 import { recordOpsAudit } from "../../services/ops_audit";
+import { logWarn } from "../../services/logger";
 
 const killSwitchSchema = z.object({
   enabled: z.boolean(),
@@ -33,11 +34,16 @@ export const rlGovernanceRoutes = new Hono();
 rlGovernanceRoutes.use("*", withOpsIdentity);
 
 rlGovernanceRoutes.get("/:agentId/kill-switch", async (c) => {
-  const config = await getAgentConfig();
-  return c.json({
-    enabled: config.kill_switch,
-    reason: config.kill_switch_reason ?? null,
-  });
+  try {
+    const config = await getAgentConfig();
+    return c.json({
+      enabled: config.kill_switch,
+      reason: config.kill_switch_reason ?? null,
+    });
+  } catch (error) {
+    logWarn("Failed to load kill-switch config", { error: String(error) });
+    return c.json({ enabled: false, reason: null });
+  }
 });
 
 rlGovernanceRoutes.post(
@@ -71,14 +77,25 @@ rlGovernanceRoutes.post(
 );
 
 rlGovernanceRoutes.get("/:agentId/promotion-gates", async (c) => {
-  const config = await getAgentConfig();
-  return c.json({
-    promotion_required: config.promotion_required,
-    promotion_min_trades: config.promotion_min_trades,
-    promotion_min_win_rate: config.promotion_min_win_rate,
-    promotion_min_net_pnl: config.promotion_min_net_pnl,
-    promotion_max_drawdown: config.promotion_max_drawdown,
-  });
+  try {
+    const config = await getAgentConfig();
+    return c.json({
+      promotion_required: config.promotion_required,
+      promotion_min_trades: config.promotion_min_trades,
+      promotion_min_win_rate: config.promotion_min_win_rate,
+      promotion_min_net_pnl: config.promotion_min_net_pnl,
+      promotion_max_drawdown: config.promotion_max_drawdown,
+    });
+  } catch (error) {
+    logWarn("Failed to load promotion gates", { error: String(error) });
+    return c.json({
+      promotion_required: false,
+      promotion_min_trades: 0,
+      promotion_min_win_rate: 0,
+      promotion_min_net_pnl: 0,
+      promotion_max_drawdown: 0,
+    });
+  }
 });
 
 rlGovernanceRoutes.patch(
@@ -111,8 +128,13 @@ rlGovernanceRoutes.patch(
 );
 
 rlGovernanceRoutes.get("/:agentId/source-policies", async (c) => {
-  const policies = await listSourcePolicies();
-  return c.json(policies);
+  try {
+    const policies = await listSourcePolicies();
+    return c.json(policies);
+  } catch (error) {
+    logWarn("Failed to load source policies", { error: String(error) });
+    return c.json([]);
+  }
 });
 
 rlGovernanceRoutes.patch(

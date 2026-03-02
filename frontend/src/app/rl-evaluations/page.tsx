@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ALL_PAIRS } from "../../config/marketCatalog";
 import Layout from "../../components/Layout";
 import EvaluationReportPanel from "../../components/rl-agent/EvaluationReportPanel";
@@ -22,6 +22,7 @@ import { fetchOnlineLearningStatus, type OnlineLearningStatus } from "../../serv
 const ALL_PAIRS_OPTION = "__all_pairs__";
 const MAX_DERIVED_WINDOW_SIZE = 4096;
 const MAX_PERIOD_DAYS = 365;
+const REPORT_PAGE_SIZE = 25;
 type NautilusPreset = "quick" | "promotion" | "research";
 
 function toInputValue(date: Date) {
@@ -232,36 +233,117 @@ export default function RlEvaluationsPage() {
   const [useFullWindowSize, setUseFullWindowSize] = useState(false);
   const [nautilusPreset, setNautilusPreset] = useState<NautilusPreset>("quick");
   const [loading, setLoading] = useState(true);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [loadingMoreReports, setLoadingMoreReports] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reportOffset, setReportOffset] = useState(0);
+  const [hasMoreReports, setHasMoreReports] = useState(false);
+  const versionIdRef = useRef("");
+
+  const loadReports = useCallback(
+    async (options: { append?: boolean; offset?: number; versionFilter?: string } = {}) => {
+      const append = options.append ?? false;
+      const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+      const effectiveVersionFilter = options.versionFilter ?? versionIdRef.current;
+      if (append) {
+        setLoadingMoreReports(true);
+      } else {
+        setReportsLoading(true);
+      }
+      setError(null);
+      try {
+        const nextReports = await listEvaluationReports(
+          "gold-rl-agent",
+          effectiveVersionFilter || undefined,
+          {
+            limit: REPORT_PAGE_SIZE,
+            offset,
+          },
+        );
+        setReports((current) => {
+          if (append) {
+            const existing = new Set(current.map((entry) => entry.id));
+            return [...current, ...nextReports.filter((entry) => !existing.has(entry.id))];
+          }
+          return nextReports;
+        });
+        setReportOffset(offset + nextReports.length);
+        setHasMoreReports(nextReports.length === REPORT_PAGE_SIZE);
+        if (!append) {
+          setSelectedReportId((currentId) => {
+            if (!nextReports.length) return "";
+            const exists = nextReports.some((report) => report.id === currentId);
+            return exists ? currentId : nextReports[0].id;
+          });
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load evaluation reports.");
+      } finally {
+        if (append) {
+          setLoadingMoreReports(false);
+        } else {
+          setReportsLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const loadMoreReports = useCallback(() => {
+    if (!hasMoreReports || reportsLoading || loadingMoreReports) return;
+    void loadReports({
+      append: true,
+      offset: reportOffset,
+      versionFilter: versionIdRef.current || undefined,
+    });
+  }, [hasMoreReports, reportsLoading, loadingMoreReports, reportOffset, loadReports]);
+
+  const changeVersion = useCallback(
+    (nextVersion: string) => {
+      setVersionId(nextVersion);
+      setReportOffset(0);
+      setHasMoreReports(false);
+      void loadReports({
+        append: false,
+        offset: 0,
+        versionFilter: nextVersion || undefined,
+      });
+    },
+    [loadReports],
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [agentVersions, evaluationReports, learning] = await Promise.all([
+      const [agentVersions, learning] = await Promise.all([
         listAgentVersions(),
-        listEvaluationReports("gold-rl-agent", versionId || undefined),
-        fetchOnlineLearningStatus(1).catch(() => null),
+        fetchOnlineLearningStatus({ limit: 1, includeHealth: false }).catch(() => null),
       ]);
       setVersions(agentVersions);
-      setReports(evaluationReports);
       setLearningStatus(learning);
       const firstVersion = agentVersions[0];
-      if (!versionId && firstVersion) {
-        setVersionId(firstVersion.id);
+      const resolvedVersionId = versionIdRef.current || firstVersion?.id || "";
+      if (!versionIdRef.current) {
+        setVersionId(resolvedVersionId);
       }
-      const firstReport = evaluationReports[0];
-      if (!selectedReportId && firstReport) {
-        setSelectedReportId(firstReport.id);
-      }
+      await loadReports({
+        append: false,
+        offset: 0,
+        versionFilter: resolvedVersionId || undefined,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load evaluation reports.");
     } finally {
       setLoading(false);
     }
-  }, [selectedReportId, versionId]);
+  }, [loadReports]);
+
+  useEffect(() => {
+    versionIdRef.current = versionId;
+  }, [versionId]);
 
   useEffect(() => {
     refresh();
@@ -458,7 +540,7 @@ export default function RlEvaluationsPage() {
             const reasonText = blockingReasons.length > 0 ? blockingReasons.join(", ") : "unknown";
             const warningText = warnings.length > 0 ? `\nWarnings: ${warnings.join(", ")}` : "";
             const confirmed = window.confirm(
-              `Data gaps detected for ${targetPair} (${blockedInterval}).\nReasons: ${reasonText}${warningText}\n\nHeal now and continue this backtest?`,
+              `Data gaps detected for ${targetPair} (${blockedInterval}).\nReasons: ${reasonText}${warningText}\n\nHeal all supported pairs and continue this backtest?`,
             );
             if (!confirmed) {
               throw new Error(`Backtest blocked by data gaps (${reasonText}).`);
@@ -616,7 +698,8 @@ export default function RlEvaluationsPage() {
             </label>
             <label>
               Model version
-              <select value={versionId} onChange={(event) => setVersionId(event.target.value)}>
+              <select value={versionId} onChange={(event) => changeVersion(event.target.value)}>
+                <option value="">All versions</option>
                 {versions.map((version) => (
                   <option key={version.id} value={version.id}>
                     {version.name ?? version.id}
@@ -780,12 +863,12 @@ export default function RlEvaluationsPage() {
                 ) : null}
                 <label>
                   Strategy IDs (CSV, optional)
-                  <input
-                    type="text"
-                    value={strategyIdsCsv}
-                    placeholder="rl_sb3_market or all"
-                    onChange={(event) => setStrategyIdsCsv(event.target.value)}
-                  />
+                <input
+                  type="text"
+                  value={strategyIdsCsv}
+                  placeholder="rl_sb3_market or all"
+                  onChange={(event) => setStrategyIdsCsv(event.target.value)}
+                />
                 </label>
                 <label>
                   Venue IDs (CSV, optional)
@@ -865,6 +948,13 @@ export default function RlEvaluationsPage() {
             </tbody>
           </table>
         )}
+        {hasMoreReports ? (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+            <button type="button" onClick={loadMoreReports} disabled={reportsLoading || loadingMoreReports}>
+              {loadingMoreReports ? "Loading more…" : "Load older reports"}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section className="table-card">

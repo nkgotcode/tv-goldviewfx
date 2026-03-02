@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { convex } from "../client";
-import { assertNoError } from "./base";
-import { insertRlOpsRow, listRlOpsRows, rlOpsUsesTimescale, updateRlOpsRowById } from "../timescale/rl_ops";
+import { insertRlOpsRow, listRlOpsRows, requireRlOpsTimescaleEnabled, updateRlOpsRowById } from "../timescale/rl_ops";
 
 export type AgentConfigUpdate = {
   enabled?: boolean;
@@ -38,60 +36,29 @@ const DEFAULT_CONFIG = {
 };
 
 export async function getAgentConfig() {
-  if (rlOpsUsesTimescale()) {
-    const rows = await listRlOpsRows("agent_configurations", {
-      orderBy: "updated_at",
-      direction: "desc",
-      limit: 1,
-    });
-    if (rows[0]) {
-      return rows[0];
-    }
-    const now = new Date().toISOString();
-    return insertRlOpsRow("agent_configurations", {
-      id: randomUUID(),
-      ...DEFAULT_CONFIG,
-      created_at: now,
-      updated_at: now,
-    });
+  requireRlOpsTimescaleEnabled("getAgentConfig");
+  const rows = await listRlOpsRows("agent_configurations", {
+    orderBy: "updated_at",
+    direction: "desc",
+    limit: 1,
+  });
+  if (rows[0]) {
+    return rows[0];
   }
-  const result = await convex
-    .from("agent_configurations")
-    .select("*")
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (result.data) {
-    return result.data;
-  }
-
-  const created = await convex
-    .from("agent_configurations")
-    .insert(DEFAULT_CONFIG)
-    .select("*")
-    .single();
-
-  return assertNoError(created, "create agent config");
+  const now = new Date().toISOString();
+  return insertRlOpsRow("agent_configurations", {
+    id: randomUUID(),
+    ...DEFAULT_CONFIG,
+    created_at: now,
+    updated_at: now,
+  });
 }
 
 export async function updateAgentConfig(payload: AgentConfigUpdate) {
+  requireRlOpsTimescaleEnabled("updateAgentConfig");
   const current = await getAgentConfig();
-  if (rlOpsUsesTimescale()) {
-    return updateRlOpsRowById("agent_configurations", current.id, {
-      ...payload,
-      updated_at: new Date().toISOString(),
-    });
-  }
-  const updated = await convex
-    .from("agent_configurations")
-    .update({
-      ...payload,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", current.id)
-    .select("*")
-    .single();
-
-  return assertNoError(updated, "update agent config");
+  return updateRlOpsRowById("agent_configurations", current.id, {
+    ...payload,
+    updated_at: new Date().toISOString(),
+  });
 }

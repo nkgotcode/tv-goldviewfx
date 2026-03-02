@@ -18,6 +18,37 @@ test("normalizeEvaluationReport accepts camelCase payloads", () => {
   expect(report.status).toBe("pass");
 });
 
+test("normalizeEvaluationReport preserves fold/interval diagnostics metadata", () => {
+  const metadata = {
+    fold_metrics: [
+      { fold: 1, status: "fail", reason_codes: ["insufficient_rows"] },
+      { fold: 2, status: "pass", reason_codes: [] },
+    ],
+    nautilus: {
+      metrics: {
+        interval_matrix: {
+          results: [
+            { interval: "1m", status: "fail", reason_codes: ["insufficient_rows"] },
+            { interval: "5m", status: "pass", reason_codes: [] },
+          ],
+        },
+      },
+    },
+  };
+
+  const report = normalizeEvaluationReport({
+    win_rate: 0.42,
+    net_pnl_after_fees: -20,
+    max_drawdown: 0.2,
+    trade_count: 8,
+    exposure_by_pair: { XAUTUSDT: 1000 },
+    metadata,
+  });
+
+  expect(report.status).toBe("fail");
+  expect(report.metadata).toEqual(metadata);
+});
+
 test("isDataGapBlockedError identifies typed gap-blocking failures", () => {
   const error = new DataGapBlockedError("blocked", {
     pair: "Gold-USDT",

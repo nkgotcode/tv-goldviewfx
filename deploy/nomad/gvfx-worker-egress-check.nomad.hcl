@@ -15,7 +15,7 @@ variable "datacenters" {
 
 variable "backend_image" {
   type    = string
-  default = "ghcr.io/your-org/tv-goldviewfx-backend:replace-with-git-sha"
+  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-202602270745-fc59982-timescalehardening5"
 }
 
 variable "backend_work_dir" {
@@ -35,7 +35,7 @@ variable "egress_worker_required_flag" {
 
 variable "ts_exit_node_primary" {
   type    = string
-  default = ""
+  default = "100.110.26.124"
 }
 
 variable "ts_exit_node_fallbacks" {
@@ -45,7 +45,7 @@ variable "ts_exit_node_fallbacks" {
 
 variable "ts_egress_expected_ips" {
   type    = string
-  default = ""
+  default = "98.215.103.11,216.238.95.214,14.169.120.106"
 }
 
 variable "ts_hostname" {

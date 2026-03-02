@@ -6,6 +6,7 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 WORKER_NAME="${WORKER_NAME:-tv-goldviewfx-frontend}"
 API_BASE_URL="${API_BASE_URL:-}"
 API_TOKEN="${API_TOKEN:-}"
+API_PORT="${API_PORT:-8787}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -30,12 +31,44 @@ derive_tailscale_funnel_base_url() {
   if ! command -v tailscale >/dev/null 2>&1; then
     return 1
   fi
-  local url
-  url="$(tailscale funnel status 2>/dev/null | awk '/^https:\/\// {print $1; exit}' || true)"
-  if [[ -z "$url" ]]; then
+
+  # Only auto-select funnel endpoints that proxy to the backend API port.
+  # This avoids selecting unrelated local funnels and causing widespread 404s.
+  local json line host proxy selected
+  json="$(tailscale funnel status --json 2>/dev/null || true)"
+  if [[ -z "$json" ]]; then
     return 1
   fi
-  printf "%s" "$url"
+
+  if ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+
+  selected=""
+  while IFS=$'\t' read -r host proxy; do
+    if [[ -n "$host" && -n "$proxy" && "$proxy" =~ :${API_PORT}($|/) ]]; then
+      selected="$host"
+      break
+    fi
+  done < <(
+    printf "%s" "$json" | jq -r '
+      .Web // {}
+      | to_entries[]
+      | .key as $host
+      | (.value.Handlers // {})
+      | to_entries[]
+      | select(.key == "/")
+      | [$host, (.value.Proxy // "")]
+      | @tsv
+    '
+  )
+
+  if [[ -z "$selected" ]]; then
+    return 1
+  fi
+
+  selected="${selected%:443}"
+  printf "https://%s" "$selected"
 }
 
 extract_url_host() {
@@ -96,6 +129,8 @@ if [[ -z "$API_BASE_URL" ]]; then
 API_BASE_URL is required.
 Set it explicitly, for example:
   API_BASE_URL=https://api.your-domain.example ./scripts/deploy-frontend-cloudflare.sh
+If you expect auto-detection from Tailscale Funnel, ensure a funnel route proxies to backend port 8787
+(or set API_PORT before running this script).
 EOF
   exit 1
 fi

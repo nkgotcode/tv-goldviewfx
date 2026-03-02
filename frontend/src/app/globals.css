@@ -1620,8 +1620,8 @@ button.ghost:hover {
   }
 }
 
-/* Institutional Ops */
-.institutional-ops {
+/* Command Center */
+.command-center {
   display: grid;
   grid-template-columns: minmax(180px, 220px) 1fr;
   gap: 24px;
@@ -1629,12 +1629,12 @@ button.ghost:hover {
   margin-top: 24px;
 }
 
-.institutional-ops-nav {
+.command-center-nav {
   position: sticky;
   top: 24px;
 }
 
-.institutional-ops-nav-list {
+.command-center-nav-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1643,7 +1643,7 @@ button.ghost:hover {
   gap: 4px;
 }
 
-.institutional-ops-nav-btn {
+.command-center-nav-btn {
   display: block;
   width: 100%;
   padding: 10px 14px;
@@ -1657,35 +1657,40 @@ button.ghost:hover {
   transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
 
-.institutional-ops-nav-btn:hover {
+.command-center-nav-btn:hover {
   color: var(--ink);
   background: var(--panel-bg);
 }
 
-.institutional-ops-nav-btn.active {
+.command-center-nav-btn.active {
   color: var(--brand-strong);
   background: var(--panel-bg);
   border-color: var(--card-edge);
 }
 
-.institutional-ops-content {
+.command-center-content {
   min-height: 320px;
   padding: 20px 0;
 }
 
-.institutional-ops-panel {
-  max-width: 720px;
+.command-center-panel {
+  max-width: 1100px;
 }
 
-.institutional-ops-panel-title {
+.command-center-panel-title {
   font-size: 1.25rem;
   margin: 0 0 12px;
   color: var(--ink);
 }
 
-.institutional-ops-panel .bullet-list {
+.command-center-panel .bullet-list {
   margin: 12px 0 0;
   padding-left: 1.25rem;
+}
+
+.command-center-stack {
+  display: grid;
+  gap: 16px;
 }
 
 .overview-grid {
@@ -1718,20 +1723,20 @@ button.ghost:hover {
 }
 
 @media (max-width: 768px) {
-  .institutional-ops {
+  .command-center {
     grid-template-columns: 1fr;
   }
 
-  .institutional-ops-nav {
+  .command-center-nav {
     position: static;
   }
 
-  .institutional-ops-nav-list {
+  .command-center-nav-list {
     flex-direction: row;
     flex-wrap: wrap;
   }
 
-  .institutional-ops-nav-btn {
+  .command-center-nav-btn {
     width: auto;
   }
 }

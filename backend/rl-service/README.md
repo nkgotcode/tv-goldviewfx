@@ -49,8 +49,7 @@ uv run uvicorn server:app --host 0.0.0.0 --port 9101
 - `RL_SERVICE_LOG_LEVEL` (default `info`)
 - `RL_SERVICE_REQUEST_TIMEOUT_MS` (default `15000`)
 - `RL_MODEL_REGISTRY_PATH` (default `./models`)
-- `RL_ARTIFACT_BUCKET` (optional tag for Convex-backed artifact references)
-- `CONVEX_URL` (optional; required only when Convex-backed data/artifact reads are used)
+- `RL_ARTIFACT_BUCKET` (optional tag for artifact routing/ops metadata)
 - `RL_STRICT_MODEL_INFERENCE` (default `true`; requires real model artifacts for `/inference`)
 - `RL_STRICT_BACKTEST` (default `true`; evaluation fails if Nautilus backtest fails)
 - `RL_HEALTH_REQUIRE_ML` (default `true`; `/health` returns 503 if SB3/Nautilus are unavailable)
@@ -58,8 +57,7 @@ uv run uvicorn server:app --host 0.0.0.0 --port 9101
 ## Backend integration notes
 
 - Backend RL/ops repositories can run fully on Timescale/Postgres (`TIMESCALE_RL_OPS_ENABLED=true`).
-- Backend artifact URIs may be `convex://storage/...` or `file://...` depending on storage configuration.
-- RL service should treat `artifact_uri` as opaque and avoid hard-coding Convex-only URI assumptions.
+- RL artifacts are passed to the service as `artifact_base64` or `artifact_download_url`; the service treats `artifact_uri` as opaque metadata.
 
 ## Notes
 

@@ -15,7 +15,7 @@ variable "datacenters" {
 
 variable "backend_image" {
   type    = string
-  default = "ghcr.io/your-org/tv-goldviewfx-backend:replace-with-git-sha"
+  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-202602270745-fc59982-timescalehardening5"
 }
 
 variable "backend_work_dir" {
@@ -70,7 +70,7 @@ variable "timescale_market_data_enabled" {
 
 variable "backfill_cron" {
   type    = string
-  default = "15 * * * *"
+  default = "* * * * *"
 }
 
 variable "backfill_time_zone" {
@@ -80,7 +80,7 @@ variable "backfill_time_zone" {
 
 variable "bingx_full_backfill_max_batches" {
   type    = string
-  default = "10000"
+  default = "50000"
 }
 
 variable "bingx_full_backfill_open_gap_threshold" {
@@ -105,7 +105,7 @@ variable "bingx_full_backfill_alert_enabled" {
 
 variable "ts_exit_node_primary" {
   type    = string
-  default = ""
+  default = "100.110.26.124"
 }
 
 variable "ts_exit_node_fallbacks" {
@@ -115,7 +115,7 @@ variable "ts_exit_node_fallbacks" {
 
 variable "ts_egress_expected_ips" {
   type    = string
-  default = ""
+  default = "98.215.103.11,216.238.95.214,14.169.120.106"
 }
 
 variable "ts_hostname" {
@@ -281,6 +281,7 @@ EOT
         BINGX_FULL_BACKFILL_OPEN_GAP_THRESHOLD = var.bingx_full_backfill_open_gap_threshold
         BINGX_FULL_BACKFILL_NON_OK_SOURCE_THRESHOLD = var.bingx_full_backfill_non_ok_source_threshold
         BINGX_FULL_BACKFILL_ALERT_ENABLED      = var.bingx_full_backfill_alert_enabled
+        TIMESCALE_RL_OPS_ENABLED               = "true"
       }
 
       template {

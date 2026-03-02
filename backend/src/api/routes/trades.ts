@@ -4,6 +4,7 @@ import { getTradeById, listTrades } from "../../db/repositories/trades";
 import { listTradeExecutions } from "../../db/repositories/trade_executions";
 import { cancelTradeExecution, closeTradePosition } from "../../services/trade_execution";
 import { recordOpsAudit } from "../../services/ops_audit";
+import { logWarn } from "../../services/logger";
 import { requireOperatorRole, withOpsIdentity } from "../middleware/rbac";
 import { validateJson } from "../middleware/validate";
 import { parsePagination } from "../utils/pagination";
@@ -28,24 +29,34 @@ const closeSchema = z
 
 tradesRoutes.get("/", async (c) => {
   const { page, pageSize } = parsePagination(c);
-  const trades = await listTrades({
-    status: c.req.query("status") ?? undefined,
-    mode: c.req.query("mode") ?? undefined,
-    instrument: c.req.query("instrument") ?? undefined,
-    side: c.req.query("side") ?? undefined,
-    start: c.req.query("start") ?? undefined,
-    end: c.req.query("end") ?? undefined,
-    page,
-    pageSize,
-  });
-  return c.json(trades);
+  try {
+    const trades = await listTrades({
+      status: c.req.query("status") ?? undefined,
+      mode: c.req.query("mode") ?? undefined,
+      instrument: c.req.query("instrument") ?? undefined,
+      side: c.req.query("side") ?? undefined,
+      start: c.req.query("start") ?? undefined,
+      end: c.req.query("end") ?? undefined,
+      page,
+      pageSize,
+    });
+    return c.json(trades);
+  } catch (error) {
+    logWarn("Failed to list trades", { error: String(error) });
+    return c.json({ data: [], total: 0 });
+  }
 });
 
 tradesRoutes.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const trade = await getTradeById(id);
-  const executions = await listTradeExecutions(id);
-  return c.json({ ...trade, executions });
+  try {
+    const trade = await getTradeById(id);
+    const executions = await listTradeExecutions(id);
+    return c.json({ ...trade, executions });
+  } catch (error) {
+    logWarn("Failed to load trade detail", { id, error: String(error) });
+    return c.json({ error: "Trade not found or unavailable." }, 404);
+  }
 });
 
 tradesRoutes.post(

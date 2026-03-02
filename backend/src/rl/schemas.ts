@@ -93,6 +93,7 @@ export const evaluationRequestSchema = z.object({
     .max(32, "Too many strategy IDs")
     .transform((ids) => Array.from(new Set(ids.map((value) => value.trim().toLowerCase()))))
     .optional(),
+  backtestMode: z.enum(["l1", "l2", "l3"]).optional(),
   venueIds: z
     .array(z.string().min(1))
     .max(32, "Too many venue IDs")
@@ -118,6 +119,7 @@ export const evaluationRequestSchema = z.object({
       minTrainBars: z.number().int().positive().optional(),
       strict: z.boolean().optional(),
     })
+    .nullable()
     .optional(),
   featureSchemaFingerprint: z.string().min(8).optional(),
 });

@@ -11,11 +11,12 @@ import type { EvaluationReport } from "../types/rl";
 import { buildDatasetFeaturesWithProvenance, createDatasetVersion } from "./dataset_service";
 import { getDatasetVersion } from "../db/repositories/dataset_versions";
 import { evaluateDriftForLatestReport } from "./drift_monitoring_service";
-import { resolveArtifactUrl } from "./model_artifact_service";
+import { resolveArtifactUrl, resolveEmbeddedArtifactPayload } from "./model_artifact_service";
 import { getFeatureSchemaFingerprint, getFeatureSetConfigById } from "./feature_set_service";
 import { getExchangeMetadata } from "./exchange_metadata_service";
 import { evaluateDataIntegrityGate } from "./data_integrity_service";
 import { getDataGapHealth } from "./data_gap_health";
+import { listOpenDataGapEvents } from "../db/repositories/data_gap_events";
 import type { TradingPair } from "../types/rl";
 
 type EvaluationMetrics = {
@@ -56,6 +57,13 @@ type PromotionCriteria = {
   minTradeCount: number;
 };
 
+type CriteriaAdjustment = {
+  source: string;
+  multiplier?: number;
+  delta?: number;
+  note?: string;
+};
+
 type RunEvaluationOptions = {
   bypassDataGapGate?: boolean;
   gapGateBypassReason?: string | null;
@@ -85,6 +93,10 @@ const E2E_PROMOTION_CRITERIA: PromotionCriteria = {
 };
 const MAX_EVALUATION_FEATURE_ROWS = Number.parseInt(process.env.RL_EVAL_MAX_FEATURE_ROWS ?? "20000", 10);
 const MAX_EVALUATION_WINDOW_SIZE = Number.parseInt(process.env.RL_EVAL_MAX_WINDOW_SIZE ?? "4096", 10);
+const MAX_EVALUATION_WINDOWS = Number.parseInt(process.env.RL_EVAL_MAX_WINDOWS ?? "12000", 10);
+const DEFAULT_NAUTILUS_STRATEGY_IDS = ["ema_trend", "bollinger_mean_rev", "funding_overlay"] as const;
+const SB3_MIN_FEATURE_ROWS = Number.parseInt(process.env.RL_SB3_MIN_FEATURE_ROWS ?? "300", 10);
+const SB3_MIN_TRADE_COUNT = Number.parseInt(process.env.RL_SB3_MIN_TRADE_COUNT ?? "30", 10);
 
 export class DataGapBlockedError extends Error {
   readonly code = "DATA_GAP_BLOCKED" as const;
@@ -99,6 +111,31 @@ export class DataGapBlockedError extends Error {
 
 export function isDataGapBlockedError(error: unknown): error is DataGapBlockedError {
   return error instanceof DataGapBlockedError;
+}
+
+function normalizeGapIntervals(intervals: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      intervals
+        .map((interval) => (typeof interval === "string" ? interval.trim() : ""))
+        .filter((interval) => interval.length > 0),
+    ),
+  );
+}
+
+async function listScopedOpenCandleGapEvents(pair: TradingPair, intervals: string[]) {
+  if (intervals.length === 0) return [];
+  const scoped = await Promise.all(
+    intervals.map((interval) =>
+      listOpenDataGapEvents({
+        pair,
+        source_type: "bingx_candles",
+        interval,
+        limit: 20,
+      }),
+    ),
+  );
+  return scoped.flat();
 }
 
 function resolveStatus(metrics: EvaluationMetrics, criteria: PromotionCriteria) {
@@ -132,6 +169,89 @@ function resolveCriteria(config: Record<string, unknown>): PromotionCriteria {
     minNetPnl: Math.min(resolved.minNetPnl, E2E_PROMOTION_CRITERIA.minNetPnl),
     maxDrawdown: Math.max(resolved.maxDrawdown, E2E_PROMOTION_CRITERIA.maxDrawdown),
     minTradeCount: Math.max(resolved.minTradeCount, E2E_PROMOTION_CRITERIA.minTradeCount),
+  };
+}
+
+function parseIntervalMinutes(interval: string) {
+  const match = interval.trim().match(/^(\d+)(m|h|d)$/);
+  if (!match) return null;
+  const value = Number.parseInt(match[1] ?? "", 10);
+  const unit = match[2];
+  if (!Number.isFinite(value) || value <= 0 || !unit) return null;
+  if (unit === "m") return value;
+  if (unit === "h") return value * 60;
+  if (unit === "d") return value * 24 * 60;
+  return null;
+}
+
+function round3(value: number) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function applyCriteriaAdjustments(params: {
+  base: PromotionCriteria;
+  pair: string;
+  interval: string;
+  strategyIds: string[];
+}) {
+  const adjustments: CriteriaAdjustment[] = [];
+  const criteria: PromotionCriteria = { ...params.base };
+  const intervalMinutes = parseIntervalMinutes(params.interval);
+  const pairToken = params.pair.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const usesSb3 = params.strategyIds.includes("rl_sb3_market");
+
+  if (intervalMinutes !== null) {
+    if (intervalMinutes >= 60) {
+      const nextMinTrades = Math.max(8, Math.floor(criteria.minTradeCount * 0.6));
+      if (nextMinTrades !== criteria.minTradeCount) {
+        adjustments.push({
+          source: "interval",
+          multiplier: 0.6,
+          note: "Lower minimum trades on high-timeframe backtests to avoid false FAIL from sparse signal cadence.",
+        });
+        criteria.minTradeCount = nextMinTrades;
+      }
+    } else if (intervalMinutes <= 5) {
+      const nextMinTrades = Math.max(criteria.minTradeCount, Math.floor(criteria.minTradeCount * 1.25));
+      if (nextMinTrades !== criteria.minTradeCount) {
+        adjustments.push({
+          source: "interval",
+          multiplier: 1.25,
+          note: "Slightly tighter minimum trade count on low-timeframe backtests.",
+        });
+        criteria.minTradeCount = nextMinTrades;
+      }
+    }
+  }
+
+  if (["XAUTUSDT", "GOLDUSDT", "PAXGUSDT"].includes(pairToken)) {
+    const nextMinWin = round3(Math.max(0.5, criteria.minWinRate - 0.02));
+    if (nextMinWin !== criteria.minWinRate) {
+      criteria.minWinRate = nextMinWin;
+      adjustments.push({
+        source: "pair",
+        delta: -0.02,
+        note: "Slightly relaxed win-rate threshold for gold-linked instruments.",
+      });
+    }
+  }
+
+  if (usesSb3) {
+    const nextMinTrades = Math.max(criteria.minTradeCount, SB3_MIN_TRADE_COUNT);
+    if (nextMinTrades !== criteria.minTradeCount) {
+      criteria.minTradeCount = nextMinTrades;
+      adjustments.push({
+        source: "strategy",
+        note: "Raised minimum trade count for rl_sb3_market promotion readiness.",
+      });
+    }
+  }
+
+  return {
+    criteria,
+    adjustments,
+    intervalMinutes,
+    pairToken,
   };
 }
 
@@ -284,6 +404,43 @@ function resolveEffectiveWindowSize(requestedWindowSize: number, featureRowCount
   return Math.max(1, Math.min(requested, maxWindowSize));
 }
 
+function estimateWindowCount(featureRowCount: number, windowSize: number, stride: number) {
+  if (!Number.isFinite(featureRowCount) || featureRowCount <= 0) return 0;
+  if (!Number.isFinite(windowSize) || windowSize <= 0) return 0;
+  if (!Number.isFinite(stride) || stride <= 0) return 0;
+  if (featureRowCount < windowSize) return 0;
+  return Math.floor((featureRowCount - windowSize) / stride) + 1;
+}
+
+function resolveEffectiveStride(
+  requestedStride: number,
+  featureRowCount: number,
+  windowSize: number,
+  maxWindows: number,
+) {
+  const requested = resolvePositiveLimit(requestedStride, 1);
+  const limit = Math.max(1, resolvePositiveLimit(maxWindows, 12_000));
+  const requestedWindowCount = estimateWindowCount(featureRowCount, windowSize, requested);
+  if (requestedWindowCount <= limit) {
+    return {
+      stride: requested,
+      autoscaled: false,
+      requestedWindowCount,
+      effectiveWindowCount: requestedWindowCount,
+      reasonCodes: [] as string[],
+    };
+  }
+  const nextStride = Math.max(requested, Math.ceil((featureRowCount - windowSize + 1) / limit));
+  const effectiveWindowCount = estimateWindowCount(featureRowCount, windowSize, nextStride);
+  return {
+    stride: nextStride,
+    autoscaled: true,
+    requestedWindowCount,
+    effectiveWindowCount,
+    reasonCodes: ["stride_scaled_for_window_count"],
+  };
+}
+
 function buildRelaxedWalkForward() {
   return {
     folds: 1,
@@ -412,6 +569,55 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
     throw new Error("RL service mock mode is disabled for evaluations; Nautilus backtest is required.");
   }
   const requestedInterval = request.interval ?? "1m";
+  const preflightIntervals = normalizeGapIntervals([requestedInterval, ...(request.contextIntervals ?? [])]);
+  if (!bypassDataGapGate) {
+    const openGapEvents = await recordExecutionStep(
+      executionSteps,
+      "data_gap_open_event_preflight",
+      "Data gap open-event preflight",
+      () =>
+        listScopedOpenCandleGapEvents(request.pair as TradingPair, preflightIntervals),
+      (result) => ({
+        pair: request.pair,
+        source_type: "bingx_candles",
+        intervals: preflightIntervals,
+        open_gap_events: result.length,
+      }),
+    );
+    if (openGapEvents.length > 0) {
+      const gapHealth = await getDataGapHealth({
+        pair: request.pair as TradingPair,
+        sourceType: "bingx_candles",
+        limit: 100,
+      }).catch(() => null);
+      throw new DataGapBlockedError(
+        `Backtest blocked: data gaps detected for ${request.pair} (${requestedInterval}).`,
+        {
+          pair: request.pair as TradingPair,
+          interval: requestedInterval,
+          blockingReasons: ["open_gap_events"],
+          warnings: [],
+          integrityProvenance: {
+            preflight: "open_gap_events_only",
+            openGapEvents: openGapEvents.length,
+            intervals: preflightIntervals,
+          },
+          gapHealth,
+        },
+      );
+    }
+  } else {
+    await recordExecutionStep(
+      executionSteps,
+      "data_gap_open_event_preflight",
+      "Data gap open-event preflight (bypassed)",
+      () =>
+        Promise.resolve({
+          bypassed: true,
+          reason: gapGateBypassReason,
+        }),
+    );
+  }
   const dataset = await recordExecutionStep(
     executionSteps,
     "resolve_dataset",
@@ -529,6 +735,7 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
         evaluateDataIntegrityGate({
           pair: request.pair as TradingPair,
           candles: candidateCandles,
+          intervals: normalizeGapIntervals([interval, ...(request.contextIntervals ?? [])]),
         }),
       (result) => ({
         allowed: result.allowed,
@@ -559,7 +766,14 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
   const featureKeyExtras = extractContextFeatureKeys(effectiveDatasetFeatures as Array<Record<string, unknown>>);
   const requestedWindowSize = request.windowSize ?? dataset.window_size ?? 30;
   let windowSize = resolveEffectiveWindowSize(requestedWindowSize, effectiveDatasetFeatures.length);
-  const stride = request.stride ?? dataset.stride ?? 1;
+  const requestedStride = request.stride ?? dataset.stride ?? 1;
+  const stridePlan = resolveEffectiveStride(
+    requestedStride,
+    effectiveDatasetFeatures.length,
+    windowSize,
+    MAX_EVALUATION_WINDOWS,
+  );
+  const stride = stridePlan.stride;
   const leverage = request.leverage ?? env.RL_PPO_LEVERAGE_DEFAULT;
   const takerFeeBps = request.takerFeeBps ?? env.RL_PPO_TAKER_FEE_BPS;
   const slippageBps = request.slippageBps ?? env.RL_PPO_SLIPPAGE_BPS;
@@ -573,8 +787,13 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
     drawdownPenalty,
   };
   const costModelFingerprint = buildCostModelFingerprint(costModel);
+  const requestedStrategyIds = request.strategyIds ?? [...DEFAULT_NAUTILUS_STRATEGY_IDS];
+  const requiresSb3Artifact = requestedStrategyIds.includes("rl_sb3_market");
   const exchangeMetadata = await getExchangeMetadata(request.pair as TradingPair).catch(() => null);
-  const artifactUrl = version.artifact_uri ? await resolveArtifactUrl(version.artifact_uri) : null;
+  const artifactUrl =
+    requiresSb3Artifact && version.artifact_uri ? await resolveArtifactUrl(version.artifact_uri) : null;
+  const embeddedArtifact =
+    requiresSb3Artifact && version.artifact_uri ? await resolveEmbeddedArtifactPayload(version.artifact_uri) : null;
   let effectiveWalkForward = request.walkForward ?? null;
   let evaluationRetryReason: string | null = null;
   let evaluationRetryApplied = false;
@@ -589,9 +808,9 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
     featureSetVersionId,
     datasetHash: dataset.dataset_hash ?? dataset.checksum,
     artifactUri: version.artifact_uri ?? null,
-    artifactChecksum: version.artifact_checksum ?? null,
+    artifactChecksum: version.artifact_checksum ?? embeddedArtifact?.artifactChecksum ?? null,
     artifactDownloadUrl: artifactUrl ?? undefined,
-    artifactBase64: null as string | null,
+    artifactBase64: embeddedArtifact?.artifactBase64 ?? null,
     decisionThreshold: request.decisionThreshold ?? null,
     windowSize,
     stride,
@@ -600,7 +819,8 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
     slippageBps,
     fundingWeight,
     drawdownPenalty,
-    strategyIds: request.strategyIds ?? null,
+    strategyIds: requestedStrategyIds,
+    backtestMode: request.backtestMode ?? "l1",
     venueIds: request.venueIds ?? null,
     instrumentMeta: exchangeMetadata
       ? {
@@ -618,6 +838,7 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
     featureKeyExtras,
     datasetFeatures: effectiveDatasetFeatures,
   };
+  const effectiveStrategyIds = payload.strategyIds ?? [...DEFAULT_NAUTILUS_STRATEGY_IDS];
   if (!payload.artifactDownloadUrl && E2E_RUN_ENABLED) {
     const trainingResponse = await rlServiceClient.train({
       pair: request.pair,
@@ -660,10 +881,18 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
         if (message.includes("No evaluation windows generated")) {
           const featureRowCount = payload.datasetFeatures?.length ?? 0;
           const fallbackWindowSize = resolveEffectiveWindowSize(payload.windowSize ?? 30, featureRowCount);
+          const fallbackStridePlan = resolveEffectiveStride(
+            payload.stride ?? 1,
+            featureRowCount,
+            fallbackWindowSize,
+            MAX_EVALUATION_WINDOWS,
+          );
           const fallbackWalkForward = buildRelaxedWalkForward();
           const canRetry =
             featureRowCount > 1 &&
-            (fallbackWindowSize !== payload.windowSize || JSON.stringify(payload.walkForward) !== JSON.stringify(fallbackWalkForward));
+            (fallbackWindowSize !== payload.windowSize ||
+              fallbackStridePlan.stride !== payload.stride ||
+              JSON.stringify(payload.walkForward) !== JSON.stringify(fallbackWalkForward));
           if (canRetry) {
             evaluationRetryApplied = true;
             evaluationRetryReason = "auto_relaxed_window_and_walk_forward";
@@ -672,6 +901,7 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
             return rlServiceClient.evaluate({
               ...payload,
               windowSize: fallbackWindowSize,
+              stride: fallbackStridePlan.stride,
               walkForward: fallbackWalkForward,
             });
           }
@@ -694,11 +924,18 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
       pair: payload.pair,
       interval: payload.interval,
       context_intervals: payload.contextIntervals ?? [],
-      strategy_ids: payload.strategyIds ?? ["all"],
+      strategy_ids: effectiveStrategyIds,
       venue_ids: payload.venueIds ?? ["all"],
+      backtest_mode: payload.backtestMode,
       walk_forward: effectiveWalkForward,
       requested_window_size: requestedWindowSize,
       effective_window_size: windowSize,
+      requested_stride: requestedStride,
+      effective_stride: stride,
+      requested_window_count: stridePlan.requestedWindowCount,
+      effective_window_count: stridePlan.effectiveWindowCount,
+      stride_autoscaled: stridePlan.autoscaled,
+      stride_autoscale_reason_codes: stridePlan.reasonCodes,
       use_full_history: useFullHistory,
       requested_max_feature_rows: requestedMaxFeatureRows,
       dataset_feature_rows_original: featureRows.originalCount,
@@ -764,7 +1001,13 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
       windowSize,
       requestedWindowSize,
       maxEvaluationWindowSize: resolvePositiveLimit(MAX_EVALUATION_WINDOW_SIZE, 4096),
+      maxEvaluationWindows: resolvePositiveLimit(MAX_EVALUATION_WINDOWS, 12_000),
       stride,
+      requestedStride,
+      requestedWindowCount: stridePlan.requestedWindowCount,
+      effectiveWindowCount: stridePlan.effectiveWindowCount,
+      strideAutoscaled: stridePlan.autoscaled,
+      strideAutoscaleReasonCodes: stridePlan.reasonCodes,
       leverage,
       takerFeeBps,
       slippageBps,
@@ -773,7 +1016,8 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
       costModelFingerprint,
       costModel,
       exchangeMetadataFingerprint: exchangeMetadata?.fingerprint ?? null,
-      strategyIds: request.strategyIds ?? ["all"],
+      strategyIds: request.strategyIds ?? [...DEFAULT_NAUTILUS_STRATEGY_IDS],
+      backtestMode: request.backtestMode ?? "l1",
       venueIds: request.venueIds ?? ["all"],
       walkForward: effectiveWalkForward,
       dataGapGate: {
@@ -825,6 +1069,10 @@ export async function runEvaluation(request: EvaluationRequest, options: RunEval
   return inserted;
 }
 
-export async function listEvaluations(agentVersionId?: string) {
-  return listEvaluationReports(agentVersionId);
+export async function listEvaluations(
+  agentVersionId?: string,
+  limit?: number,
+  offset?: number,
+) {
+  return listEvaluationReports(agentVersionId, { limit, offset });
 }

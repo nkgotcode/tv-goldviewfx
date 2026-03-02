@@ -16,8 +16,8 @@ import type {
 export class RlServiceClient {
   constructor(private readonly config = loadRlServiceConfig()) {}
 
-  async health(): Promise<HealthResponse> {
-    return this.getJson(this.config.healthPath);
+  async health(timeoutMs?: number): Promise<HealthResponse> {
+    return this.getJson(this.config.healthPath, undefined, timeoutMs);
   }
 
   async infer(payload: InferenceRequest): Promise<InferenceResponse> {
@@ -84,6 +84,7 @@ export class RlServiceClient {
       funding_weight: payload.fundingWeight ?? null,
       drawdown_penalty: payload.drawdownPenalty ?? null,
       strategy_ids: payload.strategyIds ?? null,
+      backtest_mode: payload.backtestMode ?? null,
       venue_ids: payload.venueIds ?? null,
       instrument_meta: payload.instrumentMeta ?? null,
       walk_forward: payload.walkForward
@@ -166,9 +167,10 @@ export class RlServiceClient {
     });
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, timeoutMs?: number): Promise<T> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const timeout = timeoutMs ?? this.config.timeoutMs;
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     const headers: HeadersInit = {
       ...(init.headers ?? {}),

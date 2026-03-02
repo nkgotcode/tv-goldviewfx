@@ -143,7 +143,7 @@ job "gvfx-rl-service" {
         command  = "sh"
         args = [
           "-ec",
-          "if [ -n \"$CONVEX_SERVICE_ADDRESS\" ]; then tmp_hosts=\"/tmp/hosts.$$\"; awk '!/^[0-9a-fA-F:.]+[[:space:]]+gvfx-convex\\.service\\.nomad([[:space:]]|$)/' /etc/hosts > \"$tmp_hosts\" 2>/dev/null || cp /etc/hosts \"$tmp_hosts\"; echo \"$CONVEX_SERVICE_ADDRESS gvfx-convex.service.nomad\" >> \"$tmp_hosts\"; cat \"$tmp_hosts\" > /etc/hosts; rm -f \"$tmp_hosts\"; fi; exec /app/backend/rl-service/.venv/bin/uvicorn server:app --host 0.0.0.0 --port ${var.rl_service_port}",
+          "exec /app/backend/rl-service/.venv/bin/uvicorn server:app --host 0.0.0.0 --port ${var.rl_service_port}",
         ]
         work_dir = var.rl_service_work_dir
         ports    = ["http"]
@@ -164,37 +164,13 @@ OPENAI_BASE_URL={{ printf "%q" .OPENAI_BASE_URL }}
 OPENAI_MODEL={{ printf "%q" .OPENAI_MODEL }}
 OPENROUTER_REFERER={{ printf "%q" .OPENROUTER_REFERER }}
 OPENROUTER_TITLE={{ printf "%q" .OPENROUTER_TITLE }}
-{{ $convexHost := "${var.convex_service_name}.service.nomad" -}}
-{{ $convexPort := "${var.convex_port}" -}}
-{{ with nomadService "${var.convex_service_name}" -}}
-{{ with index . 0 -}}
-{{ $convexHost = .Address -}}
-{{ $convexPort = printf "%d" .Port -}}
-{{ end -}}
-{{ end -}}
-CONVEX_URL={{ printf "%q" (printf "http://%s:%s" $convexHost $convexPort) }}
 {{- end }}
-EOT
-      }
-
-      template {
-        destination = "secrets/convex_host.env"
-        env         = true
-        change_mode = "restart"
-        data        = <<-EOT
-{{ $convexHost := "" -}}
-{{ with nomadService "${var.convex_service_name}" -}}
-{{ with index . 0 -}}
-{{ $convexHost = .Address -}}
-{{ end -}}
-{{ end -}}
-CONVEX_SERVICE_ADDRESS={{ printf "%q" $convexHost }}
 EOT
       }
 
       resources {
         cpu    = 1200
-        memory = 2048
+        memory = 32768
       }
 
       service {

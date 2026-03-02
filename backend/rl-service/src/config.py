@@ -13,7 +13,6 @@ class ServiceConfig:
     request_timeout_ms: int
     model_registry_path: str
     artifact_bucket: str | None
-    convex_url: str | None
     strict_model_inference: bool
     strict_backtest: bool
     health_require_ml: bool
@@ -52,7 +51,6 @@ def load_config(env: dict[str, str] | None = None) -> ServiceConfig:
         request_timeout_ms=_get_int(env, "RL_SERVICE_REQUEST_TIMEOUT_MS", 15000),
         model_registry_path=env.get("RL_MODEL_REGISTRY_PATH", "./models"),
         artifact_bucket=env.get("RL_ARTIFACT_BUCKET"),
-        convex_url=env.get("CONVEX_URL"),
         strict_model_inference=_get_bool(env, "RL_STRICT_MODEL_INFERENCE", True),
         strict_backtest=_get_bool(env, "RL_STRICT_BACKTEST", True),
         health_require_ml=_get_bool(env, "RL_HEALTH_REQUIRE_ML", True),

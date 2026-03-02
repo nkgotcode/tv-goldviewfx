@@ -11,6 +11,8 @@
     "coverage:critical:check": "node ./scripts/check_critical_coverage.mjs ./coverage-critical/lcov.info ./scripts/critical_coverage_thresholds.json",
     "test:coverage:gate": "bun run test:coverage:critical && bun run coverage:critical:check",
     "bingx:full-backfill": "bun run scripts/bingx-full-backfill.ts",
+    "migrate:rl-ops:timescale": "bun run scripts/migrate_rlops_to_timescale.ts",
+    "migrate:rl-artifact-uris:timescale": "bun run scripts/normalize_rl_artifact_uris_timescale.ts",
     "tradingview:login": "bun run scripts/tradingview-login.ts",
     "telegram:session": "bun run scripts/telegram-session.ts"
   },

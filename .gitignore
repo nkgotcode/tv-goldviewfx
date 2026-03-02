@@ -57,3 +57,5 @@ convex/_generated/
 Thumbs.db
 
 *.jsonl
+.tmp*/
+.tmp*.dockerfile

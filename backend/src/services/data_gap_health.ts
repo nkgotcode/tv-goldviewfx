@@ -101,11 +101,13 @@ export function summarizeDataGapEvents(events: DataGapEventRow[]) {
 }
 
 export async function getDataGapHealth(params: DataGapHealthParams = {}) {
-  const limit = typeof params.limit === "number" && params.limit > 0 ? params.limit : 100;
+  const safeLimit = typeof params.limit === "number" && Number.isFinite(params.limit)
+    ? Math.max(1, Math.min(Math.floor(params.limit), 250))
+    : 100;
   const events = await listOpenDataGapEvents({
     pair: params.pair,
     source_type: params.sourceType,
-    limit,
+    limit: safeLimit,
   });
 
   return {

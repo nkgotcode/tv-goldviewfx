@@ -42,9 +42,29 @@ export const rlAgentRoutes = new Hono();
 agentRoutes.use("*", withOpsIdentity);
 rlAgentRoutes.use("*", withOpsIdentity);
 
+const OPS_READ_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(process.env.OPS_READ_TIMEOUT_MS ?? "4000", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 4000;
+  return parsed;
+})();
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}_timeout_${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 agentRoutes.get("/config", async (c) => {
   try {
-    const config = await getAgentConfig();
+    const config = await withTimeout(getAgentConfig(), OPS_READ_TIMEOUT_MS, "agent_config_read");
     return c.json(config);
   } catch (error) {
     logWarn("Failed to load agent configuration", { error: String(error) });

@@ -65,6 +65,7 @@ const envSchema = z.object({
   TIMESCALE_RL_OPS_ENABLED: booleanFromEnv.default(false),
   TIMESCALE_URL: z.string().optional(),
   TIMESCALE_SCHEMA: z.string().default("public"),
+  TIMESCALE_POOL_MAX: z.coerce.number().int().positive().default(4),
   BINGX_MARKET_DATA_MOCK: booleanFromEnv.default(false),
   MARKET_GOLD_PAIRS: z.string().optional(),
   MARKET_CRYPTO_PAIRS: z.string().optional(),

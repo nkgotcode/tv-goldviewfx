@@ -1,0 +1,215 @@
+# Binance Market Data Pipeline — Full-Depth TimescaleDB Ingestion
+
+Build a production-grade Binance data ingestion system for **Spot + USDT-margined Futures**, storing into the **existing TimescaleDB** instance (same as BingX). Curated pair set, same Tailscale egress. Targets Nautilus Trader backtesting with maximum data depth.
+
+## Pairs (curated, same as BingX)
+
+| Pair | Spot | Futures |
+|---|---|---|
+| ALGOUSDT | ✅ | ✅ |
+| BNBUSDT | ✅ | ✅ |
+| BTCUSDT | ✅ | ✅ |
+| ETHUSDT | ✅ | ✅ |
+| PAXGUSDT | ✅ | ✅ |
+| SOLUSDT | ✅ | ✅ |
+| XRPUSDT | ✅ | ✅ |
+
+---
+
+## Complete Data Sources for Nautilus Trader
+
+### Spot + Futures (shared)
+
+| Data Type | REST Endpoint | WS Stream | Backfill Depth | DB Table |
+|---|---|---|---|---|
+| **Kline/Candles** | `/api/v3/klines` · `/fapi/v1/klines` | `@kline_<interval>` | Full history | `binance_candles` |
+| **Agg Trades** | `/api/v3/aggTrades` · `/fapi/v1/aggTrades` | `@aggTrade` | Full history | `binance_agg_trades` |
+| **Order Book** | `/api/v3/depth` · `/fapi/v1/depth` | `@depth@100ms` | Live only | `binance_orderbook_snapshots` |
+| **24h Ticker** | `/api/v3/ticker/24hr` · `/fapi/v1/ticker/24hr` | `@ticker` | Live only | `binance_tickers` |
+| **Exchange Info** | `/api/v3/exchangeInfo` · `/fapi/v1/exchangeInfo` | — | Snapshot | `binance_exchange_info` |
+
+### Futures-exclusive data
+
+| Data Type | REST Endpoint | WS Stream | Backfill Depth | DB Table |
+|---|---|---|---|---|
+| **Funding Rate** | `/fapi/v1/fundingRate` | via `@markPrice` | Full history (limit 1000/req) | `binance_funding_rates` |
+| **Open Interest** | `/fapi/v1/openInterest` | — | Current only | `binance_open_interest` |
+| **OI Statistics** | `/futures/data/openInterestHist` | — | 30 days | `binance_oi_statistics` |
+| **Mark Price Klines** | `/fapi/v1/markPriceKlines` | `@markPrice@1s` | Full history | `binance_mark_price_klines` |
+| **Index Price Klines** | `/fapi/v1/indexPriceKlines` | — | Full history | `binance_index_price_klines` |
+| **Premium Index Klines** | `/fapi/v1/premiumIndexKlines` | — | Full history | `binance_premium_index_klines` |
+| **Top Trader L/S (Positions)** | `/futures/data/topLongShortPositionRatio` | — | 30 days | `binance_top_ls_position_ratio` |
+| **Top Trader L/S (Accounts)** | `/futures/data/topLongShortAccountRatio` | — | 30 days | `binance_top_ls_account_ratio` |
+| **Global L/S Ratio** | `/futures/data/globalLongShortAccountRatio` | — | 30 days | `binance_global_ls_ratio` |
+| **Taker Buy/Sell Volume** | `/futures/data/takerlongshortRatio` | — | 30 days | `binance_taker_buy_sell_volume` |
+| **Basis** | `/futures/data/basis` | — | 30 days | `binance_basis` |
+
+> [!NOTE]
+> Sentiment endpoints (OI stats, L/S ratios, taker volume, basis) only retain 30 days of history on Binance. We'll backfill the full 30 days immediately and then poll continuously to accumulate depth. The `period` parameter supports: `5m`, `15m`, `30m`, `1h`, `2h`, `4h`, `6h`, `12h`, `1d`.
+
+---
+
+## Proposed Changes
+
+### 1. Config & Catalog
+
+#### [MODIFY] [env.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/config/env.ts)
+
+Add Binance env vars:
+```
+BINANCE_API_KEY, BINANCE_SECRET_KEY
+BINANCE_SPOT_BASE_URL (default https://api.binance.com)
+BINANCE_FUTURES_BASE_URL (default https://fapi.binance.com)
+BINANCE_SPOT_WS_URL (default wss://stream.binance.com:9443)
+BINANCE_FUTURES_WS_URL (default wss://fstream.binance.com)
+BINANCE_MARKET_DATA_ENABLED, BINANCE_WS_ENABLED, BINANCE_BACKFILL_ENABLED
+BINANCE_MARKET_DATA_PAIRS (CSV, default "ALGOUSDT,BNBUSDT,BTCUSDT,ETHUSDT,PAXGUSDT,SOLUSDT,XRPUSDT")
+BINANCE_INGEST_INTERVALS (default "1m,3m,5m,15m,30m,1h,2h,4h,6h,8h,12h,1d,3d,1w,1M")
+BINANCE_BACKFILL_MAX_BATCHES (default 50000)
+BINANCE_WS_FLUSH_INTERVAL_MS (default 1000)
+BINANCE_WS_RECONNECT_MIN_MS (default 1000)
+```
+
+#### [NEW] [binance_market_catalog.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/config/binance_market_catalog.ts)
+
+- `getBinancePairs()` — parse `BINANCE_MARKET_DATA_PAIRS` CSV or use defaults
+- `toBinanceSymbol(pair)` / `fromBinanceSymbol(symbol)` — normalize formats (e.g., `ALGO-USDT` → `ALGOUSDT`)
+- `fetchExchangeInfo(exchange)` — fetch + cache exchangeInfo for fee schedules, tick sizes, filters
+
+---
+
+### 2. Database Layer
+
+#### [NEW] [binance_market_data.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/timescale/binance_market_data.ts)
+
+Uses existing `TIMESCALE_URL` connection. Schema creation in `ensureBinanceMarketDataSchema()`:
+
+**13 hypertables:**
+
+```sql
+-- Core market data (spot + futures)
+binance_candles (exchange, pair, interval, open_time PK, close_time, open, high, low, close,
+  volume, quote_volume, trade_count, taker_buy_base_vol, taker_buy_quote_vol, source)
+
+binance_agg_trades (exchange, pair, agg_trade_id PK, price, quantity, first_trade_id,
+  last_trade_id, executed_at, is_buyer_maker, source)
+
+binance_orderbook_snapshots (exchange, pair, captured_at PK, depth_level, bids JSONB, asks JSONB, source)
+
+binance_tickers (exchange, pair, captured_at PK, last_price, price_change, price_change_pct,
+  weighted_avg_price, open_price, high_price, low_price, volume, quote_volume,
+  open_time, close_time, trade_count, source)
+
+binance_exchange_info (exchange, symbol PK, status, base_asset, quote_asset, filters JSONB,
+  maker_fee, taker_fee, captured_at)
+
+-- Futures-exclusive
+binance_funding_rates (pair, funding_time PK, funding_rate, mark_price, source)
+
+binance_open_interest (pair, captured_at PK, open_interest, source)
+
+binance_oi_statistics (pair, period, captured_at PK, sum_oi, sum_oi_value, source)
+
+binance_mark_price_klines (pair, interval, open_time PK, open, high, low, close, source)
+
+binance_index_price_klines (pair, interval, open_time PK, open, high, low, close, source)
+
+binance_premium_index_klines (pair, interval, open_time PK, open, high, low, close, source)
+
+-- Sentiment data (futures, 30-day rolling window)
+binance_ls_ratio (pair, ratio_type, period, captured_at PK, long_short_ratio,
+  long_account, short_account, source)
+  -- ratio_type: 'top_position' | 'top_account' | 'global'
+
+binance_taker_buy_sell (pair, period, captured_at PK, buy_sell_ratio, buy_vol, sell_vol, source)
+
+binance_basis (pair, period, captured_at PK, index_price, futures_price, basis, basis_rate,
+  annualized_basis_rate, contract_type, source)
+```
+
+#### [NEW] [backend/src/db/repositories/binance_market_data/](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/db/repositories/binance_market_data/)
+
+Repository files: [candles.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/bingx_candles.ts), `agg_trades.ts`, [orderbook_snapshots.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/bingx_orderbook_snapshots.ts), [tickers.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/bingx_tickers.ts), `exchange_info.ts`, [funding_rates.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/bingx_funding_rates.ts), [open_interest.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/convex/bingx_open_interest.ts), `oi_statistics.ts`, `mark_price_klines.ts`, `index_price_klines.ts`, `premium_index_klines.ts`, `ls_ratio.ts`, `taker_buy_sell.ts`, `basis.ts`, [index.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/index.ts).
+
+---
+
+### 3. Core Services
+
+#### [NEW] [binance_client.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/integrations/exchange/binance_client.ts)
+
+REST client with:
+- HMAC-SHA256 signing (for authenticated endpoints)
+- Rate limit tracking from `X-MBX-USED-WEIGHT-1M` headers
+- Adaptive throttle: sleeps when weight budget >80% consumed
+- Retry + exponential backoff on 429/418
+- Separate base URLs for spot vs futures
+- All REST methods listed in the data source tables above
+
+#### [NEW] [binance_spot_ingest.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/binance_spot_ingest.ts)
+
+For each pair: candles (all intervals), agg trades, orderbook snapshot, 24h ticker. Uses DB-latest tracking for incremental fetches.
+
+#### [NEW] [binance_futures_ingest.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/binance_futures_ingest.ts)
+
+All spot data types plus: funding rates, OI, OI stats, mark/index/premium price klines, L/S ratios (3 types), taker buy/sell, basis. Each sentiment endpoint uses `period` parameter for granularity.
+
+#### [NEW] [binance_market_data_ws.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/binance_market_data_ws.ts)
+
+**Spot streams** (`wss://stream.binance.com:9443/stream?streams=...`):
+- `<symbol>@kline_<interval>`, `<symbol>@aggTrade`, `<symbol>@depth@100ms`, `<symbol>@ticker`
+
+**Futures streams** (`wss://fstream.binance.com/stream?streams=...`):
+- `<symbol>@kline_<interval>`, `<symbol>@aggTrade`, `<symbol>@depth@100ms`, `<symbol>@ticker`, `<symbol>@markPrice@1s`
+
+Architecture: buffered flush, auto-reconnect, ping/pong keepalive, sequence anomaly detection.
+
+#### [NEW] [binance_full_backfill_service.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/services/binance_full_backfill_service.ts)
+
+Orchestrates full history fetch:
+- Klines: walks backward from earliest DB row to exchange genesis, forward to now
+- Agg trades: paginate by `fromId`, walking full history
+- Funding rates: paginate by `startTime` (limit 1000)
+- Mark/index/premium klines: same strategy as klines
+- Sentiment data (OI stats, L/S, taker, basis): backfill rolling 30 days at all periods
+- Rate limit aware with adaptive sleep
+
+---
+
+### 4. Nomad Jobs
+
+#### [NEW] [gvfx-binance-worker.nomad.hcl](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/deploy/nomad/gvfx-binance-worker.nomad.hcl)
+
+Service-type job. Tailscale sidecar + egress guard. Main task: `bun run src/jobs/binance_worker.ts`.
+- WS connections for spot + futures live streaming
+- REST polling for non-WS data (sentiment endpoints) every 5 min
+- Uses `TIMESCALE_URL` from existing secrets, plus `BINANCE_API_KEY`/`BINANCE_SECRET_KEY`
+- Constraints: linux, standby role, egress_worker=true
+- Resources: cpu=1200, memory=2048
+
+#### [NEW] [gvfx-binance-backfill.nomad.hcl](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/deploy/nomad/gvfx-binance-backfill.nomad.hcl)
+
+Periodic batch job. Cron `*/5 * * * *`, `prohibit_overlap=true`. Runs `bun run scripts/binance-full-backfill.ts`. Same Tailscale pattern. Resources: cpu=1200, memory=2048.
+
+---
+
+### 5. Scripts & Entry Points
+
+#### [NEW] [binance-full-backfill.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/scripts/binance-full-backfill.ts)
+
+#### [NEW] [binance_worker.ts](file:///Users/itsnk/Desktop/Coding/tv-goldviewfx/backend/src/jobs/binance_worker.ts)
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- `backend/tests/unit/binance_client.test.ts` — HMAC signature, rate limit tracking, retry logic
+- `backend/tests/unit/binance_market_data_ws.test.ts` — WS message parsing for all stream types
+- `backend/tests/unit/binance_market_catalog.test.ts` — symbol normalization, pair parsing
+- `backend/tests/integration/binance_market_data.test.ts` — end-to-end ingest with mock fetch
+
+### Manual Verification
+1. Schema: `psql` → verify all 13 `binance_*` tables + hypertables
+2. Smoke: run backfill with `MAX_BATCHES=5` for BTCUSDT, verify DB rows
+3. WS: start worker, verify live data after 1 min
+4. Rate limits: monitor `X-MBX-USED-WEIGHT-1M` during backfill

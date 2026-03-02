@@ -1,5 +1,5 @@
-import postgres from "postgres";
 import { logInfo, logWarn } from "../../services/logger";
+import { getTimescaleSql } from "./client";
 
 export type BingxCandleRow = {
   pair: string;
@@ -78,7 +78,6 @@ export type RlFeatureSnapshotRow = {
   source_window_end?: string | null;
 };
 
-let sqlClient: postgres.Sql | null = null;
 let schemaReadyPromise: Promise<void> | null = null;
 const FEATURE_SNAPSHOT_UPSERT_CHUNK_SIZE = 4000;
 
@@ -115,19 +114,7 @@ export function marketDataUsesTimescale() {
 }
 
 function getSql() {
-  const url = process.env.TIMESCALE_URL;
-  if (!url) {
-    throw new Error("TIMESCALE_URL is required when TIMESCALE_MARKET_DATA_ENABLED=true");
-  }
-  if (!sqlClient) {
-    sqlClient = postgres(url, {
-      max: 8,
-      idle_timeout: 20,
-      connect_timeout: 10,
-      prepare: false,
-    });
-  }
-  return sqlClient;
+  return getTimescaleSql("TIMESCALE_MARKET_DATA_ENABLED=true");
 }
 
 async function maybeCreateTimescaleHypertable(table: string, timeColumn: string) {

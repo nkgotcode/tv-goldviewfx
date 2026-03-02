@@ -5,8 +5,13 @@ import { validateJson } from "../middleware/validate";
 import { evaluationRequestSchema } from "../../rl/schemas";
 import { listEvaluations, runEvaluation, isDataGapBlockedError } from "../../services/evaluation_service";
 import { recordOpsAudit } from "../../services/ops_audit";
-import { runBingxMarketDataIngest } from "../../services/bingx_market_data_ingest";
-import { runDataGapMonitor } from "../../services/data_gap_service";
+import { logWarn } from "../../services/logger";
+import { createHash } from "node:crypto";
+import { enqueueRetry } from "../../services/retry_queue_service";
+import {
+  runEvaluationConfirmHeal,
+  shouldQueueConfirmHeal,
+} from "../../services/evaluation_confirm_heal_service";
 
 export const agentEvaluationsRoutes = new Hono();
 
@@ -14,6 +19,8 @@ const evaluationConfirmHealSchema = z.object({
   evaluation: evaluationRequestSchema,
   heal: z.object({
     confirm: z.literal(true),
+    allPairs: z.boolean().optional(),
+    allIntervals: z.boolean().optional(),
     intervals: z.array(z.string().min(1)).optional(),
     maxBatches: z.number().int().positive().optional(),
     runGapMonitor: z.boolean().optional(),
@@ -84,55 +91,69 @@ agentEvaluationsRoutes.post(
     const payload = c.get("validatedBody") as z.infer<typeof evaluationConfirmHealSchema>;
     const agentId = c.req.param("agentId");
     const evaluation = payload.evaluation;
-    const intervals = payload.heal.intervals?.length ? payload.heal.intervals : [evaluation.interval ?? "1m"];
-    const runGapMonitor = payload.heal.runGapMonitor ?? true;
+    const actor = c.get("opsActor") ?? "system";
+    const confirmHealPayload = {
+      agentId,
+      actor,
+      evaluation,
+      heal: {
+        allPairs: payload.heal.allPairs,
+        allIntervals: payload.heal.allIntervals,
+        intervals: payload.heal.intervals,
+        maxBatches: payload.heal.maxBatches,
+        runGapMonitor: payload.heal.runGapMonitor,
+      },
+    };
 
     try {
-      await runBingxMarketDataIngest({
-        pairs: [evaluation.pair],
-        intervals,
-        maxBatches: payload.heal.maxBatches,
-        backfill: true,
-        trigger: "manual",
-      });
+      if (shouldQueueConfirmHeal(confirmHealPayload)) {
+        const dedupeKey = createHash("sha256")
+          .update(
+            JSON.stringify({
+              pair: evaluation.pair,
+              periodStart: evaluation.periodStart,
+              periodEnd: evaluation.periodEnd,
+              interval: evaluation.interval ?? null,
+              contextIntervals: evaluation.contextIntervals ?? [],
+              walkForward: evaluation.walkForward ?? null,
+              strategyIds: evaluation.strategyIds ?? [],
+              venueIds: evaluation.venueIds ?? [],
+              backtestMode: evaluation.backtestMode ?? null,
+              allPairs: payload.heal.allPairs ?? null,
+              allIntervals: payload.heal.allIntervals ?? null,
+              intervals: payload.heal.intervals ?? [],
+              maxBatches: payload.heal.maxBatches ?? null,
+              runGapMonitor: payload.heal.runGapMonitor ?? null,
+            }),
+          )
+          .digest("hex");
+        const queued = await enqueueRetry({
+          jobType: "evaluation_confirm_heal",
+          payload: confirmHealPayload as Record<string, unknown>,
+          dedupeKey,
+          maxAttempts: 2,
+        });
 
-      if (runGapMonitor) {
-        await runDataGapMonitor();
+        logWarn("Confirm-heal request offloaded to retry queue", {
+          pair: evaluation.pair,
+          queueId: queued.id,
+          agentId,
+        });
+
+        return c.json(
+          {
+            queued: true,
+            operation_id: queued.id,
+            operation_status: queued.status,
+            message:
+              "Confirm-heal accepted and offloaded for asynchronous execution due to expected runtime.",
+          },
+          202,
+        );
       }
 
-      const report = await runEvaluation(evaluation, {
-        bypassDataGapGate: true,
-        gapGateBypassReason: "manual_confirm_heal_and_continue",
-      });
-
-      await recordOpsAudit({
-        actor: c.get("opsActor") ?? "system",
-        action: "agent.evaluation.confirm_heal_and_run",
-        resource_type: "evaluation_report",
-        resource_id: report.id,
-        metadata: {
-          evaluation,
-          heal: {
-            intervals,
-            maxBatches: payload.heal.maxBatches ?? null,
-            runGapMonitor,
-          },
-        },
-      });
-
-      return c.json(
-        {
-          report,
-          heal: {
-            status: "applied",
-            pair: evaluation.pair,
-            intervals,
-            max_batches: payload.heal.maxBatches ?? null,
-            gap_monitor_ran: runGapMonitor,
-          },
-        },
-        202,
-      );
+      const result = await runEvaluationConfirmHeal(confirmHealPayload);
+      return c.json(result, 202);
     } catch (error) {
       return mapEvaluationError(c, agentId, error);
     }
@@ -141,6 +162,21 @@ agentEvaluationsRoutes.post(
 
 agentEvaluationsRoutes.get("/:agentId/evaluations", async (c) => {
   const agentVersionId = c.req.query("agentVersionId") ?? undefined;
-  const reports = await listEvaluations(agentVersionId);
-  return c.json(reports);
+  const limitQuery = c.req.query("limit");
+  const parsedLimit = limitQuery === undefined ? undefined : Number.parseInt(limitQuery, 10);
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
+  const offsetQuery = c.req.query("offset");
+  const parsedOffset = offsetQuery === undefined ? undefined : Number.parseInt(offsetQuery, 10);
+  const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined;
+  try {
+    const reports = await listEvaluations(agentVersionId, limit, offset);
+    return c.json(reports);
+  } catch (error) {
+    logWarn("Failed to list evaluation reports", {
+      error: String(error),
+      agentId: c.req.param("agentId"),
+      agentVersionId: agentVersionId ?? null,
+    });
+    return c.json([]);
+  }
 });

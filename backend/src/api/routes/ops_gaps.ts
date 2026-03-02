@@ -17,11 +17,12 @@ opsGapsRoutes.get("/health", async (c) => {
   if (limitParam && (!Number.isFinite(limit) || (limit ?? 0) <= 0)) {
     return c.json({ error: "Invalid limit" }, 400);
   }
+  const normalizedLimit = Number.isFinite(limit ?? NaN) ? Math.max(1, Math.min(limit ?? 0, 250)) : undefined;
   try {
     const health = await getDataGapHealth({
       pair: pairParam as TradingPair | undefined,
       sourceType,
-      limit,
+      limit: normalizedLimit,
     });
     return c.json(health);
   } catch (error) {

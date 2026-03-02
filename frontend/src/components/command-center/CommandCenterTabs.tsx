@@ -2,9 +2,23 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import ControlSummaryPanel from "../ControlSummaryPanel";
+import IngestionControls from "../IngestionControls";
+import OpsAuditLog from "../OpsAuditLog";
+import RecentSignalsPanel from "../RecentSignalsPanel";
+import RecentTradesPanel from "../RecentTradesPanel";
+import SentimentPnlChart from "../SentimentPnlChart";
+import SourceEfficacyPanel from "../SourceEfficacyPanel";
+import SourceGatingPanel from "../SourceGatingPanel";
+import TopicTrendsPanel from "../TopicTrendsPanel";
+import TradeControls from "../TradeControls";
+import TradingAnalyticsPanel from "../TradingAnalyticsPanel";
+import DriftAlertsPanel from "../rl-agent/DriftAlertsPanel";
+import NautilusOptimizationPanel from "./NautilusOptimizationPanel";
+import { fetchOnlineLearningStatus, type OnlineLearningStatus } from "../../services/rl_ops";
 import {
-  fetchHealth,
   fetchDashboardSummary,
+  fetchHealth,
   fetchOpsIngestionStatus,
   fetchOpsLearningHistory,
   fetchTrades,
@@ -29,7 +43,7 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-export function InstitutionalOpsTabs() {
+export function CommandCenterTabs() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -45,14 +59,14 @@ export function InstitutionalOpsTabs() {
   );
 
   return (
-    <div className="institutional-ops">
-      <nav className="institutional-ops-nav" aria-label="Institutional Ops sections">
-        <ul className="institutional-ops-nav-list">
+    <div className="command-center">
+      <nav className="command-center-nav" aria-label="Command Center sections">
+        <ul className="command-center-nav-list">
           {TABS.map(({ id, label }) => (
             <li key={id}>
               <button
                 type="button"
-                className={`institutional-ops-nav-btn ${current === id ? "active" : ""}`}
+                className={`command-center-nav-btn ${current === id ? "active" : ""}`}
                 onClick={() => setTab(id)}
                 aria-current={current === id ? "true" : undefined}
               >
@@ -62,7 +76,7 @@ export function InstitutionalOpsTabs() {
           ))}
         </ul>
       </nav>
-      <div className="institutional-ops-content">
+      <div className="command-center-content">
         {current === "overview" && <OverviewTab />}
         {current === "data-lake" && <DataLakeTab />}
         {current === "backtests" && <BacktestsTab />}
@@ -78,12 +92,60 @@ export function InstitutionalOpsTabs() {
   );
 }
 
-function TabPanel({ title, children }: { title: string; children: ReactNode }) {
+function TabPanel({
+  title,
+  description,
+  headerBadges,
+  children,
+}: {
+  title: string;
+  description: string;
+  headerBadges?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="institutional-ops-panel">
-      <h2 className="institutional-ops-panel-title">{title}</h2>
-      {children}
+    <div className="command-center-panel">
+      <div className="action-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <h2 className="command-center-panel-title" style={{ margin: 0 }}>{title}</h2>
+        {headerBadges ? <div className="action-row" style={{ gap: 6, flexWrap: "wrap" }}>{headerBadges}</div> : null}
+      </div>
+      <p className="text-muted">{description}</p>
+      <div className="command-center-stack">{children}</div>
     </div>
+  );
+}
+
+function BacktestsHeaderBadges() {
+  const [status, setStatus] = useState<OnlineLearningStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOnlineLearningStatus({ limit: 1, includeHealth: true })
+      .then((payload) => {
+        if (!cancelled) setStatus(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const health = status?.rlService?.health ?? null;
+  const latestReport = status?.latestReport ?? null;
+  return (
+    <>
+      <span className={`status-pill ${health?.status === "ok" ? "status-ok" : "status-warn"}`}>
+        RL: {health?.status ?? "unknown"}
+      </span>
+      <span className={`status-pill ${health?.mlDependencies?.nautilus_trader ? "status-ok" : "status-warn"}`}>
+        Nautilus: {health?.mlDependencies?.nautilus_trader ? "ready" : "missing"}
+      </span>
+      <span className={`status-pill ${latestReport?.backtestRunId ? "status-ok" : "status-warn"}`}>
+        Run: {latestReport?.backtestRunId ? "recorded" : "none"}
+      </span>
+    </>
   );
 }
 
@@ -128,7 +190,7 @@ function OverviewTab() {
 
   if (loading) {
     return (
-      <TabPanel title="Overview">
+      <TabPanel title="Overview" description="System posture and operational summary.">
         <p>Loading system health and jobs…</p>
       </TabPanel>
     );
@@ -136,7 +198,7 @@ function OverviewTab() {
 
   if (error) {
     return (
-      <TabPanel title="Overview">
+      <TabPanel title="Overview" description="System posture and operational summary.">
         <p className="text-muted">Error loading overview: {error}</p>
       </TabPanel>
     );
@@ -146,7 +208,10 @@ function OverviewTab() {
   const recentLearning = learning?.items?.slice(0, 5) ?? [];
 
   return (
-    <TabPanel title="Overview">
+    <TabPanel
+      title="Overview"
+      description="Real-time pulse of data, learning, and execution coverage."
+    >
       <div className="overview-grid">
         <section className="overview-card">
           <h3>System health</h3>
@@ -158,7 +223,10 @@ function OverviewTab() {
             <li>Ideas: {summary?.idea_count ?? "—"}</li>
             <li>Signals: {summary?.signal_count ?? "—"}</li>
             <li>Trades: {summary?.trade_count ?? "—"}</li>
-            <li>Last sync: {summary?.last_sync_status ?? "—"} {summary?.last_sync_at ? `(${summary.last_sync_at})` : ""}</li>
+            <li>
+              Last sync: {summary?.last_sync_status ?? "—"}{" "}
+              {summary?.last_sync_at ? `(${summary.last_sync_at})` : ""}
+            </li>
           </ul>
         </section>
         <section className="overview-card">
@@ -167,7 +235,9 @@ function OverviewTab() {
           {ingestion?.sources?.length ? (
             <ul className="bullet-list">
               {ingestion.sources.slice(0, 5).map((src, i) => (
-                <li key={i}>{src.source_type ?? src.source_id ?? "source"}: {src.status ?? "—"}</li>
+                <li key={i}>
+                  {src.source_type ?? src.source_id ?? "source"}: {src.status ?? "—"}
+                </li>
               ))}
             </ul>
           ) : (
@@ -211,78 +281,125 @@ function OverviewTab() {
           )}
         </section>
       </div>
+      <ControlSummaryPanel />
+      <OpsAuditLog />
     </TabPanel>
   );
 }
 
 function DataLakeTab() {
   return (
-    <TabPanel title="Data Lake">
-      <p>Choose venues/instruments and date ranges; start/stop backfills; data coverage heatmap and missing day detection; trigger gap-fill; rate-limit status and ingestion error drilldowns.</p>
+    <TabPanel
+      title="Data Lake"
+      description="Operate ingestion cadence, source policies, and market context feeds."
+    >
+      <IngestionControls />
+      <SourceGatingPanel />
+      <TopicTrendsPanel />
     </TabPanel>
   );
 }
 
 function BacktestsTab() {
   return (
-    <TabPanel title="Backtests">
-      <p>Select dataset version and strategy config; run backtest or grid search; compare runs side-by-side; export report bundle.</p>
+    <TabPanel
+      title="Backtests"
+      description="Review performance structure and sentiment-linked trade quality."
+      headerBadges={<BacktestsHeaderBadges />}
+    >
+      <NautilusOptimizationPanel />
+      <TradingAnalyticsPanel />
+      <SentimentPnlChart />
+      <RecentSignalsPanel />
     </TabPanel>
   );
 }
 
 function RLTrainingTab() {
   return (
-    <TabPanel title="RL Training">
-      <p>Choose env/feature version; train/resume from checkpoint; view live training curves; run evaluation suite; register model to staging.</p>
+    <TabPanel
+      title="RL Training"
+      description="Monitor training-side drift risk and decision input quality."
+    >
+      <DriftAlertsPanel />
+      <SourceEfficacyPanel />
+      <RecentSignalsPanel />
     </TabPanel>
   );
 }
 
 function ModelRegistryTab() {
   return (
-    <TabPanel title="Model Registry">
-      <p>Model artifact path, training data hash, feature version, hyperparameters, evaluation report bundle. Promotion rules: +5% net return, drawdown gate, sanity checks.</p>
+    <TabPanel
+      title="Model Registry"
+      description="Use governance gates and drift telemetry before any promotion."
+    >
+      <ControlSummaryPanel />
+      <DriftAlertsPanel />
     </TabPanel>
   );
 }
 
 function PaperTradingTab() {
   return (
-    <TabPanel title="Paper Trading">
-      <p>Nautilus sandbox and venue testnets. Deploy model to sandbox; view real-time telemetry.</p>
+    <TabPanel
+      title="Paper Trading"
+      description="Validate behavior in sandbox with controls and latest fills."
+    >
+      <TradeControls />
+      <RecentTradesPanel />
+      <TradingAnalyticsPanel />
     </TabPanel>
   );
 }
 
 function LiveTradingTab() {
   return (
-    <TabPanel title="Live Trading">
-      <p>Deploy model to live; real-time telemetry; risk override controls (admin); kill switch + flatten; optional manual order tool.</p>
+    <TabPanel
+      title="Live Trading"
+      description="Operate live execution guardrails and inspect current outcomes."
+    >
+      <TradeControls />
+      <RecentTradesPanel />
+      <OpsAuditLog scope="trading" />
     </TabPanel>
   );
 }
 
 function RiskControlsTab() {
   return (
-    <TabPanel title="Risk & Controls">
-      <p>Max leverage 3x; max position notional 10% equity; max total exposure 30%; daily loss limit 2%; max drawdown 5%; kill switch.</p>
+    <TabPanel
+      title="Risk & Controls"
+      description="Enforce policy thresholds, source gates, and drift interventions."
+    >
+      <ControlSummaryPanel />
+      <SourceGatingPanel />
+      <DriftAlertsPanel />
     </TabPanel>
   );
 }
 
 function LogsAlertsTab() {
   return (
-    <TabPanel title="Logs & Alerts">
-      <p>Prometheus metrics, Grafana dashboards; optional Loki for logs; Alertmanager for notifications.</p>
+    <TabPanel
+      title="Logs & Alerts"
+      description="Track operator actions and anomaly indicators across the stack."
+    >
+      <OpsAuditLog />
+      <SourceEfficacyPanel />
+      <TopicTrendsPanel />
     </TabPanel>
   );
 }
 
 function SettingsTab() {
   return (
-    <TabPanel title="Settings">
-      <p>Global runtime configuration and policy state.</p>
+    <TabPanel
+      title="Settings"
+      description="Manage ingestion/runtime defaults and execution policy controls."
+    >
+      <IngestionControls />
+      <TradeControls />
     </TabPanel>
   );
 }

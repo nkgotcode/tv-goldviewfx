@@ -63,6 +63,10 @@ def test_walk_forward_evaluation_records_nautilus_metadata(client):
     payload = response.json()
     metadata = payload.get("metadata") or {}
     assert metadata.get("evaluation_mode") == "nautilus_backtest_only"
-    assert metadata.get("walk_forward", {}).get("ignored") is True
+    assert metadata.get("walk_forward", {}).get("ignored") is False
+    assert metadata.get("walk_forward", {}).get("resolved", {}).get("enabled") is True
     assert metadata.get("nautilus", {}).get("engine") == "nautilus_trader"
+    assert metadata.get("nautilus", {}).get("backtest_mode") == "l1"
+    assert isinstance(metadata.get("fold_metrics"), list)
+    assert len(metadata.get("fold_metrics", [])) > 0
     assert "aggregate" in metadata

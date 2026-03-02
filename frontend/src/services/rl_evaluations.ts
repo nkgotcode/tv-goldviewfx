@@ -42,6 +42,7 @@ export type EvaluationRequest = {
   maxFeatureRows?: number;
   strategyIds?: string[];
   venueIds?: string[];
+  backtestMode?: "l1" | "l2" | "l3";
   walkForward?: {
     folds: number;
     purgeBars?: number;
@@ -56,11 +57,29 @@ export type EvaluationConfirmHealRequest = {
   evaluation: EvaluationRequest;
   heal: {
     confirm: true;
+    allPairs?: boolean;
+    allIntervals?: boolean;
     intervals?: string[];
     maxBatches?: number;
     runGapMonitor?: boolean;
   };
 };
+
+export type EvaluationConfirmHealResponseQueued = {
+  queued: true;
+  operation_id: string;
+  operation_status: string;
+  message: string;
+};
+
+export type EvaluationConfirmHealResponseWithReport = {
+  report: EvaluationReport;
+  heal: Record<string, unknown>;
+};
+
+export type EvaluationConfirmHealResponse =
+  | EvaluationConfirmHealResponseQueued
+  | EvaluationConfirmHealResponseWithReport;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -100,9 +119,24 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function listEvaluationReports(agentId = "gold-rl-agent", agentVersionId?: string) {
-  const query = agentVersionId ? `?agentVersionId=${encodeURIComponent(agentVersionId)}` : "";
-  return fetchJson<EvaluationReport[]>(`/agents/${agentId}/evaluations${query}`);
+export async function listEvaluationReports(
+  agentId = "gold-rl-agent",
+  agentVersionId?: string,
+  options: { limit?: number; offset?: number } = {},
+) {
+  const query = new URLSearchParams();
+  if (agentVersionId) {
+    query.set("agentVersionId", agentVersionId);
+  }
+  if (typeof options.limit === "number" && options.limit > 0) {
+    query.set("limit", String(options.limit));
+  }
+  if (typeof options.offset === "number" && options.offset >= 0) {
+    query.set("offset", String(options.offset));
+  }
+  const queryString = query.toString();
+  const querySuffix = queryString ? `?${queryString}` : "";
+  return fetchJson<EvaluationReport[]>(`/agents/${agentId}/evaluations${querySuffix}`);
 }
 
 export async function runEvaluation(agentId: string, payload: EvaluationRequest) {
@@ -114,7 +148,7 @@ export async function runEvaluation(agentId: string, payload: EvaluationRequest)
 }
 
 export async function runEvaluationConfirmHeal(agentId: string, payload: EvaluationConfirmHealRequest) {
-  return fetchJson<{ report: EvaluationReport; heal: Record<string, unknown> }>(
+  return fetchJson<EvaluationConfirmHealResponse>(
     `/agents/${agentId}/evaluations/confirm-heal`,
     {
       method: "POST",
