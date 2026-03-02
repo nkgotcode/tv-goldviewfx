@@ -190,7 +190,8 @@ job "gvfx-bingx-full-backfill" {
       driver = "docker"
 
       config {
-        image   = var.tailscale_image
+        image      = var.tailscale_image
+        force_pull = true
         command = "sh"
         args = [
           "-ec",

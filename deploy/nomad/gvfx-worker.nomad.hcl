@@ -250,7 +250,8 @@ job "gvfx-worker" {
       driver = "docker"
 
       config {
-        image   = var.tailscale_image
+        image      = var.tailscale_image
+        force_pull = true
         command = "sh"
         args = [
           "-ec",

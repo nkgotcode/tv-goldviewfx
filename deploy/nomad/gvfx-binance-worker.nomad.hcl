@@ -171,6 +171,7 @@ job "gvfx-binance-worker" {
 
       config {
         image        = var.tailscale_image
+        force_pull   = true
         network_mode = "host"
         command      = "sh"
         args = [

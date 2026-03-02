@@ -108,7 +108,8 @@ job "gvfx-worker-egress-check" {
       driver = "docker"
 
       config {
-        image   = var.tailscale_image
+        image      = var.tailscale_image
+        force_pull = true
         command = "sh"
         args = [
           "-ec",
