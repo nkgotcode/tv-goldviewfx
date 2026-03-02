@@ -105,7 +105,7 @@ fetch_public_ip() {
   for url in "${ip_check_urls[@]}"; do
     output=""
     if command -v curl >/dev/null 2>&1; then
-      output="$(curl -fsS --max-time 10 "$url" 2>/dev/null || true)"
+      output="$(curl -vfsS --max-time 10 "$url" || true)"
     elif command -v wget >/dev/null 2>&1; then
       output="$(wget -qO- --timeout=10 "$url" 2>/dev/null || true)"
     fi
@@ -185,7 +185,18 @@ for node in "${nodes_to_try[@]}"; do
     continue
   fi
 
-  observed_ip="$(fetch_public_ip || true)"
+  observed_ip=""
+  retry=0
+  while [ $retry -lt 10 ]; do
+    observed_ip="$(fetch_public_ip || true)"
+    if [ -n "$observed_ip" ]; then
+      break
+    fi
+    log "Waiting for egress proxy connection..."
+    sleep 3
+    retry=$((retry+1))
+  done
+
   if [ -z "$observed_ip" ]; then
     log "Could not determine egress public IP for ${node}"
     continue

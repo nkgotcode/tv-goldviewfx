@@ -17,8 +17,21 @@ async function main() {
 
     await ensureBinanceMarketDataSchema();
 
+    const allocIndex = process.env.NOMAD_ALLOC_INDEX;
+    const allTargets = ["candles", "aggTrades", "fundingRates", "specialKlines", "sentiment"];
+    let targets: string[] | undefined = undefined;
+
+    if (allocIndex !== undefined) {
+        const idx = Number(allocIndex);
+        if (!isNaN(idx)) {
+            targets = [allTargets[idx % allTargets.length]!];
+            logInfo(`Partitioning backfill targets based on NOMAD_ALLOC_INDEX=${idx}`, { targets });
+        }
+    }
+
     const result = await runBinanceFullBackfill({
         maxBatches: Number(process.env.BINANCE_BACKFILL_MAX_BATCHES) || 50000,
+        targets,
     });
 
     logInfo("Binance full backfill finished", {

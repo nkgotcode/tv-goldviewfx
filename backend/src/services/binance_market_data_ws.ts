@@ -9,6 +9,8 @@
  * ping/pong keepalive.
  */
 
+import WebSocket from "ws";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import { loadEnv } from "../config/env";
 import { getBinancePairs, getBinanceIntervals, toBinanceSymbol, toWsStreamSymbol } from "../config/binance_market_catalog";
 import {
@@ -260,7 +262,8 @@ export function startBinanceMarketDataWs(): BinanceWsController | null {
         logInfo("Binance spot WS connecting", { url: url.slice(0, 120) + "..." });
 
         try {
-            const ws = new WebSocket(url);
+            const agent = process.env.ALL_PROXY ? new SocksProxyAgent(process.env.ALL_PROXY) : undefined;
+            const ws = new WebSocket(url, { agent });
             spotWs = ws;
 
             ws.addEventListener("open", () => {
@@ -293,7 +296,8 @@ export function startBinanceMarketDataWs(): BinanceWsController | null {
         logInfo("Binance futures WS connecting", { url: url.slice(0, 120) + "..." });
 
         try {
-            const ws = new WebSocket(url);
+            const agent = process.env.ALL_PROXY ? new SocksProxyAgent(process.env.ALL_PROXY) : undefined;
+            const ws = new WebSocket(url, { agent });
             futuresWs = ws;
 
             ws.addEventListener("open", () => {
@@ -340,7 +344,8 @@ export function startBinanceMarketDataWs(): BinanceWsController | null {
 
     // ─── Start ───
 
-    connectSpot();
+    // connectSpot();
+    logWarn("Binance spot WS disabled due to Bun WebSocket proxy limitations (SOCKS5 ignored) causing IP bans. Relying on REST polling for spot data.");
     connectFutures();
 
     // Flush loop

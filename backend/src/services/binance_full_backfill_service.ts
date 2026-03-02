@@ -65,6 +65,7 @@ export type BinanceBackfillResult = {
 export async function runBinanceFullBackfill(options?: {
     maxBatches?: number;
     pairs?: string[];
+    targets?: string[];
 }): Promise<BinanceBackfillResult> {
     const env = loadEnv();
     if (!env.BINANCE_BACKFILL_ENABLED && !env.BINANCE_MARKET_DATA_ENABLED) {
@@ -72,10 +73,13 @@ export async function runBinanceFullBackfill(options?: {
         return { totalBatches: 0, totalRowsInserted: 0, errors: [] };
     }
 
-    const maxBatches = options?.maxBatches ?? env.BINANCE_BACKFILL_MAX_BATCHES;
+    const globalMaxBatches = options?.maxBatches ?? env.BINANCE_BACKFILL_MAX_BATCHES;
+    // Cap each distinct backfill function call to ensure we don't get stuck on one pair/interval
+    const maxBatches = Math.min(globalMaxBatches, 50);
     const pairs = options?.pairs ?? getBinancePairs();
     const intervals = getBinanceIntervals();
     const sentimentPeriods = getBinanceSentimentPeriods();
+    const targets = options?.targets ?? ["candles", "aggTrades", "fundingRates", "specialKlines", "sentiment"];
     const client = new BinanceClient();
 
     let totalBatches = 0;
@@ -86,110 +90,120 @@ export async function runBinanceFullBackfill(options?: {
         logInfo("Binance backfill starting pair", { pair });
 
         // ─── 1. Spot + Futures Candles ───
-        for (const exchange of ["spot", "futures"] as const) {
-            for (const interval of intervals) {
+        if (targets.includes("candles")) {
+            for (const exchange of ["spot", "futures"] as const) {
+                for (const interval of intervals) {
+                    try {
+                        const result = await backfillCandles(client, pair, interval, exchange, maxBatches);
+                        totalBatches += result.batches;
+                        totalRowsInserted += result.rows;
+                    } catch (error) {
+                        const msg = `Candles ${exchange}/${pair}/${interval}: ${String(error)}`;
+                        logWarn("Binance backfill error", { msg });
+                        errors.push(msg);
+                    }
+                }
+            }
+        }
+
+        // ─── 2. Agg Trades ───
+        if (targets.includes("aggTrades")) {
+            for (const exchange of ["spot", "futures"] as const) {
                 try {
-                    const result = await backfillCandles(client, pair, interval, exchange, maxBatches);
+                    const result = await backfillAggTrades(client, pair, exchange, maxBatches);
                     totalBatches += result.batches;
                     totalRowsInserted += result.rows;
                 } catch (error) {
-                    const msg = `Candles ${exchange}/${pair}/${interval}: ${String(error)}`;
+                    const msg = `AggTrades ${exchange}/${pair}: ${String(error)}`;
                     logWarn("Binance backfill error", { msg });
                     errors.push(msg);
                 }
             }
         }
 
-        // ─── 2. Agg Trades ───
-        for (const exchange of ["spot", "futures"] as const) {
+        // ─── 3. Funding Rates ───
+        if (targets.includes("fundingRates")) {
             try {
-                const result = await backfillAggTrades(client, pair, exchange, maxBatches);
+                const result = await backfillFundingRates(client, pair, maxBatches);
                 totalBatches += result.batches;
                 totalRowsInserted += result.rows;
             } catch (error) {
-                const msg = `AggTrades ${exchange}/${pair}: ${String(error)}`;
+                const msg = `FundingRates ${pair}: ${String(error)}`;
                 logWarn("Binance backfill error", { msg });
                 errors.push(msg);
             }
         }
 
-        // ─── 3. Funding Rates ───
-        try {
-            const result = await backfillFundingRates(client, pair, maxBatches);
-            totalBatches += result.batches;
-            totalRowsInserted += result.rows;
-        } catch (error) {
-            const msg = `FundingRates ${pair}: ${String(error)}`;
-            logWarn("Binance backfill error", { msg });
-            errors.push(msg);
-        }
-
         // ─── 4. Mark Price Klines ───
-        for (const interval of intervals) {
-            try {
-                const result = await backfillMarkPriceKlines(client, pair, interval, maxBatches);
-                totalBatches += result.batches;
-                totalRowsInserted += result.rows;
-            } catch (error) {
-                const msg = `MarkPriceKlines ${pair}/${interval}: ${String(error)}`;
-                errors.push(msg);
+        if (targets.includes("specialKlines")) {
+            for (const interval of intervals) {
+                try {
+                    const result = await backfillMarkPriceKlines(client, pair, interval, maxBatches);
+                    totalBatches += result.batches;
+                    totalRowsInserted += result.rows;
+                } catch (error) {
+                    const msg = `MarkPriceKlines ${pair}/${interval}: ${String(error)}`;
+                    errors.push(msg);
+                }
             }
-        }
 
-        // ─── 5. Index Price Klines ───
-        for (const interval of intervals) {
-            try {
-                const result = await backfillIndexPriceKlines(client, pair, interval, maxBatches);
-                totalBatches += result.batches;
-                totalRowsInserted += result.rows;
-            } catch (error) {
-                const msg = `IndexPriceKlines ${pair}/${interval}: ${String(error)}`;
-                errors.push(msg);
+            // ─── 5. Index Price Klines ───
+            for (const interval of intervals) {
+                try {
+                    const result = await backfillIndexPriceKlines(client, pair, interval, maxBatches);
+                    totalBatches += result.batches;
+                    totalRowsInserted += result.rows;
+                } catch (error) {
+                    const msg = `IndexPriceKlines ${pair}/${interval}: ${String(error)}`;
+                    errors.push(msg);
+                }
             }
-        }
 
-        // ─── 6. Premium Index Klines ───
-        for (const interval of intervals) {
-            try {
-                const result = await backfillPremiumIndexKlines(client, pair, interval, maxBatches);
-                totalBatches += result.batches;
-                totalRowsInserted += result.rows;
-            } catch (error) {
-                const msg = `PremiumIndexKlines ${pair}/${interval}: ${String(error)}`;
-                errors.push(msg);
+            // ─── 6. Premium Index Klines ───
+            for (const interval of intervals) {
+                try {
+                    const result = await backfillPremiumIndexKlines(client, pair, interval, maxBatches);
+                    totalBatches += result.batches;
+                    totalRowsInserted += result.rows;
+                } catch (error) {
+                    const msg = `PremiumIndexKlines ${pair}/${interval}: ${String(error)}`;
+                    errors.push(msg);
+                }
             }
         }
 
         // ─── 7. Sentiment data (30-day rolling) ───
-        for (const period of sentimentPeriods) {
-            try {
-                totalRowsInserted += await backfillOiStatistics(client, pair, period);
-                totalBatches++;
-            } catch (error) {
-                errors.push(`OiStats ${pair}/${period}: ${String(error)}`);
-            }
+        if (targets.includes("sentiment")) {
+            for (const period of sentimentPeriods) {
+                try {
+                    totalRowsInserted += await backfillOiStatistics(client, pair, period);
+                    totalBatches++;
+                } catch (error) {
+                    errors.push(`OiStats ${pair}/${period}: ${String(error)}`);
+                }
 
-            try {
-                totalRowsInserted += await backfillLsRatios(client, pair, period);
-                totalBatches++;
-            } catch (error) {
-                errors.push(`LsRatios ${pair}/${period}: ${String(error)}`);
-            }
+                try {
+                    totalRowsInserted += await backfillLsRatios(client, pair, period);
+                    totalBatches++;
+                } catch (error) {
+                    errors.push(`LsRatios ${pair}/${period}: ${String(error)}`);
+                }
 
-            try {
-                totalRowsInserted += await backfillTakerBuySell(client, pair, period);
-                totalBatches++;
-            } catch (error) {
-                errors.push(`TakerBuySell ${pair}/${period}: ${String(error)}`);
-            }
+                try {
+                    totalRowsInserted += await backfillTakerBuySell(client, pair, period);
+                    totalBatches++;
+                } catch (error) {
+                    errors.push(`TakerBuySell ${pair}/${period}: ${String(error)}`);
+                }
 
-            try {
-                totalRowsInserted += await backfillBasis(client, pair, period);
-                totalBatches++;
-            } catch (error) {
-                errors.push(`Basis ${pair}/${period}: ${String(error)}`);
+                try {
+                    totalRowsInserted += await backfillBasis(client, pair, period);
+                    totalBatches++;
+                } catch (error) {
+                    errors.push(`Basis ${pair}/${period}: ${String(error)}`);
+                }
             }
-        }
+        } // Added closing brace for sentiment if block
 
         logInfo("Binance backfill pair complete", { pair, totalBatches, totalRowsInserted, errorCount: errors.length });
     }
@@ -241,6 +255,10 @@ async function backfillCandles(
         await upsertBinanceCandles(candleRows);
         batches++;
         rows += candleRows.length;
+        if (batches % 5 === 0) {
+            logInfo("Backfilling candles (forward)", { exchange, pair, interval, batches, rows, lastTime: startTime ? new Date(startTime).toISOString() : null });
+        }
+
         startTime = (raw[raw.length - 1] as unknown[])[0] as number + 1;
         if (raw.length < KLINE_LIMIT) break;
         await sleep(BATCH_DELAY_MS);
@@ -277,6 +295,10 @@ async function backfillCandles(
             await upsertBinanceCandles(candleRows);
             batches++;
             rows += candleRows.length;
+            if (batches % 5 === 0) {
+                logInfo("Backfilling candles (backward)", { exchange, pair, interval, batches, rows, lastTime: endTime ? new Date(endTime).toISOString() : null });
+            }
+
             endTime = (raw[0] as unknown[])[0] as number - 1;
             if (raw.length < KLINE_LIMIT) break;
             await sleep(BATCH_DELAY_MS);
@@ -326,6 +348,10 @@ async function backfillAggTrades(
         await upsertBinanceAggTrades(tradeRows);
         batches++;
         rows += tradeRows.length;
+        if (batches % 5 === 0) {
+            logInfo("Backfilling agg trades", { exchange, pair, batches, rows, latestId: fromId });
+        }
+
         fromId = (raw[raw.length - 1] as Record<string, unknown>).a as number + 1;
         if (raw.length < AGG_TRADE_LIMIT) break;
         await sleep(BATCH_DELAY_MS);
@@ -367,6 +393,9 @@ async function backfillFundingRates(
         await upsertBinanceFundingRates(fundingRows);
         batches++;
         rows += fundingRows.length;
+        if (batches % 5 === 0) {
+            logInfo("Backfilling funding rates (forward)", { pair, batches, rows, lastTime: startTime ? new Date(startTime).toISOString() : null });
+        }
         startTime = (raw[raw.length - 1] as Record<string, unknown>).fundingTime as number + 1;
         if (raw.length < FUNDING_LIMIT) break;
         await sleep(BATCH_DELAY_MS);
@@ -394,6 +423,9 @@ async function backfillFundingRates(
             await upsertBinanceFundingRates(fundingRows);
             batches++;
             rows += fundingRows.length;
+            if (batches % 5 === 0) {
+                logInfo("Backfilling funding rates (backward)", { pair, batches, rows, lastTime: endTime ? new Date(endTime).toISOString() : null });
+            }
             endTime = (raw[0] as Record<string, unknown>).fundingTime as number - 1;
             if (raw.length < FUNDING_LIMIT) break;
             await sleep(BATCH_DELAY_MS);
@@ -472,6 +504,9 @@ async function backfillSpecialKlines(
         await upsert(klineRows);
         batches++;
         rows += klineRows.length;
+        if (batches % 5 === 0) {
+            logInfo(`Backfilling ${klineType} klines (forward)`, { pair, interval, batches, rows, lastTime: startTime ? new Date(startTime).toISOString() : null });
+        }
         startTime = (raw[raw.length - 1] as unknown[])[0] as number + 1;
         if (raw.length < KLINE_LIMIT) break;
         await sleep(BATCH_DELAY_MS);
@@ -499,6 +534,9 @@ async function backfillSpecialKlines(
             await upsert(klineRows);
             batches++;
             rows += klineRows.length;
+            if (batches % 5 === 0) {
+                logInfo(`Backfilling ${klineType} klines (backward)`, { pair, interval, batches, rows, lastTime: endTime ? new Date(endTime).toISOString() : null });
+            }
             endTime = (raw[0] as unknown[])[0] as number - 1;
             if (raw.length < KLINE_LIMIT) break;
             await sleep(BATCH_DELAY_MS);
@@ -530,6 +568,7 @@ async function backfillOiStatistics(client: BinanceClient, pair: string, period:
     });
 
     await upsertBinanceOiStatistics(rows);
+    logInfo("Backfilled OI Statistics", { pair, period, rows: rows.length });
     return rows.length;
 }
 
@@ -572,6 +611,7 @@ async function backfillLsRatios(client: BinanceClient, pair: string, period: str
 
         await upsertBinanceLsRatio(rows);
         total += rows.length;
+        logInfo("Backfilled L/S ratios", { pair, period, method, rows: rows.length });
     }
 
     return total;
@@ -598,6 +638,7 @@ async function backfillTakerBuySell(client: BinanceClient, pair: string, period:
     });
 
     await upsertBinanceTakerBuySell(rows);
+    logInfo("Backfilled taker buy/sell volume", { pair, period, rows: rows.length });
     return rows.length;
 }
 
@@ -630,6 +671,7 @@ async function backfillBasis(client: BinanceClient, pair: string, period: string
     });
 
     await upsertBinanceBasis(rows);
+    logInfo("Backfilled basis data", { pair, period, rows: rows.length });
     return rows.length;
 }
 

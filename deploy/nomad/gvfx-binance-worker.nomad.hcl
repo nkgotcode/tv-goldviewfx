@@ -15,7 +15,7 @@ variable "datacenters" {
 
 variable "backend_image" {
   type    = string
-  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-202602270745-fc59982-timescalehardening5"
+  default = "ghcr.io/nkgotcode/tv-goldviewfx-backend:nomad-20260302-binance.8"
 }
 
 variable "backend_work_dir" {
@@ -170,11 +170,12 @@ job "gvfx-binance-worker" {
       driver = "docker"
 
       config {
-        image   = var.tailscale_image
-        command = "sh"
+        image        = var.tailscale_image
+        network_mode = "host"
+        command      = "sh"
         args = [
           "-ec",
-          "mkdir -p /alloc/tailscale && exec tailscaled --state=/alloc/tailscale/tailscaled.state --socket=/alloc/tailscale/tailscaled.sock",
+          "mkdir -p /alloc/tailscale && exec tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:1057 --outbound-http-proxy-listen=127.0.0.1:1082 --state=/alloc/tailscale/tailscaled.state --socket=/alloc/tailscale/tailscaled.sock",
         ]
 
         cap_add = [
@@ -205,10 +206,11 @@ job "gvfx-binance-worker" {
       driver = "docker"
 
       config {
-        image    = var.backend_image
-        command  = "sh"
-        args     = ["-ec", "exec /app/scripts/tailscale/worker-egress-guard.sh"]
-        work_dir = var.backend_work_dir
+        image        = var.backend_image
+        network_mode = "host"
+        command      = "sh"
+        args         = ["-ec", "exec /app/scripts/tailscale/worker-egress-guard.sh"]
+        work_dir     = var.backend_work_dir
       }
 
       env {
@@ -221,6 +223,12 @@ job "gvfx-binance-worker" {
         TS_GUARD_STATE_FILE   = "/alloc/tailscale/egress-selected"
         TS_ACCEPT_ROUTES      = "true"
         TS_ACCEPT_DNS         = "false"
+        HTTP_PROXY            = "http://127.0.0.1:1082"
+        HTTPS_PROXY           = "http://127.0.0.1:1082"
+        http_proxy            = "http://127.0.0.1:1082"
+        https_proxy           = "http://127.0.0.1:1082"
+        ALL_PROXY             = "socks5://127.0.0.1:1057"
+        all_proxy             = "socks5://127.0.0.1:1057"
       }
 
       template {
@@ -244,10 +252,11 @@ EOT
       driver = "docker"
 
       config {
-        image    = var.backend_image
-        command  = "bun"
-        args     = ["run", "src/jobs/binance_worker.ts"]
-        work_dir = var.backend_work_dir
+        image        = var.backend_image
+        network_mode = "host"
+        command      = "bun"
+        args         = ["run", "src/jobs/binance_worker.ts"]
+        work_dir     = var.backend_work_dir
       }
 
       env {
@@ -268,6 +277,12 @@ EOT
         TRADINGVIEW_USE_HTML           = "false"
         TRADINGVIEW_HTML_PATH          = ""
         TELEGRAM_MESSAGES_PATH         = ""
+        HTTP_PROXY                     = "http://127.0.0.1:1082"
+        HTTPS_PROXY                    = "http://127.0.0.1:1082"
+        http_proxy                     = "http://127.0.0.1:1082"
+        https_proxy                    = "http://127.0.0.1:1082"
+        ALL_PROXY                      = "socks5://127.0.0.1:1057"
+        all_proxy                      = "socks5://127.0.0.1:1057"
       }
 
       template {
