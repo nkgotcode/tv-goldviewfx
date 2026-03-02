@@ -25,7 +25,7 @@ variable "backend_work_dir" {
 
 variable "tailscale_image" {
   type    = string
-  default = "tailscale/tailscale:v1.80.3"
+  default = "tailscale/tailscale:stable"
 }
 
 variable "egress_worker_required_flag" {
